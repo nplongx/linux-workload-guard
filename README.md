@@ -36,7 +36,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
                        CPU quota
 ```
 
-The router intentionally uses process ancestry for automatic routing. This prevents unrelated system processes from being captured just because they happen to use CPU.
+The router intentionally uses cgroup containment for automatic routing. It considers processes inside the configured parent cgroup and its nested systemd scopes, preventing unrelated system processes from being captured just because they happen to use CPU.
 
 ## Default budgets
 
@@ -110,7 +110,6 @@ Environment variables:
 - `WORKLOAD_GUARD_SAMPLE_SEC` — sample interval, default `2`
 - `WORKLOAD_GUARD_SUSTAINED_SAMPLES` — consecutive hot samples, default `4`
 - `WORKLOAD_GUARD_CPU_THRESHOLD` — percent of one logical CPU, default `70`
-- `WORKLOAD_GUARD_MAX_ANCESTRY` — parent traversal limit, default `32`
 - `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
 - `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 

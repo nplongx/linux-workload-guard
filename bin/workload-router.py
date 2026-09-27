@@ -5,7 +5,6 @@ SYSTEMD_PREFIX = "/sys/fs/cgroup"
 SAMPLE_SEC = float(os.getenv("WORKLOAD_GUARD_SAMPLE_SEC", "2"))
 SUSTAINED_SAMPLES = int(os.getenv("WORKLOAD_GUARD_SUSTAINED_SAMPLES", "4"))
 CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_CPU_THRESHOLD", "70"))
-MAX_ANCESTRY = int(os.getenv("WORKLOAD_GUARD_MAX_ANCESTRY", "32"))
 PARENT_UNIT = os.getenv("WORKLOAD_GUARD_PARENT_UNIT", "protected-workload.slice")
 HEAVY_UNIT = os.getenv("WORKLOAD_GUARD_HEAVY_UNIT", "heavy-workload.slice")
 
@@ -25,11 +24,6 @@ def user_cgroup(unit):
     return SYSTEMD_PREFIX + value
 
 
-def read_pids(path):
-    try:
-        with open(path) as f: return {int(x) for x in f.read().split()}
-    except Exception: return set()
-
 def proc_stat(pid):
     try:
         with open(f'/proc/{pid}/stat') as f: s=f.read()
@@ -44,16 +38,25 @@ def cmdline(pid):
             return f.read().replace(b'\0',b' ').decode(errors='ignore').strip()
     except Exception: return ''
 
-def ancestry(pid, roots):
-    seen=set(); cur=pid
-    for _ in range(MAX_ANCESTRY):
-        if cur in roots: return True
-        if cur in seen or cur <= 1: return False
-        seen.add(cur)
-        p,_,_=proc_stat(cur)
-        if not p: return False
-        cur=p
-    return False
+def proc_cgroup(pid):
+    try:
+        with open(f'/proc/{pid}/cgroup') as f:
+            for line in f:
+                hierarchy, _, path = line.rstrip().partition('::')
+                if hierarchy == '0':
+                    return path
+    except Exception:
+        pass
+    return None
+
+def in_cgroup_tree(pid, parent_cgroup):
+    path = proc_cgroup(pid)
+    if not path or not parent_cgroup:
+        return False
+    parent = parent_cgroup.rstrip('/')
+    if parent.startswith(SYSTEMD_PREFIX + '/'):
+        parent = parent[len(SYSTEMD_PREFIX):]
+    return path == parent or path.startswith(parent + '/')
 
 HEAVY = (
     'npm run build','npm run test','npm run lint','pnpm build','pnpm test','pnpm lint',
@@ -95,13 +98,12 @@ def main():
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
         heavy_cgroup = user_cgroup(HEAVY_UNIT)
-        roots=read_pids(os.path.join(gateway_cgroup, "cgroup.procs")) if gateway_cgroup else set()
         now={}
-        if roots and heavy_cgroup:
+        if gateway_cgroup and heavy_cgroup:
             for name in os.listdir('/proc'):
                 if not name.isdigit(): continue
                 pid=int(name)
-                if pid in roots or not ancestry(pid, roots): continue
+                if not in_cgroup_tree(pid, gateway_cgroup): continue
                 cmd=cmdline(pid)
                 if not cmd or is_excluded(cmd): continue
                 _,ut,st=proc_stat(pid)

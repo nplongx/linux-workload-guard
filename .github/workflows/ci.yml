@@ -22,3 +22,5 @@ jobs:
         run: sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup
       - name: Version smoke test
         run: ./bin/workload-guard version
+      - name: Integration routing
+        run: ./tests/integration-routing.sh

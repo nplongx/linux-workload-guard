@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] - 2026-09-27
+
+Real cgroup-tree routing.
+
+### Changed
+
+- Automatic routing now discovers processes anywhere inside the configured parent cgroup tree, including nested systemd scopes.
+- Removed the old process-ancestry root-PID limitation.
+- Added a real integration test that verifies a CPU-bound nested workload is moved into the heavy workload slice.
+
 ## [0.1.1] - 2026-09-27
 
 Configuration and installation hardening.
