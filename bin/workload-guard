@@ -9,6 +9,7 @@ Usage:
   workload-guard status    Show services, quotas, and routed workloads
   workload-guard diagnose  Show configuration and cgroup paths
   workload-guard stats      Show adaptive workload statistics
+  workload-guard profile    Profile cgroups, CPU PSI, and scheduler latency
   workload-guard protect <command...>
   workload-guard version   Show version
   workload-guard help      Show this help
@@ -81,6 +82,10 @@ case "${1:-status}" in
     ;;
   stats)
     show_stats
+    ;;
+  profile)
+    shift
+    exec "$ROOT/bin/workload-profile" "$@"
     ;;
   protect)
     shift

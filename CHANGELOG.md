@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.3] - 2026-09-27
+
+System profiling and faster quota response.
+
+### Added
+
+- `workload-guard profile` for cgroup CPU usage, throttling, CPU PSI, and scheduler-latency measurements.
+
+### Changed
+
+- Dynamic quota controller defaults to a 5s evaluation interval.
+- Minimum quota dwell defaults to 10s while retaining strong pressure/demand hysteresis.
+
 ## [0.5.2] - 2026-09-27
 
 Router overhead reduction.
@@ -10,6 +23,8 @@ Router overhead reduction.
 - Adaptive statistics are flushed periodically instead of every sampling cycle.
 - Added `WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC` for tuning the statistics flush interval.
 - Fixed the test suite's version assertion to match the current release.
+- Added `workload-guard profile` for system-wide cgroup CPU usage, CPU PSI, and scheduler-latency profiling.
+- Reduced the default quota control interval to 5s and minimum quota dwell to 10s; pressure/demand thresholds remain hysteretic to avoid rapid reversals.
 
 ## [0.5.1] - 2026-09-27
 

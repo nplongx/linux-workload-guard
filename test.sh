@@ -2,6 +2,7 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python3 -m py_compile "$ROOT/bin/workload-router.py"
+python3 -m py_compile "$ROOT/bin/workload-profile"
 python3 - "$ROOT/bin/workload-router.py" <<'PY'
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("router", sys.argv[1])
@@ -23,7 +24,9 @@ assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
 PY
-test "$("$ROOT/bin/workload-guard" version)" = "0.5.2"
+test "$("$ROOT/bin/workload-guard" version)" = "0.5.3"
+test -x "$ROOT/bin/workload-profile"
+test "$(env -u WORKLOAD_GUARD_QUOTA_INTERVAL_SEC -u WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("r",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(int(m.QUOTA_INTERVAL_SEC), int(m.QUOTA_MIN_DWELL_SEC))' "$ROOT/bin/workload-router.py")" = "5 10"
 grep -q '^EnvironmentFile=-%h/.config/linux-workload-guard/workload-guard.env$' "$ROOT/systemd/workload-router.service"
 grep -q 'CONFIG_DIR="$HOME/.config/linux-workload-guard"' "$ROOT/install.sh"
 printf '%s\n' 'tests: ok'

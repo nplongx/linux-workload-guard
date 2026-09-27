@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import time
+
+CGROUP_ROOT = "/sys/fs/cgroup"
+
+def read_kv(path):
+    data = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    data[parts[0]] = int(parts[1])
+    except (OSError, ValueError):
+        pass
+    return data
+
+def read_text(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+def cpu_psi():
+    text = read_text("/proc/pressure/cpu")
+    result = {}
+    if not text:
+        return result
+    for line in text.splitlines():
+        fields = dict(item.split("=") for item in line.split()[1:] if "=" in item)
+        result[line.split()[0]] = {k: float(v) for k, v in fields.items()}
+    return result
+
+def cgroup_cpu_snapshot():
+    result = {}
+    for directory, _, files in os.walk(CGROUP_ROOT):
+        if "cpu.stat" not in files:
+            continue
+        stat = read_kv(os.path.join(directory, "cpu.stat"))
+        if stat:
+            result[os.path.relpath(directory, CGROUP_ROOT)] = stat
+    return result
+
+def cpu_delta(before, after, elapsed):
+    rows = []
+    for path, old in before.items():
+        new = after.get(path)
+        if not new:
+            continue
+        usage = max(0, new.get("usage_usec", 0) - old.get("usage_usec", 0))
+        periods = max(0, new.get("nr_periods", 0) - old.get("nr_periods", 0))
+        throttled = max(0, new.get("nr_throttled", 0) - old.get("nr_throttled", 0))
+        cpu_pct = usage / max(0.001, elapsed * 10000.0)
+        throttle_pct = 100.0 * throttled / periods if periods else 0.0
+        rows.append((cpu_pct, throttle_pct, path))
+    return sorted(rows, reverse=True)
+
+def schedstat():
+    try:
+        fields = read_text(f"/proc/{os.getpid()}/schedstat").split()
+        return int(fields[0]), int(fields[1])
+    except (AttributeError, ValueError, IndexError):
+        return None
+
+def scheduler_probe(samples, sleep_sec):
+    before = schedstat()
+    delays = []
+    for _ in range(samples):
+        target = time.monotonic() + sleep_sec
+        time.sleep(sleep_sec)
+        delays.append(max(0.0, (time.monotonic() - target) * 1000.0))
+    after = schedstat()
+    delays.sort()
+    def pct(p):
+        return delays[min(len(delays) - 1, int(round((len(delays) - 1) * p)))] if delays else 0.0
+    run_delay = None
+    if before and after:
+        run_delay = max(0.0, (after[1] - before[1]) / 1_000_000.0)
+    return pct(.50), pct(.95), pct(.99), max(delays, default=0.0), run_delay
+
+def main():
+    parser = argparse.ArgumentParser(description="Profile cgroup CPU, CPU PSI, and scheduler latency")
+    parser.add_argument("--duration", type=float, default=3.0)
+    parser.add_argument("--samples", type=int, default=100)
+    parser.add_argument("--sleep-ms", type=float, default=1.0)
+    args = parser.parse_args()
+    if not os.path.exists(CGROUP_ROOT):
+        raise SystemExit("cgroup v2 root not available")
+    psi_before = cpu_psi()
+    cg_before = cgroup_cpu_snapshot()
+    start = time.monotonic()
+    p50, p95, p99, pmax, run_delay = scheduler_probe(args.samples, args.sleep_ms / 1000.0)
+    remaining = max(0.0, args.duration - (time.monotonic() - start))
+    if remaining:
+        time.sleep(remaining)
+    elapsed = time.monotonic() - start
+    psi_after = cpu_psi()
+    cg_after = cgroup_cpu_snapshot()
+    print("Linux Workload Guard system profile")
+    print(f"window: {elapsed:.2f}s")
+    print("\n[CPU PSI]")
+    for kind in ("some", "full"):
+        value = psi_after.get(kind)
+        if value:
+            print(f"{kind}: avg10={value.get('avg10', 0):.2f}% avg60={value.get('avg60', 0):.2f}% avg300={value.get('avg300', 0):.2f}%")
+    print("\n[Scheduler latency]")
+    print(f"wakeup excess: p50={p50:.2f}ms p95={p95:.2f}ms p99={p99:.2f}ms max={pmax:.2f}ms")
+    print(f"process runqueue delay: {'n/a' if run_delay is None else f'{run_delay:.2f}ms'}")
+    print("\n[Top cgroups by CPU usage]")
+    print(f"{'CPU%':>8} {'throttle%':>10}  CGROUP")
+    rows = cpu_delta(cg_before, cg_after, elapsed)
+    for cpu, throttle, path in rows[:15]:
+        print(f"{cpu:8.1f} {throttle:10.1f}  {path}")
+    if not rows:
+        print("none")
+    print("\n[Key cgroups]")
+    found = False
+    for path, stat in sorted(cg_after.items()):
+        if any(name in path for name in ("protected-workload.slice", "heavy-workload.slice", "browser-automation.slice")):
+            found = True
+            print(f"{path}: usage_usec={stat.get('usage_usec', 0)} throttled={stat.get('nr_throttled', 0)} periods={stat.get('nr_periods', 0)}")
+    if not found:
+        print("none")
+
+if __name__ == "__main__":
+    main()
