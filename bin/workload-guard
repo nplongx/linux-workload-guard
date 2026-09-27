@@ -8,6 +8,7 @@ Linux Workload Guard
 Usage:
   workload-guard status    Show services, quotas, and routed workloads
   workload-guard diagnose  Show configuration and cgroup paths
+  workload-guard stats      Show adaptive workload statistics
   workload-guard version   Show version
   workload-guard help      Show this help
 USAGE
@@ -42,6 +43,19 @@ show_routes() {
     printf '%-7s %-7s %-16s %-34s %-34s %s\n' "$pid" "${current_cpu}%" "$reason" "$source" "$target" "$cmd"
   done < "$state_file"
 }
+show_stats() {
+  state_file="${WORKLOAD_GUARD_STATS_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/linux-workload-guard/stats.json}"
+  printf '\n[Adaptive statistics]\n'
+  if [ ! -s "$state_file" ]; then printf '%s\n' 'none'; return; fi
+  python3 - "$state_file" <<'PY'
+import json, sys
+try: data=json.load(open(sys.argv[1]))
+except Exception: print("unavailable"); raise SystemExit
+print("%-28s %-8s %-10s %-10s" % ("CLASS","SAMPLES","MEAN_CPU","VARIANCE"))
+for cls, item in sorted(data.items()):
+    print("%-28s %-8s %-10.1f %-10.1f" % (cls, item.get("samples",0), item.get("mean",0), item.get("variance",0)))
+PY
+}
 case "${1:-status}" in
   status)
     printf 'Linux Workload Guard %s\n' "$(version)"
@@ -59,6 +73,9 @@ case "${1:-status}" in
     if systemctl --user is-system-running >/dev/null 2>&1; then printf 'available\n'; else printf 'unavailable\n'; fi
     printf 'router parent: %s\n' "${WORKLOAD_GUARD_PARENT_UNIT:-protected-workload.slice}"
     printf 'router target: %s\n' "${WORKLOAD_GUARD_HEAVY_UNIT:-heavy-workload.slice}"
+    ;;
+  stats)
+    show_stats
     ;;
   version|-V|--version) version ;;
   help|-h|--help) usage ;;

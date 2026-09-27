@@ -18,6 +18,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - Explicit `run-workload` helper for heavy terminal work.
 - User-level systemd; no root daemon required.
 - Routing observability with PID, CPU, reason, source cgroup, destination cgroup, and command.
+- Optional adaptive routing using lightweight online CPU statistics.
 - cgroup v2 resource enforcement.
 
 ## Architecture
@@ -104,6 +105,8 @@ Known heavy commands are routed immediately. Unknown commands are routed after f
 
 This avoids reacting to short-lived CPU spikes.
 
+Adaptive mode is deliberately opt-in. It keeps a small per-command-class CPU baseline using online mean/variance updates; it is not a black-box model and requires a minimum history before it can route. Known-heavy and sustained-CPU rules remain active regardless of adaptive mode.
+
 ## Configuration
 
 Environment variables:
@@ -111,6 +114,11 @@ Environment variables:
 - `WORKLOAD_GUARD_SAMPLE_SEC` — sample interval, default `2`
 - `WORKLOAD_GUARD_SUSTAINED_SAMPLES` — consecutive hot samples, default `4`
 - `WORKLOAD_GUARD_CPU_THRESHOLD` — percent of one logical CPU, default `70`
+- `WORKLOAD_GUARD_ADAPTIVE` — enable adaptive routing, default `false`.
+- `WORKLOAD_GUARD_LEARNING_RATE` — EWMA-style learning rate, default `0.15`.
+- `WORKLOAD_GUARD_ROUTE_THRESHOLD` — adaptive score required for routing, default `0.75`.
+- `WORKLOAD_GUARD_COOLDOWN_SEC` — minimum time between route attempts for a PID, default `20`.
+- `WORKLOAD_GUARD_MIN_SAMPLES` — historical samples required before adaptive scoring, default `8`.
 - `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
 - `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 

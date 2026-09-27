@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0] - 2026-09-27
+
+Lightweight adaptive routing.
+
+### Added
+
+- Optional online CPU statistics per normalized command class.
+- Adaptive routing score with a minimum history requirement.
+- Atomic persistent adaptive statistics under the user state directory.
+- `workload-guard stats` for learned workload baselines.
+- Adaptive mode is opt-in; static known-heavy and sustained-CPU routing remains the safety fallback.
+
 ## [0.3.0] - 2026-09-27
 
 Routing observability.
