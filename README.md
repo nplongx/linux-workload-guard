@@ -183,6 +183,39 @@ The project is designed for user-level installation and does not require root.
 
 Tests cover Python syntax, routing/exclusion logic, and quota decisions. The integration test starts a nested systemd scope, drives a CPU-bound child through the real router, and verifies both cgroup movement and recorded routing state.
 
+## Benchmark
+
+The dynamic-quota controller was benchmarked on **2026-09-27** on:
+
+- Intel Core i5-8250U, 8 logical CPUs
+- Linux kernel 7.0.0-34-generic
+- systemd 259.5
+- Python 3.14.4
+
+The benchmark uses a fixed CPU-only C workload: **8 worker processes**, each performing **250 million** integer-mixing iterations. The same amount of work is run at each heavy-slice quota, so lower completion time means higher throughput. Each quota was measured in 3 valid runs, with quota levels interleaved between rounds to reduce ordering and thermal bias. An initial warm-up run was excluded from the reported set when its cgroup CPU time was inconsistent with the configured quota.
+
+| Heavy quota | Mean completion | Std. dev. | Mean cgroup CPU time | Throttled periods | Speedup vs 100% |
+|---:|---:|---:|---:|---:|---:|
+| 100% | 13.36 s | 0.04 s | 13.4 s | 133.7 | 1.00x |
+| 150% | 9.06 s | 0.19 s | 13.6 s | 90.0 | 1.48x |
+| 200% | 6.96 s | 0.09 s | 13.9 s | 69.0 | 1.92x |
+| 250% | 5.55 s | 0.08 s | 13.9 s | 55.3 | 2.41x |
+| 300% | 4.81 s | 0.11 s | 14.3 s | 47.7 | 2.78x |
+| 350% | 4.30 s | 0.11 s | 14.9 s | 42.3 | 3.11x |
+| 400% | 4.02 s | 0.14 s | 15.7 s | 39.3 | 3.33x |
+
+The result shows strong throughput gains as the quota increases, but diminishing returns: moving from 350% to 400% reduced completion time by about 6.6%, versus about 32% from 100% to 150%. The workload still benefits measurably from the full 400% ceiling; this benchmark does not establish a single universally optimal quota.
+
+A separate sustained 400% contention snapshot measured CPU PSI some avg10=22.23%, wakeup latency p95 0.14 ms, p99 2.27 ms, maximum 2.54 ms, and process runqueue delay 12.79 ms. Full CPU PSI remained 0%. Background desktop/browser activity was present during the measurement, so PSI and scheduler metrics are host-health observations rather than isolated measurements of the heavy workload alone.
+
+Run the reproducible quota benchmark with:
+
+~~~bash
+./benchmarks/quota-benchmark.sh
+~~~
+
+The script stops the router during the controlled sweep, restores the heavy quota to 400%, and restarts the router if it was active before the benchmark. Raw results default to /tmp/linux-workload-guard-quota-results.tsv.
+
 ## Release
 
 Releases use semantic versioning. See [CHANGELOG.md](CHANGELOG.md) for release history.
