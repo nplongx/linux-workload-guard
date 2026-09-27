@@ -1,0 +1,50 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  cat <<'USAGE'
+Linux Workload Guard
+
+Usage:
+  workload-guard status    Show services and CPU quotas
+  workload-guard diagnose  Show configuration and cgroup paths
+  workload-guard version   Show version
+  workload-guard help      Show this help
+USAGE
+}
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd)
+VERSION_FILE="$ROOT/VERSION"
+if [ ! -f "$VERSION_FILE" ]; then VERSION_FILE="$HOME/.local/share/linux-workload-guard/VERSION"; fi
+if [ ! -f "$VERSION_FILE" ]; then VERSION_FILE=""; fi
+version() {
+  if [ -n "$VERSION_FILE" ]; then cat "$VERSION_FILE"; else printf '%s\n' unknown; fi
+}
+show_unit() {
+  unit=$1
+  printf '\n[%s]\n' "$unit"
+  systemctl --user show "$unit" \
+    -p ActiveState -p SubState -p ControlGroup -p CPUQuotaPerSecUSec -p CPUWeight \
+    --no-pager 2>/dev/null || true
+}
+case "${1:-status}" in
+  status)
+    printf 'Linux Workload Guard %s\n' "$(version)"
+    show_unit protected-workload.slice
+    show_unit heavy-workload.slice
+    show_unit workload-router.service
+    show_unit browser-automation.slice
+    ;;
+  diagnose)
+    printf 'Linux Workload Guard %s\n' "$(version)"
+    printf 'cgroup v2: '
+    if [ -f /sys/fs/cgroup/cgroup.controllers ]; then printf 'yes\n'; else printf 'no\n'; fi
+    printf 'systemd user manager: '
+    if systemctl --user is-system-running >/dev/null 2>&1; then printf 'available\n'; else printf 'unavailable\n'; fi
+    printf 'router parent: %s\n' "${WORKLOAD_GUARD_PARENT_UNIT:-protected-workload.slice}"
+    printf 'router target: %s\n' "${WORKLOAD_GUARD_HEAVY_UNIT:-heavy-workload.slice}"
+    ;;
+  version|-V|--version) version ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

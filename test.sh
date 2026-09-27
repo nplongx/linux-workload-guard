@@ -15,4 +15,5 @@ assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
 PY
+test "$("$ROOT/bin/workload-guard" version)" = "0.1.0"
 printf '%s\n' 'tests: ok'

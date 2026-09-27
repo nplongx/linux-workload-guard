@@ -3,9 +3,12 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 USER_SYSTEMD="$HOME/.config/systemd/user"
 BIN="$HOME/.local/bin"
-mkdir -p "$USER_SYSTEMD" "$BIN"
+DATA="$HOME/.local/share/linux-workload-guard"
+mkdir -p "$USER_SYSTEMD" "$BIN" "$DATA"
 install -m 0755 "$ROOT/bin/workload-router.py" "$BIN/workload-router.py"
 install -m 0755 "$ROOT/bin/run-workload" "$BIN/run-workload"
+install -m 0755 "$ROOT/bin/workload-guard" "$BIN/workload-guard"
+install -m 0644 "$ROOT/VERSION" "$DATA/VERSION"
 install -m 0755 "$ROOT/bin/limit-browser-automation-cgroup" "$BIN/limit-browser-automation-cgroup"
 install -m 0644 "$ROOT/systemd/protected-workload.slice" "$USER_SYSTEMD/protected-workload.slice"
 install -m 0644 "$ROOT/systemd/heavy-workload.slice" "$USER_SYSTEMD/heavy-workload.slice"

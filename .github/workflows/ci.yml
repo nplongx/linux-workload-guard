@@ -19,4 +19,6 @@ jobs:
       - name: Validate systemd units
         run: systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
       - name: Shell syntax
-        run: sh -n install.sh uninstall.sh test.sh bin/run-workload bin/limit-browser-automation-cgroup
+        run: sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup
+      - name: Version smoke test
+        run: ./bin/workload-guard version

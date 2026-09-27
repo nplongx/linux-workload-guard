@@ -48,6 +48,22 @@ The router intentionally uses process ancestry for automatic routing. This preve
 
 `100%` is approximately one logical CPU. Quotas are cgroup limits, not CPU priority scores.
 
+## CLI
+
+After installation:
+
+```bash
+workload-guard status
+workload-guard diagnose
+workload-guard version
+```
+
+`status` shows service state and CPU quotas. `diagnose` checks cgroup v2 and the configured workload units.
+
+## Configuration file
+
+For host-specific policy, copy `config/workload-guard.env.example` to `~/.config/linux-workload-guard/workload-guard.env` and use the variables as the environment source for the user service. The example is intentionally not installed automatically. The installed `workload-guard` CLI keeps its version under `~/.local/share/linux-workload-guard/`.
+
 ## Install
 
 ```bash
@@ -135,6 +151,10 @@ The project is designed for user-level installation and does not require root.
 ```
 
 Tests cover Python syntax and routing/exclusion logic. A real end-to-end routing test requires a child process attached to a configured workload parent and is not faked by the test suite.
+
+## Release
+
+Releases use semantic versioning. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 
