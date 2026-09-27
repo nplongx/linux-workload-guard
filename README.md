@@ -20,6 +20,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - Routing observability with PID, CPU, reason, source cgroup, destination cgroup, and command.
 - Optional adaptive routing using lightweight online CPU statistics.
 - Optional dynamic heavy-workload CPU quota using CPU pressure and workload demand.
+- Explicit `workload-guard protect` helper for placing latency-sensitive commands in the protected slice.
 - cgroup v2 resource enforcement.
 
 ## Architecture
@@ -49,7 +50,9 @@ The router intentionally uses cgroup containment for automatic routing. It consi
 | Heavy workload slice | 400% |
 | Browser automation | 200% |
 
-`100%` is approximately one logical CPU. Quotas are cgroup limits, not CPU priority scores.
+Protected workloads also get higher `CPUWeight` (`1000`) than heavy workloads (`100`). This makes scheduler contention favor latency-sensitive protected work while the heavy slice remains quota-bounded.
+
+`100%` is approximately one logical CPU. Quotas are cgroup limits, not CPU priority scores. Dynamic quota also uses the heavy cgroup's `cpu.stat` throttling counters as a demand signal.
 
 ## CLI
 
@@ -61,7 +64,7 @@ workload-guard diagnose
 workload-guard version
 ```
 
-`status` shows service state, CPU quotas, and currently routed workloads. Routed entries include PID, current CPU sample, routing reason (`known-heavy` or `sustained-cpu`), source cgroup, destination cgroup, and command. `diagnose` checks cgroup v2 and the configured workload units.
+`status` shows service state, CPU quotas, and currently routed workloads. Routed entries include PID, current CPU sample, routing reason (`known-heavy`, `sustained-cpu`, or `adaptive`), source cgroup, destination cgroup, and command. `diagnose` checks cgroup v2 and the configured workload units. `protect` runs a command directly inside `protected-workload.slice`.
 
 ## Configuration file
 
@@ -125,6 +128,8 @@ Environment variables:
 - `WORKLOAD_GUARD_QUOTA_MIN` / `MAX` — quota bounds, default `100` / `400`.
 - `WORKLOAD_GUARD_QUOTA_STEP` — maximum quota change per controller step, default `50`.
 - `WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH` / `LOW` — CPU PSI pressure thresholds, default `0.20` / `0.05`.
+- `WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH` — heavy cgroup throttling ratio that permits quota growth, default `0.10`.
+- `WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC` — minimum time between quota direction changes, default `20`.
 - `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
 - `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.1] - 2026-09-27
+
+Performance and quota-controller fixes.
+
+### Fixed
+
+- Avoided scanning unrelated `/proc` processes during routing.
+- Added heavy-cgroup `cpu.stat` throttling feedback to dynamic quota decisions.
+- Added quota dwell time to reduce rapid quota direction changes.
+- Added `workload-guard protect` for explicit protected cgroup placement.
+- Integration test cleanup now terminates its CPU worker.
+- Protected workloads now receive higher scheduler weight than heavy workloads.
+- Dynamic quota demand now uses heavy-cgroup CPU usage plus throttling, including workloads launched directly in the heavy slice.
+
 ## [0.5.0] - 2026-09-27
 
 Dynamic quota allocation.

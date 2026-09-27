@@ -3,4 +3,4 @@ Description=Heavy workload CPU budget
 
 [Slice]
 CPUQuota=400%
-CPUWeight=1000
+CPUWeight=100

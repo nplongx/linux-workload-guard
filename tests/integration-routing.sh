@@ -23,6 +23,7 @@ WORK_PID=''
 STATE_FILE="/tmp/linux-workload-guard-e2e.$$.routes.tsv"
 cleanup() {
   if [ -n "$ROUTER_PID" ]; then kill "$ROUTER_PID" 2>/dev/null || true; fi
+  if [ -n "$WORK_PID" ]; then kill "$WORK_PID" 2>/dev/null || true; fi
   systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
   rm -f "$PID_FILE" "$STATE_FILE"
 }

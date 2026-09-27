@@ -17,6 +17,8 @@ QUOTA_MAX = float(os.getenv("WORKLOAD_GUARD_QUOTA_MAX", "400"))
 QUOTA_STEP = float(os.getenv("WORKLOAD_GUARD_QUOTA_STEP", "50"))
 QUOTA_PRESSURE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH", "0.20"))
 QUOTA_PRESSURE_LOW = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_LOW", "0.05"))
+QUOTA_THROTTLE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH", "0.10"))
+QUOTA_MIN_DWELL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC", "20"))
 STATS_FILE = os.getenv("WORKLOAD_GUARD_STATS_FILE", os.path.join(
     os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
     "linux-workload-guard", "stats.json"))
@@ -76,6 +78,31 @@ def in_cgroup_tree(pid, parent_cgroup):
     if parent.startswith(SYSTEMD_PREFIX + '/'):
         parent = parent[len(SYSTEMD_PREFIX):]
     return path == parent or path.startswith(parent + '/')
+
+def cgroup_tree_pids(parent_cgroup):
+    """Return PIDs under a cgroup tree without scanning unrelated /proc entries."""
+    if not parent_cgroup:
+        return ()
+    root = parent_cgroup
+    if root.startswith(SYSTEMD_PREFIX + '/'):
+        root = root.rstrip('/')
+    if not os.path.isdir(root):
+        return ()
+    pids = set()
+    try:
+        for directory, dirs, files in os.walk(root):
+            if 'cgroup.procs' not in files:
+                continue
+            try:
+                with open(os.path.join(directory, 'cgroup.procs')) as f:
+                    for line in f:
+                        if line.strip().isdigit():
+                            pids.add(int(line))
+            except OSError:
+                continue
+    except OSError:
+        return ()
+    return pids
 
 HEAVY = (
     'npm run build','npm run test','npm run lint','pnpm build','pnpm test','pnpm lint',
@@ -154,6 +181,19 @@ def cpu_pressure():
         pass
     return None
 
+def cgroup_cpu_stat(cgroup):
+    if not cgroup:
+        return None
+    try:
+        data = {}
+        with open(os.path.join(cgroup, "cpu.stat")) as f:
+            for line in f:
+                key, value = line.split()[:2]
+                data[key] = int(value)
+        return data
+    except (OSError, ValueError):
+        return None
+
 def unit_quota(unit):
     try:
         value = subprocess.check_output(
@@ -176,14 +216,16 @@ def set_unit_quota(unit, quota):
     except (OSError, subprocess.SubprocessError):
         return False
 
-def dynamic_quota_target(current, pressure, demand):
+def dynamic_quota_target(current, pressure, demand, throttled_ratio=0.0):
     if current is None:
         current = QUOTA_MIN
     if pressure is not None and pressure >= QUOTA_PRESSURE_HIGH:
         return max(QUOTA_MIN, current - QUOTA_STEP)
+    if throttled_ratio >= QUOTA_THROTTLE_HIGH and (pressure is None or pressure < QUOTA_PRESSURE_HIGH):
+        return min(QUOTA_MAX, current + QUOTA_STEP)
     if pressure is not None and pressure <= QUOTA_PRESSURE_LOW and demand >= 0.60:
         return min(QUOTA_MAX, current + QUOTA_STEP)
-    if demand < 0.30:
+    if demand < 0.15 and (pressure is None or pressure <= QUOTA_PRESSURE_LOW):
         return max(QUOTA_MIN, current - QUOTA_STEP)
     return current
 
@@ -218,17 +260,17 @@ def main():
     stats=load_stats() if ADAPTIVE else {}
     last_move={}
     last_quota_change=0.0
+    quota_dwell_until=0.0
     current_quota=unit_quota(HEAVY_UNIT) if QUOTA_DYNAMIC else None
+    quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
+    quota_stat_time = time.monotonic()
     logging.info('started threshold=%.0f%% sustained=%ss adaptive=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, ADAPTIVE)
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
         heavy_cgroup = user_cgroup(HEAVY_UNIT)
         now={}
         if gateway_cgroup and heavy_cgroup:
-            for name in os.listdir('/proc'):
-                if not name.isdigit(): continue
-                pid=int(name)
-                if not in_cgroup_tree(pid, gateway_cgroup): continue
+            for pid in cgroup_tree_pids(gateway_cgroup):
                 cmd=cmdline(pid)
                 if not cmd or is_excluded(cmd): continue
                 _,ut,st=proc_stat(pid)
@@ -258,8 +300,22 @@ def main():
                             logging.info('routed pid=%s cpu=%.1f%% reason=%s cmd=%s', pid,cpu,reason,cmd[:180])
         if QUOTA_DYNAMIC and heavy_cgroup:
             now_mono = time.monotonic()
-            if now_mono - last_quota_change >= QUOTA_INTERVAL_SEC:
+            if now_mono >= quota_dwell_until and now_mono - last_quota_change >= QUOTA_INTERVAL_SEC:
                 pressure = cpu_pressure()
+                after_stat = cgroup_cpu_stat(heavy_cgroup)
+                throttled_ratio = 0.0
+                cgroup_demand = 0.0
+                now_stat_time = time.monotonic()
+                if quota_stat_prev and after_stat:
+                    elapsed = max(0.001, now_stat_time - quota_stat_time)
+                    usage = max(0, after_stat.get("usage_usec", 0) - quota_stat_prev.get("usage_usec", 0))
+                    periods = max(0, after_stat.get("nr_periods", 0) - quota_stat_prev.get("nr_periods", 0))
+                    throttled = max(0, after_stat.get("nr_throttled", 0) - quota_stat_prev.get("nr_throttled", 0))
+                    throttled_ratio = throttled / periods if periods else 0.0
+                    usage_pct = usage / (elapsed * 10000.0)
+                    cgroup_demand = min(1.0, usage_pct / max(100.0, current_quota or QUOTA_MIN))
+                quota_stat_prev = after_stat
+                quota_stat_time = now_stat_time
                 demand = 0.0
                 if routes:
                     demand = min(1.0, max(
@@ -267,13 +323,15 @@ def main():
                         min(1.0, data[0] / max(100.0, CPU_THRESHOLD))
                         for data in routes.values()
                     ))
-                target = dynamic_quota_target(current_quota, pressure, demand)
+                demand = max(demand, cgroup_demand)
+                target = dynamic_quota_target(current_quota, pressure, demand, throttled_ratio)
                 if target != current_quota and set_unit_quota(HEAVY_UNIT, target):
                     logging.info('quota changed unit=%s old=%.0f%% new=%.0f%% pressure=%s demand=%.2f',
                                  HEAVY_UNIT, current_quota or 0, target,
                                  'n/a' if pressure is None else f'{pressure:.3f}', demand)
                     current_quota = target
                     last_quota_change = now_mono
+                    quota_dwell_until = now_mono + QUOTA_MIN_DWELL_SEC
         alive=set(now)
         for pid in list(hot):
             if pid not in alive: hot.pop(pid,None)

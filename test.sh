@@ -17,7 +17,8 @@ assert mod.adaptive_score(95, {"samples": 10, "mean": 30, "variance": 25}) is no
 assert mod.adaptive_score(80, {"samples": 2, "mean": 30, "variance": 25}) is None
 assert mod.dynamic_quota_target(200, 0.30, 0.9) == 150
 assert mod.dynamic_quota_target(200, 0.01, 0.9) == 250
-assert mod.dynamic_quota_target(200, 0.01, 0.2) == 150
+assert mod.dynamic_quota_target(200, 0.01, 0.2) == 200
+assert mod.dynamic_quota_target(200, 0.01, 0.2, 0.2) == 250
 assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
