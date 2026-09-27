@@ -2,10 +2,12 @@
 import os, time, logging, subprocess
 
 SYSTEMD_PREFIX = "/sys/fs/cgroup"
-SAMPLE_SEC = 2
-SUSTAINED_SAMPLES = 4          # 8 seconds
-CPU_THRESHOLD = 70.0           # % of one logical CPU
-MAX_ANCESTRY = 32
+SAMPLE_SEC = float(os.getenv("WORKLOAD_GUARD_SAMPLE_SEC", "2"))
+SUSTAINED_SAMPLES = int(os.getenv("WORKLOAD_GUARD_SUSTAINED_SAMPLES", "4"))
+CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_CPU_THRESHOLD", "70"))
+MAX_ANCESTRY = int(os.getenv("WORKLOAD_GUARD_MAX_ANCESTRY", "32"))
+PARENT_UNIT = os.getenv("WORKLOAD_GUARD_PARENT_UNIT", "protected-workload.service")
+HEAVY_UNIT = os.getenv("WORKLOAD_GUARD_HEAVY_UNIT", "heavy-workload.slice")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -62,7 +64,7 @@ HEAVY = (
 )
 HEAVY_NAMES = {'tsc','rustc','cargo','go','make','ninja','pytest','ffmpeg','torchrun','gradle','mvn'}
 EXCLUDE = (
-    'openclaw-heavy-task-router.py', 'openclaw-gateway',
+    'workload-router.py', 'workload-router',
     'google-chrome-chatgpt', 'chrome_crashpad_handler', 'chromedriver'
 )
 
@@ -89,8 +91,8 @@ def main():
     moved=set()
     logging.info('started threshold=%.0f%% sustained=%ss', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES)
     while True:
-        gateway_cgroup = user_cgroup("openclaw-gateway.service")
-        heavy_cgroup = user_cgroup("terminal-heavy.slice")
+        gateway_cgroup = user_cgroup(PARENT_UNIT)
+        heavy_cgroup = user_cgroup(HEAVY_UNIT)
         roots=read_pids(os.path.join(gateway_cgroup, "cgroup.procs")) if gateway_cgroup else set()
         now={}
         if roots and heavy_cgroup:

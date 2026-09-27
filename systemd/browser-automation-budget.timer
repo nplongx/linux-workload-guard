@@ -1,0 +1,10 @@
+[Unit]
+Description=Maintain browser automation CPU cgroup
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=10s
+Unit=browser-automation-budget.service
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,0 @@
-[Unit]
-Description=ChatGPT automation Chrome CPU budget
-
-[Slice]
-CPUQuota=200%
-CPUWeight=100

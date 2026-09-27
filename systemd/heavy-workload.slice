@@ -1,5 +1,5 @@
 [Unit]
-Description=Heavy terminal/build CPU budget
+Description=Heavy workload CPU budget
 
 [Slice]
 CPUQuota=400%

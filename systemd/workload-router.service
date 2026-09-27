@@ -1,0 +1,14 @@
+[Unit]
+Description=Auto-route heavy workloads to bounded CPU budget
+After=protected-workload.service heavy-workload.slice
+
+[Service]
+Environment=WORKLOAD_GUARD_PARENT_UNIT=protected-workload.service
+Environment=WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice
+ExecStart=%h/.local/bin/workload-router.py
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=Keep browser automation inside CPU budget cgroup
+After=browser-automation.slice
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/limit-browser-automation-cgroup

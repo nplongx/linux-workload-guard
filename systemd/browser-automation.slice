@@ -1,0 +1,6 @@
+[Unit]
+Description=Browser automation CPU budget
+
+[Slice]
+CPUQuota=200%
+CPUWeight=100

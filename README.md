@@ -1,16 +1,52 @@
-# OpenClaw CPU Guard
+# Linux Workload Guard
 
-Linux/systemd CPU guard for OpenClaw child workloads on CPU-limited machines.
+Generic Linux/systemd resource guard for CPU-heavy workloads on developer and automation machines.
 
-## What it does
+## Purpose
 
-- Caps the OpenClaw gateway at 150% CPU.
-- Gives heavy work a separate `terminal-heavy.slice` capped at 400% CPU.
-- Auto-routes known heavy OpenClaw child commands.
-- Auto-routes unknown OpenClaw descendants after sustained CPU >= 70% for 8 seconds.
-- Excludes the gateway, router, ChatGPT automation Chrome, ChromeDriver and crashpad.
-- Caps ChatGPT automation Chrome at 200% CPU.
-- Provides `run-task` for explicit heavy terminal work.
+Keep one workload from monopolizing the machine while still allowing heavy work to use a controlled amount of CPU.
+
+The design is workload-oriented, not application-oriented. A workload can be a build, test suite, compiler, inference job, browser automation process, agent child process, or another long-running CPU consumer.
+
+## Current capabilities
+
+- CPU quota for a protected workload.
+- Dedicated heavy-work systemd slice capped at 400% CPU.
+- Automatic routing by known heavy command patterns.
+- Automatic routing of unknown child processes after sustained CPU usage.
+- Separate CPU budget for browser automation.
+- Explicit `run-workload` helper for heavy terminal work.
+- User-level systemd; no root daemon required.
+- cgroup v2 resource enforcement.
+
+## Architecture
+
+```text
+                    Linux Workload Guard
+                            |
+              +-------------+-------------+
+              |                           |
+        Known heavy task            Sustained CPU
+        build/test/ML/...             detection
+              |                           |
+              +-------------+-------------+
+                            |
+                     heavy workload slice
+                            |
+                       CPU quota
+```
+
+The router intentionally uses process ancestry for automatic routing. This prevents unrelated system processes from being captured just because they happen to use CPU.
+
+## Default budgets
+
+| Workload class | CPU quota |
+|---|---:|
+| Protected application/agent | 150% |
+| Heavy workload slice | 400% |
+| Browser automation | 200% |
+
+`100%` is approximately one logical CPU. Quotas are cgroup limits, not CPU priority scores.
 
 ## Install
 
@@ -18,57 +54,60 @@ Linux/systemd CPU guard for OpenClaw child workloads on CPU-limited machines.
 ./install.sh
 ```
 
-Installs user-level systemd units and helpers, enables the router and Chrome budget timer, and restarts an active OpenClaw gateway so the CPU quota applies.
+The installer installs user-level systemd units and helper commands. The parent workload is configurable with `WORKLOAD_GUARD_PARENT_UNIT`; the default example is `protected-workload.service`. The generic core is independent of a particular application.
 
 ## Usage
 
 ```bash
-run-task npm run build
-run-task cargo test
-run-task pytest
-run-task docker build .
+run-workload npm run build
+run-workload cargo test
+run-workload pytest
+run-workload docker build .
 ```
 
-Or enter the heavy slice:
+Or start an interactive shell inside the heavy workload slice:
 
 ```bash
-run-task
+run-workload
 ```
 
-Normal commands run normally.
+Normal commands are unchanged.
 
-## Detection
+## Automatic detection
 
-The router samples OpenClaw descendants every 2 seconds. Known build/test/compile/inference commands are routed immediately. Unknown commands are routed after four consecutive samples at or above the CPU threshold: 4 x 2 seconds = 8 seconds.
+The router samples descendants of the configured parent workload every 2 seconds.
 
-The sustained threshold avoids catching short-lived CPU spikes.
+Known heavy commands are routed immediately. Unknown commands are routed after four consecutive samples at or above 70% CPU, giving an 8-second sustained threshold.
+
+This avoids reacting to short-lived CPU spikes.
 
 ## Configuration
 
 Environment variables:
 
-- `OPENCLAW_CPU_GUARD_SAMPLE_SEC` — default `2`
-- `OPENCLAW_CPU_GUARD_SUSTAINED_SAMPLES` — default `4`
-- `OPENCLAW_CPU_GUARD_CPU_THRESHOLD` — default `70`
-- `OPENCLAW_CPU_GUARD_MAX_ANCESTRY` — default `32`
+- `WORKLOAD_GUARD_SAMPLE_SEC` — sample interval, default `2`
+- `WORKLOAD_GUARD_SUSTAINED_SAMPLES` — consecutive hot samples, default `4`
+- `WORKLOAD_GUARD_CPU_THRESHOLD` — percent of one logical CPU, default `70`
+- `WORKLOAD_GUARD_MAX_ANCESTRY` — parent traversal limit, default `32`
 
-The router resolves the target cgroups through `systemctl --user`, so it does not depend on a hard-coded numeric UID or home directory.
+## Host integrations
+
+The repository contains examples for common workload classes. These are integrations, not the identity of the project:
+
+- `systemd/protected-workload-cpu-budget.conf` — 150% protected workload budget.
+- `systemd/heavy-workload.slice` — 400% heavy workload budget.
+- `systemd/browser-automation.slice` — 200% browser automation budget.
+
+A host can attach any application or agent to the protected workload cgroup without changing the core router.
 
 ## Verify
 
 ```bash
-systemctl --user status openclaw-heavy-task-router.service
-systemctl --user status terminal-heavy.slice
-systemctl --user show openclaw-gateway.service -p CPUQuotaPerSecUSec -p ControlGroup
-systemctl --user show terminal-heavy.slice -p CPUQuotaPerSecUSec -p ControlGroup
-journalctl --user -u openclaw-heavy-task-router.service -n 50 --no-pager
+systemctl --user status workload-router.service
+systemctl --user status heavy-workload.slice
+systemctl --user show heavy-workload.slice -p CPUQuotaPerSecUSec -p ControlGroup
+journalctl --user -u workload-router.service -n 50 --no-pager
 ```
-
-Expected quotas:
-
-- gateway: `150000 100000`
-- heavy slice: `400000 100000`
-- ChatGPT Chrome slice: `200000 100000`
 
 ## Uninstall
 
@@ -76,7 +115,7 @@ Expected quotas:
 ./uninstall.sh
 ```
 
-Only files installed by this project are removed. OpenClaw data/projects are not deleted.
+Only files installed by this project are removed. Application data and projects are not deleted.
 
 ## Testing
 
@@ -84,7 +123,7 @@ Only files installed by this project are removed. OpenClaw data/projects are not
 ./test.sh
 ```
 
-Tests cover Python syntax and detection/exclusion logic. A real end-to-end routing test requires an OpenClaw child process and is deliberately not faked.
+Tests cover Python syntax and routing/exclusion logic. A real end-to-end routing test requires a child process attached to a configured workload parent and is not faked by the test suite.
 
 ## License
 

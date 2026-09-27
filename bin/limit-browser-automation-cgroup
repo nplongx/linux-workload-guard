@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-CG=/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/chatgpt.slice/chatgpt-chrome.slice
+CG=$(systemctl --user show browser-automation.slice -p ControlGroup --value | sed "s#^#/sys/fs/cgroup#")
 [ -d "$CG" ] || exit 0
 for p in $(pgrep -f 'google-chrome-chatgpt' 2>/dev/null || true); do
   [ -d "/proc/$p" ] || continue
