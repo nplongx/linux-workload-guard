@@ -25,6 +25,8 @@ QUOTA_MIN_DWELL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC", "10"
 QUOTA_SCHED_DELAY_HIGH_MS = float(os.getenv("WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS", "20"))
 QUOTA_SCHED_DELAY_LOW_MS = float(os.getenv("WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS", "5"))
 STATS_SAVE_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC", "10"))
+HISTORY_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_HISTORY_INTERVAL_SEC", "300"))
+HISTORY_FILE = os.getenv("WORKLOAD_GUARD_HISTORY_FILE", os.path.join(os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "linux-workload-guard", "history.jsonl"))
 STATS_FILE = os.getenv("WORKLOAD_GUARD_STATS_FILE", os.path.join(
     os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
     "linux-workload-guard", "stats.json"))
@@ -156,6 +158,15 @@ def save_stats(stats):
         os.chmod(tmp, 0o600)
         os.replace(tmp, STATS_FILE)
     except OSError as e: logging.debug("write stats failed: %s", e)
+
+def append_history(snapshot):
+    directory = os.path.dirname(HISTORY_FILE)
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        with open(HISTORY_FILE, "a") as f:
+            f.write(json.dumps(snapshot, sort_keys=True) + "\n")
+        os.chmod(HISTORY_FILE, 0o600)
+    except OSError as e: logging.debug("write history failed: %s", e)
 
 def update_stat(stats, cls, cpu):
     item = stats.setdefault(cls, {"samples": 0, "mean": 0.0, "variance": 0.0})
@@ -304,6 +315,12 @@ def main():
     last_quota_change=0.0
     quota_dwell_until=0.0
     last_stats_save=0.0
+    last_history_save=time.monotonic()
+    route_events=0
+    recovery_events=0
+    quota_changes=0
+    history_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
+    history_stat_time = time.monotonic()
     state_dirty=True
     current_quota=unit_quota(HEAVY_UNIT) if QUOTA_DYNAMIC else None
     quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
@@ -344,6 +361,7 @@ def main():
                             reason = "known-heavy" if known_heavy else ("sustained-cpu" if sustained else "adaptive")
                             routes[pid] = (cpu, reason, source_cgroup, heavy_cgroup, cmd)
                             last_move[pid] = time.monotonic()
+                            route_events += 1
                             state_dirty = True
                             logging.info('routed pid=%s cpu=%.1f%% reason=%s cmd=%s', pid,cpu,reason,cmd[:180])
             for pid in list(routes):
@@ -371,6 +389,7 @@ def main():
                         source = routes[pid][2] if os.path.isdir(routes[pid][2]) else gateway_cgroup
                         if move(pid, source):
                             logging.info('unrouted pid=%s cpu=%.1f%% recovery', pid, cpu)
+                            recovery_events += 1
                             moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
         if QUOTA_DYNAMIC and heavy_cgroup:
             now_mono = time.monotonic()
@@ -413,6 +432,7 @@ def main():
                                  'n/a' if pressure is None else f'{pressure:.3f}',
                                  'n/a' if sched_delay_ms is None else f'{sched_delay_ms:.2f}', demand)
                     current_quota = target
+                    quota_changes += 1
                     last_quota_change = now_mono
                     quota_dwell_until = now_mono + QUOTA_MIN_DWELL_SEC
         alive=set(now)
@@ -440,6 +460,22 @@ def main():
         if ADAPTIVE and now_mono - last_stats_save >= STATS_SAVE_INTERVAL_SEC:
             save_stats(stats)
             last_stats_save = now_mono
+        if now_mono - last_history_save >= HISTORY_INTERVAL_SEC:
+            hstat = cgroup_cpu_stat(heavy_cgroup) if heavy_cgroup else None
+            elapsed = max(0.001, now_mono - history_stat_time)
+            usage_pct = None; throttle_ratio = None
+            if history_stat_prev and hstat:
+                usage = max(0, hstat.get("usage_usec", 0) - history_stat_prev.get("usage_usec", 0))
+                periods = max(0, hstat.get("nr_periods", 0) - history_stat_prev.get("nr_periods", 0))
+                throttled = max(0, hstat.get("nr_throttled", 0) - history_stat_prev.get("nr_throttled", 0))
+                usage_pct = usage / (elapsed * 10000.0)
+                throttle_ratio = throttled / periods if periods else 0.0
+            append_history({"ts": int(time.time()), "routed": len(routes), "route_events": route_events,
+                            "recovery_events": recovery_events, "quota_changes": quota_changes,
+                            "quota": current_quota, "cpu_psi_some_avg10": cpu_pressure(),
+                            "scheduler_delay_ms": schedstat_delay_ms(), "heavy_cpu_pct": usage_pct,
+                            "heavy_throttle_ratio": throttle_ratio})
+            history_stat_prev = hstat; history_stat_time = now_mono; last_history_save = now_mono
         prev=now
         time.sleep(SAMPLE_SEC)
 

@@ -65,6 +65,7 @@ After installation:
 workload-guard status
 workload-guard diagnose
 workload-guard quota
+workload-guard history
 workload-guard profile
 workload-guard version
 ```
@@ -74,6 +75,8 @@ workload-guard version
 `profile` samples the cgroup v2 tree, reports top cgroups by CPU usage and throttling, shows system CPU PSI, and runs a scheduler wakeup-latency probe. Use `workload-guard profile --duration 5 --samples 200` for a longer snapshot. Scheduler latency is measured as timer-wakeup excess plus this process's `/proc/<pid>/schedstat` runqueue delay; it is a practical host-health signal, not a real-time scheduling guarantee.
 
 `quota` shows the current heavy-slice quota, CPU PSI, throttling counters, and configured scheduler/PSI thresholds used by the dynamic controller.
+
+`history` summarizes the last 1 hour, 6 hours, and 24 hours from lightweight 5-minute snapshots. It reports routing/recovery activity, quota changes, heavy-slice CPU and throttling, CPU PSI, and scheduler delay. History is stored under `~/.local/state/linux-workload-guard/history.jsonl` by default and is intended for operational visibility rather than high-resolution profiling.
 
 ## Configuration file
 
@@ -146,6 +149,7 @@ Environment variables:
 - `WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC` — minimum time between quota direction changes, default `10`.
 - `WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS` / `LOW_MS` — scheduler runqueue-delay thresholds, default `20` / `5` ms.
 - `WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC` — adaptive-statistics disk flush interval, default `10`.
+- `WORKLOAD_GUARD_HISTORY_INTERVAL_SEC` — runtime health snapshot interval, default `300` seconds.
 - `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
 - `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 

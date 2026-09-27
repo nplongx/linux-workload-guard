@@ -10,6 +10,7 @@ Usage:
   workload-guard diagnose  Show configuration and cgroup paths
   workload-guard stats      Show adaptive workload statistics
   workload-guard quota      Show current quota-controller telemetry
+  workload-guard history    Summarize recent runtime health (1h/6h/24h)
   workload-guard profile    Profile cgroups, CPU PSI, and scheduler latency
   workload-guard protect <command...>
   workload-guard version   Show version
@@ -60,6 +61,50 @@ show_quota() {
   printf 'scheduler thresholds: high=%sms low=%sms\n' "${WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS:-20}" "${WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS:-5}"
   printf 'PSI thresholds: high=%s low=%s\n' "${WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH:-0.40}" "${WORKLOAD_GUARD_QUOTA_PRESSURE_LOW:-0.10}"
 }
+show_history() {
+  state_file="${WORKLOAD_GUARD_HISTORY_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/linux-workload-guard/history.jsonl}"
+  printf '\n[Runtime history]\n'
+  if [ ! -s "$state_file" ]; then printf '%s\n' 'none'; return; fi
+  python3 - "$state_file" <<'PY'
+import json,sys,time,statistics
+path=sys.argv[1]; now=time.time(); rows=[]
+try:
+    with open(path) as f:
+        for line in f:
+            try:
+                x=json.loads(line)
+                if now-float(x.get('ts',0)) <= 86400: rows.append(x)
+            except Exception: pass
+except Exception: print('unavailable'); raise SystemExit
+if not rows: print('no samples in last 24h'); raise SystemExit
+def report(label,age):
+    rs=[x for x in rows if now-float(x.get('ts',0)) <= age]
+    if not rs: print(f'\n{label}: no samples'); return
+    def vals(k): return [float(x[k]) for x in rs if x.get(k) is not None]
+    q=vals('quota'); p=vals('cpu_psi_some_avg10'); s=vals('scheduler_delay_ms'); u=vals('heavy_cpu_pct'); t=vals('heavy_throttle_ratio')
+    print(f'\n{label} ({len(rs)} samples)')
+    print(f'  routed now       : {rs[-1].get("routed",0)}')
+    def counter_delta(key):
+        total=0; prev=None
+        for x in rs:
+            cur=int(x.get(key,0))
+            if prev is not None: total += cur-prev if cur >= prev else cur
+            prev=cur
+        return total
+    print(f'  route events     : {counter_delta("route_events")}')
+    print(f'  recovery events  : {counter_delta("recovery_events")}')
+    print(f'  quota changes    : {counter_delta("quota_changes")}')
+    if q: print(f'  quota avg/range  : {statistics.mean(q):.0f}% ({min(q):.0f}-{max(q):.0f}%)')
+    if u: print(f'  heavy CPU avg    : {statistics.mean(u):.1f}%')
+    if t: print(f'  heavy throttle   : {statistics.mean(t)*100:.1f}%')
+    if p: print(f'  CPU PSI avg10    : {statistics.mean(p)*100:.1f}% (peak {max(p)*100:.1f}%)')
+    if s:
+        p95=statistics.quantiles(s,n=20)[18] if len(s)>=2 else s[0]
+        print(f'  scheduler delay  : avg {statistics.mean(s):.1f}ms, p95 {p95:.1f}ms, peak {max(s):.1f}ms')
+for label,age in [('Last 1h',3600),('Last 6h',21600),('Last 24h',86400)]: report(label,age)
+print(f'\n  latest sample    : {time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(rows[-1]["ts"]))}')
+PY
+}
 show_stats() {
   state_file="${WORKLOAD_GUARD_STATS_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/linux-workload-guard/stats.json}"
   printf '\n[Adaptive statistics]\n'
@@ -100,6 +145,9 @@ case "${1:-status}" in
     ;;
   quota)
     show_quota
+    ;;
+  history)
+    show_history
     ;;
   profile)
     shift

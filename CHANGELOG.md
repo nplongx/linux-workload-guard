@@ -1,11 +1,22 @@
 # Changelog
 
+## [0.6.1] - 2026-09-27
+
+Operational history telemetry.
+
+### Added
+
+- Persistent 5-minute runtime health snapshots.
+- `workload-guard history` summaries for the last 1h, 6h, and 24h.
+- Historical visibility into routing/recovery events, quota changes, heavy-slice CPU/throttling, CPU PSI, and scheduler delay.
+
 ## [0.6.0] - 2026-09-27
 
 Router hardening and workload recovery.
 
 ### Added
 
+- Lightweight persistent runtime history with 5-minute health snapshots and `workload-guard history` for 1h/6h/24h summaries.
 - Sustained low-CPU recovery for long-lived routed workloads.
 - Runtime route-state reconciliation after router restart, including stale PID/command identity checks.
 - Fail-safe dynamic quota behavior when required cgroup or host-pressure telemetry is unavailable.
