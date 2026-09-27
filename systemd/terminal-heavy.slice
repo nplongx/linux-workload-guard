@@ -1,0 +1,6 @@
+[Unit]
+Description=Heavy terminal/build CPU budget
+
+[Slice]
+CPUQuota=400%
+CPUWeight=1000

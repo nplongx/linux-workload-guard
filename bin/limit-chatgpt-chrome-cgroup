@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+CG=/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/chatgpt.slice/chatgpt-chrome.slice
+[ -d "$CG" ] || exit 0
+for p in $(pgrep -f 'google-chrome-chatgpt' 2>/dev/null || true); do
+  [ -d "/proc/$p" ] || continue
+  echo "$p" > "$CG/cgroup.procs" 2>/dev/null || true
+done

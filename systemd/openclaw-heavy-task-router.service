@@ -1,0 +1,12 @@
+[Unit]
+Description=Auto-route heavy OpenClaw child tasks to terminal CPU budget
+After=openclaw-gateway.service terminal-heavy.slice
+
+[Service]
+ExecStart=%h/.local/bin/openclaw-heavy-task-router.py
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

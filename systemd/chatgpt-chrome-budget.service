@@ -1,0 +1,7 @@
+[Unit]
+Description=Keep ChatGPT automation Chrome inside CPU budget cgroup
+After=chatgpt-chrome.slice
+
+[Service]
+Type=oneshot
+ExecStart=/home/long/.local/bin/limit-chatgpt-chrome-cgroup

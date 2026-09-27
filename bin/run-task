@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+SLICE=terminal-heavy.slice
+if [ "$#" -eq 0 ]; then
+  exec systemd-run --user --scope --slice="$SLICE" "$SHELL"
+fi
+case "$(printf '%s ' "$@" | tr '[:upper:]' '[:lower:]')" in
+  *build*|*compile*|*test*|*pytest*|*cargo*|*rustc*|*tsc*|*webpack*|*vite*|*esbuild*|*rollup*|*parcel*|*gradle*|*mvn*|*cmake*|*make*|*ffmpeg*|*docker\ build*|*podman\ build*|*inference*)
+    exec systemd-run --user --scope --slice="$SLICE" -- "$@"
+    ;;
+  *)
+    exec "$@"
+    ;;
+esac
