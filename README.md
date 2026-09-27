@@ -62,7 +62,7 @@ workload-guard version
 
 ## Configuration file
 
-For host-specific policy, copy `config/workload-guard.env.example` to `~/.config/linux-workload-guard/workload-guard.env` and use the variables as the environment source for the user service. The example is intentionally not installed automatically. The installed `workload-guard` CLI keeps its version under `~/.local/share/linux-workload-guard/`.
+For host-specific policy, edit `~/.config/linux-workload-guard/workload-guard.env`. The installer creates it from the example only when the file does not already exist, and never overwrites an existing config. `workload-router.service` loads this file automatically on restart.
 
 ## Install
 
@@ -71,6 +71,12 @@ For host-specific policy, copy `config/workload-guard.env.example` to `~/.config
 ```
 
 The installer installs user-level systemd units and helper commands. The parent workload is configurable with `WORKLOAD_GUARD_PARENT_UNIT`; the default is the generic `protected-workload.slice`. The generic core is independent of a particular application.
+
+After changing the config file, reload the user service:
+
+```bash
+systemctl --user restart workload-router.service
+```
 
 ## Usage
 

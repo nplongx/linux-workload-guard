@@ -4,7 +4,8 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 USER_SYSTEMD="$HOME/.config/systemd/user"
 BIN="$HOME/.local/bin"
 DATA="$HOME/.local/share/linux-workload-guard"
-mkdir -p "$USER_SYSTEMD" "$BIN" "$DATA"
+CONFIG_DIR="$HOME/.config/linux-workload-guard"
+mkdir -p "$USER_SYSTEMD" "$BIN" "$DATA" "$CONFIG_DIR"
 install -m 0755 "$ROOT/bin/workload-router.py" "$BIN/workload-router.py"
 install -m 0755 "$ROOT/bin/run-workload" "$BIN/run-workload"
 install -m 0755 "$ROOT/bin/workload-guard" "$BIN/workload-guard"
@@ -16,6 +17,9 @@ install -m 0644 "$ROOT/systemd/browser-automation.slice" "$USER_SYSTEMD/browser-
 install -m 0644 "$ROOT/systemd/browser-automation-budget.service" "$USER_SYSTEMD/browser-automation-budget.service"
 install -m 0644 "$ROOT/systemd/browser-automation-budget.timer" "$USER_SYSTEMD/browser-automation-budget.timer"
 install -m 0644 "$ROOT/systemd/workload-router.service" "$USER_SYSTEMD/workload-router.service"
+if [ ! -f "$CONFIG_DIR/workload-guard.env" ]; then
+  install -m 0644 "$ROOT/config/workload-guard.env.example" "$CONFIG_DIR/workload-guard.env"
+fi
 systemctl --user daemon-reload
 systemctl --user enable --now protected-workload.slice heavy-workload.slice
 systemctl --user enable --now browser-automation-budget.timer
