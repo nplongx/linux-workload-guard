@@ -1,0 +1,6 @@
+[Unit]
+Description=Protected workload CPU budget
+
+[Slice]
+CPUQuota=150%
+CPUWeight=300

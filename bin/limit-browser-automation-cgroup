@@ -2,7 +2,9 @@
 set -eu
 CG=$(systemctl --user show browser-automation.slice -p ControlGroup --value | sed "s#^#/sys/fs/cgroup#")
 [ -d "$CG" ] || exit 0
-for p in $(pgrep -f 'google-chrome-chatgpt' 2>/dev/null || true); do
+PATTERN=${WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN:-}
+[ -n "$PATTERN" ] || exit 0
+for p in $(pgrep -f -- "$PATTERN" 2>/dev/null || true); do
   [ -d "/proc/$p" ] || continue
   echo "$p" > "$CG/cgroup.procs" 2>/dev/null || true
 done

@@ -3,5 +3,7 @@ Description=Keep browser automation inside CPU budget cgroup
 After=browser-automation.slice
 
 [Service]
+# Set this to the browser/automation process pattern you want to budget.
+Environment=WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN=
 Type=oneshot
 ExecStart=%h/.local/bin/limit-browser-automation-cgroup

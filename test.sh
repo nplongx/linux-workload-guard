@@ -10,8 +10,8 @@ for command in ("npm run build", "cargo test", "pytest -q", "ffmpeg -i in out"):
     assert mod.command_heavy(command), command
 assert not mod.command_heavy("python app.py")
 assert mod.is_excluded("python /home/x/workload-router.py")
-assert mod.is_excluded("/usr/bin/google-chrome-chatgpt")
-assert mod.PARENT_UNIT == "protected-workload.service"
+assert not mod.is_excluded("/usr/bin/google-chrome")
+assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
 PY

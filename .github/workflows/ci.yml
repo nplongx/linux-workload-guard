@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: ./test.sh
+      - name: Stage installed helpers for systemd validation
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 bin/workload-router.py "$HOME/.local/bin/workload-router.py"
+          install -m 0755 bin/limit-browser-automation-cgroup "$HOME/.local/bin/limit-browser-automation-cgroup"
+      - name: Validate systemd units
+        run: systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
+      - name: Shell syntax
+        run: sh -n install.sh uninstall.sh test.sh bin/run-workload bin/limit-browser-automation-cgroup

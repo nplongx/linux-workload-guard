@@ -54,7 +54,7 @@ The router intentionally uses process ancestry for automatic routing. This preve
 ./install.sh
 ```
 
-The installer installs user-level systemd units and helper commands. The parent workload is configurable with `WORKLOAD_GUARD_PARENT_UNIT`; the default example is `protected-workload.service`. The generic core is independent of a particular application.
+The installer installs user-level systemd units and helper commands. The parent workload is configurable with `WORKLOAD_GUARD_PARENT_UNIT`; the default is the generic `protected-workload.slice`. The generic core is independent of a particular application.
 
 ## Usage
 
@@ -89,16 +89,18 @@ Environment variables:
 - `WORKLOAD_GUARD_SUSTAINED_SAMPLES` — consecutive hot samples, default `4`
 - `WORKLOAD_GUARD_CPU_THRESHOLD` — percent of one logical CPU, default `70`
 - `WORKLOAD_GUARD_MAX_ANCESTRY` — parent traversal limit, default `32`
+- `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
+- `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 
 ## Host integrations
 
-The repository contains examples for common workload classes. These are integrations, not the identity of the project:
+The repository contains generic workload primitives plus optional integrations for common workload classes. These are integrations, not the identity of the project:
 
-- `systemd/protected-workload-cpu-budget.conf` — 150% protected workload budget.
+- `systemd/protected-workload.slice` — 150% protected workload budget.
 - `systemd/heavy-workload.slice` — 400% heavy workload budget.
 - `systemd/browser-automation.slice` — 200% browser automation budget.
 
-A host can attach any application or agent to the protected workload cgroup without changing the core router.
+A host can attach any application or agent to the protected workload slice without changing the core router. For example: `systemd-run --user --scope --slice=protected-workload.slice <command>`. The optional browser automation timer only acts when `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` is configured.
 
 ## Verify
 
@@ -116,6 +118,15 @@ journalctl --user -u workload-router.service -n 50 --no-pager
 ```
 
 Only files installed by this project are removed. Application data and projects are not deleted.
+
+## Requirements
+
+- Linux with cgroup v2
+- systemd user manager
+- Python 3
+- POSIX shell
+
+The project is designed for user-level installation and does not require root.
 
 ## Testing
 

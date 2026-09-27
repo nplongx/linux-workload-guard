@@ -6,7 +6,7 @@ SAMPLE_SEC = float(os.getenv("WORKLOAD_GUARD_SAMPLE_SEC", "2"))
 SUSTAINED_SAMPLES = int(os.getenv("WORKLOAD_GUARD_SUSTAINED_SAMPLES", "4"))
 CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_CPU_THRESHOLD", "70"))
 MAX_ANCESTRY = int(os.getenv("WORKLOAD_GUARD_MAX_ANCESTRY", "32"))
-PARENT_UNIT = os.getenv("WORKLOAD_GUARD_PARENT_UNIT", "protected-workload.service")
+PARENT_UNIT = os.getenv("WORKLOAD_GUARD_PARENT_UNIT", "protected-workload.slice")
 HEAVY_UNIT = os.getenv("WORKLOAD_GUARD_HEAVY_UNIT", "heavy-workload.slice")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -63,9 +63,11 @@ HEAVY = (
     'podman build','ffmpeg ','inference','torchrun','accelerate launch'
 )
 HEAVY_NAMES = {'tsc','rustc','cargo','go','make','ninja','pytest','ffmpeg','torchrun','gradle','mvn'}
-EXCLUDE = (
-    'workload-router.py', 'workload-router',
-    'google-chrome-chatgpt', 'chrome_crashpad_handler', 'chromedriver'
+DEFAULT_EXCLUDE = (
+    'workload-router.py', 'workload-router'
+)
+EXCLUDE = DEFAULT_EXCLUDE + tuple(
+    x.strip().lower() for x in os.getenv("WORKLOAD_GUARD_EXCLUDE_PATTERNS", "").split(",") if x.strip()
 )
 
 def is_excluded(cmd):
