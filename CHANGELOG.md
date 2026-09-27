@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0] - 2026-09-27
+
+Dynamic quota allocation.
+
+### Added
+
+- Optional CPU PSI-aware heavy-slice quota controller.
+- Bounded quota floor, ceiling, step size, and control interval.
+- Workload demand signal derived from routed workload CPU/adaptive score.
+- Dynamic quota remains opt-in and does not change protected workload quota.
+
+
 ## [0.4.0] - 2026-09-27
 
 Lightweight adaptive routing.

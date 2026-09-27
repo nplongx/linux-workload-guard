@@ -10,6 +10,13 @@ LEARNING_RATE = float(os.getenv("WORKLOAD_GUARD_LEARNING_RATE", "0.15"))
 ROUTE_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_ROUTE_THRESHOLD", "0.75"))
 COOLDOWN_SEC = float(os.getenv("WORKLOAD_GUARD_COOLDOWN_SEC", "20"))
 MIN_SAMPLES = int(os.getenv("WORKLOAD_GUARD_MIN_SAMPLES", "8"))
+QUOTA_DYNAMIC = os.getenv("WORKLOAD_GUARD_DYNAMIC_QUOTA", "false").lower() in ("1", "true", "yes", "on")
+QUOTA_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_INTERVAL_SEC", "10"))
+QUOTA_MIN = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN", "100"))
+QUOTA_MAX = float(os.getenv("WORKLOAD_GUARD_QUOTA_MAX", "400"))
+QUOTA_STEP = float(os.getenv("WORKLOAD_GUARD_QUOTA_STEP", "50"))
+QUOTA_PRESSURE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH", "0.20"))
+QUOTA_PRESSURE_LOW = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_LOW", "0.05"))
 STATS_FILE = os.getenv("WORKLOAD_GUARD_STATS_FILE", os.path.join(
     os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
     "linux-workload-guard", "stats.json"))
@@ -136,6 +143,50 @@ def adaptive_score(cpu, stat):
     normalized = min(1.0, max(0.0, cpu / max(100.0, CPU_THRESHOLD)))
     return 0.65 * normalized + 0.35 * anomaly
 
+def cpu_pressure():
+    try:
+        with open("/proc/pressure/cpu") as f:
+            for line in f:
+                if line.startswith("some "):
+                    parts = dict(x.split("=") for x in line.split()[1:] if "=" in x)
+                    return float(parts.get("avg10", 0.0)) / 100.0
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+def unit_quota(unit):
+    try:
+        value = subprocess.check_output(
+            ["systemctl", "--user", "show", unit, "--property=CPUQuotaPerSecUSec", "--value"],
+            text=True, stderr=subprocess.DEVNULL, timeout=2,
+        ).strip()
+        if value.endswith("s"):
+            return float(value[:-1]) * 100.0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return None
+
+def set_unit_quota(unit, quota):
+    try:
+        subprocess.run(
+            ["systemctl", "--user", "set-property", unit, f"CPUQuota={quota:.0f}%"],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3,
+        )
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+def dynamic_quota_target(current, pressure, demand):
+    if current is None:
+        current = QUOTA_MIN
+    if pressure is not None and pressure >= QUOTA_PRESSURE_HIGH:
+        return max(QUOTA_MIN, current - QUOTA_STEP)
+    if pressure is not None and pressure <= QUOTA_PRESSURE_LOW and demand >= 0.60:
+        return min(QUOTA_MAX, current + QUOTA_STEP)
+    if demand < 0.30:
+        return max(QUOTA_MIN, current - QUOTA_STEP)
+    return current
+
 def move(pid, target_cgroup):
     try:
         with open(os.path.join(target_cgroup, "cgroup.procs"), "a") as f: f.write(str(pid)+"\n")
@@ -166,6 +217,8 @@ def main():
     routes={}
     stats=load_stats() if ADAPTIVE else {}
     last_move={}
+    last_quota_change=0.0
+    current_quota=unit_quota(HEAVY_UNIT) if QUOTA_DYNAMIC else None
     logging.info('started threshold=%.0f%% sustained=%ss adaptive=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, ADAPTIVE)
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
@@ -203,6 +256,24 @@ def main():
                             routes[pid] = (cpu, reason, gateway_cgroup, heavy_cgroup, cmd)
                             last_move[pid] = time.monotonic()
                             logging.info('routed pid=%s cpu=%.1f%% reason=%s cmd=%s', pid,cpu,reason,cmd[:180])
+        if QUOTA_DYNAMIC and heavy_cgroup:
+            now_mono = time.monotonic()
+            if now_mono - last_quota_change >= QUOTA_INTERVAL_SEC:
+                pressure = cpu_pressure()
+                demand = 0.0
+                if routes:
+                    demand = min(1.0, max(
+                        adaptive_score(data[0], stats.get(command_class(data[4]))) or
+                        min(1.0, data[0] / max(100.0, CPU_THRESHOLD))
+                        for data in routes.values()
+                    ))
+                target = dynamic_quota_target(current_quota, pressure, demand)
+                if target != current_quota and set_unit_quota(HEAVY_UNIT, target):
+                    logging.info('quota changed unit=%s old=%.0f%% new=%.0f%% pressure=%s demand=%.2f',
+                                 HEAVY_UNIT, current_quota or 0, target,
+                                 'n/a' if pressure is None else f'{pressure:.3f}', demand)
+                    current_quota = target
+                    last_quota_change = now_mono
         alive=set(now)
         for pid in list(hot):
             if pid not in alive: hot.pop(pid,None)

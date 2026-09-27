@@ -19,6 +19,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - User-level systemd; no root daemon required.
 - Routing observability with PID, CPU, reason, source cgroup, destination cgroup, and command.
 - Optional adaptive routing using lightweight online CPU statistics.
+- Optional dynamic heavy-workload CPU quota using CPU pressure and workload demand.
 - cgroup v2 resource enforcement.
 
 ## Architecture
@@ -105,7 +106,7 @@ Known heavy commands are routed immediately. Unknown commands are routed after f
 
 This avoids reacting to short-lived CPU spikes.
 
-Adaptive mode is deliberately opt-in. It keeps a small per-command-class CPU baseline using online mean/variance updates; it is not a black-box model and requires a minimum history before it can route. Known-heavy and sustained-CPU rules remain active regardless of adaptive mode.
+Adaptive mode is deliberately opt-in. Dynamic quota is also opt-in; when enabled it adjusts only the heavy workload slice, using CPU PSI pressure, learned demand, bounded steps, and a 100–400% default range. It keeps a small per-command-class CPU baseline using online mean/variance updates; it is not a black-box model and requires a minimum history before it can route. Known-heavy and sustained-CPU rules remain active regardless of adaptive mode.
 
 ## Configuration
 
@@ -119,6 +120,11 @@ Environment variables:
 - `WORKLOAD_GUARD_ROUTE_THRESHOLD` — adaptive score required for routing, default `0.75`.
 - `WORKLOAD_GUARD_COOLDOWN_SEC` — minimum time between route attempts for a PID, default `20`.
 - `WORKLOAD_GUARD_MIN_SAMPLES` — historical samples required before adaptive scoring, default `8`.
+- `WORKLOAD_GUARD_DYNAMIC_QUOTA` — enable dynamic heavy-slice quota, default `false`.
+- `WORKLOAD_GUARD_QUOTA_INTERVAL_SEC` — quota controller interval, default `10`.
+- `WORKLOAD_GUARD_QUOTA_MIN` / `MAX` — quota bounds, default `100` / `400`.
+- `WORKLOAD_GUARD_QUOTA_STEP` — maximum quota change per controller step, default `50`.
+- `WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH` / `LOW` — CPU PSI pressure thresholds, default `0.20` / `0.05`.
 - `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
 - `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 
