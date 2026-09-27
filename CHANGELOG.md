@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.2] - 2026-09-27
+
+Router overhead reduction.
+
+### Changed
+
+- Route state is written only when routing state changes instead of every sample.
+- Adaptive statistics are flushed periodically instead of every sampling cycle.
+- Added `WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC` for tuning the statistics flush interval.
+- Fixed the test suite's version assertion to match the current release.
+
 ## [0.5.1] - 2026-09-27
 
 Performance and quota-controller fixes.

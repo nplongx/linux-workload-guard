@@ -19,6 +19,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - User-level systemd; no root daemon required.
 - Routing observability with PID, CPU, reason, source cgroup, destination cgroup, and command.
 - Optional adaptive routing using lightweight online CPU statistics.
+- Low-overhead runtime state/statistics persistence.
 - Optional dynamic heavy-workload CPU quota using CPU pressure and workload demand.
 - Explicit `workload-guard protect` helper for placing latency-sensitive commands in the protected slice.
 - cgroup v2 resource enforcement.
@@ -103,7 +104,7 @@ Normal commands are unchanged.
 
 ## Automatic detection
 
-The router samples descendants of the configured parent workload every 2 seconds.
+The router samples descendants of the configured parent workload every 2 seconds. Runtime route state is persisted only when it changes, and adaptive statistics are flushed periodically rather than on every sample.
 
 Known heavy commands are routed immediately. Unknown commands are routed after four consecutive samples at or above 70% CPU, giving an 8-second sustained threshold.
 
@@ -130,6 +131,7 @@ Environment variables:
 - `WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH` / `LOW` — CPU PSI pressure thresholds, default `0.20` / `0.05`.
 - `WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH` — heavy cgroup throttling ratio that permits quota growth, default `0.10`.
 - `WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC` — minimum time between quota direction changes, default `20`.
+- `WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC` — adaptive-statistics disk flush interval, default `10`.
 - `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
 - `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 
@@ -175,7 +177,7 @@ The project is designed for user-level installation and does not require root.
 ./test.sh
 ```
 
-Tests cover Python syntax and routing/exclusion logic. The integration test starts a nested systemd scope, drives a CPU-bound child through the real router, and verifies both cgroup movement and recorded routing state.
+Tests cover Python syntax, routing/exclusion logic, and quota decisions. The integration test starts a nested systemd scope, drives a CPU-bound child through the real router, and verifies both cgroup movement and recorded routing state.
 
 ## Release
 

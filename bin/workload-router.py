@@ -19,6 +19,7 @@ QUOTA_PRESSURE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH", "0.2
 QUOTA_PRESSURE_LOW = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_LOW", "0.05"))
 QUOTA_THROTTLE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH", "0.10"))
 QUOTA_MIN_DWELL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC", "20"))
+STATS_SAVE_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC", "10"))
 STATS_FILE = os.getenv("WORKLOAD_GUARD_STATS_FILE", os.path.join(
     os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
     "linux-workload-guard", "stats.json"))
@@ -261,6 +262,8 @@ def main():
     last_move={}
     last_quota_change=0.0
     quota_dwell_until=0.0
+    last_stats_save=0.0
+    state_dirty=True
     current_quota=unit_quota(HEAVY_UNIT) if QUOTA_DYNAMIC else None
     quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
     quota_stat_time = time.monotonic()
@@ -297,6 +300,7 @@ def main():
                             reason = "known-heavy" if known_heavy else ("sustained-cpu" if sustained else "adaptive")
                             routes[pid] = (cpu, reason, gateway_cgroup, heavy_cgroup, cmd)
                             last_move[pid] = time.monotonic()
+                            state_dirty = True
                             logging.info('routed pid=%s cpu=%.1f%% reason=%s cmd=%s', pid,cpu,reason,cmd[:180])
         if QUOTA_DYNAMIC and heavy_cgroup:
             now_mono = time.monotonic()
@@ -339,11 +343,18 @@ def main():
             if not os.path.exists(f"/proc/{pid}") or not in_cgroup_tree(pid, heavy_cgroup):
                 moved.discard(pid)
                 routes.pop(pid, None)
+                state_dirty = True
         for pid in list(routes):
             if pid not in moved:
                 routes.pop(pid, None)
-        write_state(routes)
-        if ADAPTIVE: save_stats(stats)
+                state_dirty = True
+        now_mono = time.monotonic()
+        if state_dirty:
+            write_state(routes)
+            state_dirty = False
+        if ADAPTIVE and now_mono - last_stats_save >= STATS_SAVE_INTERVAL_SEC:
+            save_stats(stats)
+            last_stats_save = now_mono
         prev=now
         time.sleep(SAMPLE_SEC)
 
