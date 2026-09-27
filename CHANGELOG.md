@@ -25,6 +25,7 @@ Router overhead reduction.
 - Fixed the test suite's version assertion to match the current release.
 - Added `workload-guard profile` for system-wide cgroup CPU usage, CPU PSI, and scheduler-latency profiling.
 - Reduced the default quota control interval to 5s and minimum quota dwell to 10s; pressure/demand thresholds remain hysteretic to avoid rapid reversals.
+- Installer now deploys the `workload-profile` helper with the CLI.
 
 ## [0.5.1] - 2026-09-27
 
