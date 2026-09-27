@@ -7,6 +7,10 @@ SUSTAINED_SAMPLES = int(os.getenv("WORKLOAD_GUARD_SUSTAINED_SAMPLES", "4"))
 CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_CPU_THRESHOLD", "70"))
 PARENT_UNIT = os.getenv("WORKLOAD_GUARD_PARENT_UNIT", "protected-workload.slice")
 HEAVY_UNIT = os.getenv("WORKLOAD_GUARD_HEAVY_UNIT", "heavy-workload.slice")
+STATE_FILE = os.getenv(
+    "WORKLOAD_GUARD_STATE_FILE",
+    os.path.join(os.getenv("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "linux-workload-guard", "routes.tsv"),
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -90,10 +94,26 @@ def move(pid, target_cgroup):
         logging.debug('move pid=%s failed: %s', pid, e)
         return False
 
+def write_state(routes):
+    directory = os.path.dirname(STATE_FILE)
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            for pid, data in sorted(routes.items()):
+                cpu, reason, source, target, cmd = data
+                fields = (str(pid), f"{cpu:.1f}", reason, source, target, cmd.replace("\t", " ").replace("\n", " "))
+                f.write("\t".join(fields) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, STATE_FILE)
+    except OSError as e:
+        logging.debug("write state failed: %s", e)
+
 def main():
     prev={}
     hot={}
     moved=set()
+    routes={}
     logging.info('started threshold=%.0f%% sustained=%ss', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES)
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
@@ -116,15 +136,25 @@ def main():
                         hot[pid]=hot.get(pid,0)+1
                     else:
                         hot[pid]=0
-                    if command_heavy(cmd) or hot.get(pid,0) >= SUSTAINED_SAMPLES:
+                    known_heavy = command_heavy(cmd)
+                    sustained = hot.get(pid,0) >= SUSTAINED_SAMPLES
+                    if known_heavy or sustained:
                         if pid not in moved and move(pid, heavy_cgroup):
                             moved.add(pid)
-                            logging.info('routed pid=%s cpu=%.1f%% hot=%s cmd=%s', pid,cpu,hot.get(pid,0),cmd[:180])
+                            reason = "known-heavy" if known_heavy else "sustained-cpu"
+                            routes[pid] = (cpu, reason, gateway_cgroup, heavy_cgroup, cmd)
+                            logging.info('routed pid=%s cpu=%.1f%% reason=%s cmd=%s', pid,cpu,reason,cmd[:180])
         alive=set(now)
         for pid in list(hot):
             if pid not in alive: hot.pop(pid,None)
         for pid in list(moved):
-            if pid not in alive: moved.discard(pid)
+            if not os.path.exists(f"/proc/{pid}") or not in_cgroup_tree(pid, heavy_cgroup):
+                moved.discard(pid)
+                routes.pop(pid, None)
+        for pid in list(routes):
+            if pid not in moved:
+                routes.pop(pid, None)
+        write_state(routes)
         prev=now
         time.sleep(SAMPLE_SEC)
 

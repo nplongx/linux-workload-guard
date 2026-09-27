@@ -6,7 +6,7 @@ usage() {
 Linux Workload Guard
 
 Usage:
-  workload-guard status    Show services and CPU quotas
+  workload-guard status    Show services, quotas, and routed workloads
   workload-guard diagnose  Show configuration and cgroup paths
   workload-guard version   Show version
   workload-guard help      Show this help
@@ -27,6 +27,21 @@ show_unit() {
     -p ActiveState -p SubState -p ControlGroup -p CPUQuotaPerSecUSec -p CPUWeight \
     --no-pager 2>/dev/null || true
 }
+show_routes() {
+  state_file="${WORKLOAD_GUARD_STATE_FILE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/linux-workload-guard/routes.tsv}"
+  printf '\n[Routed workloads]\n'
+  if [ ! -s "$state_file" ]; then
+    printf '%s\n' 'none'
+    return
+  fi
+  printf '%-7s %-7s %-16s %-34s %-34s %s\n' PID CPU REASON SOURCE DESTINATION COMMAND
+  while IFS="$(printf '\t')" read -r pid cpu reason source target cmd; do
+    [ -n "$pid" ] || continue
+    current_cpu=$(ps -p "$pid" -o %cpu= 2>/dev/null | awk '{print $1}' || true)
+    [ -n "$current_cpu" ] || current_cpu="$cpu"
+    printf '%-7s %-7s %-16s %-34s %-34s %s\n' "$pid" "${current_cpu}%" "$reason" "$source" "$target" "$cmd"
+  done < "$state_file"
+}
 case "${1:-status}" in
   status)
     printf 'Linux Workload Guard %s\n' "$(version)"
@@ -34,6 +49,7 @@ case "${1:-status}" in
     show_unit heavy-workload.slice
     show_unit workload-router.service
     show_unit browser-automation.slice
+    show_routes
     ;;
   diagnose)
     printf 'Linux Workload Guard %s\n' "$(version)"

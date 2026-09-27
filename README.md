@@ -17,6 +17,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - Separate CPU budget for browser automation.
 - Explicit `run-workload` helper for heavy terminal work.
 - User-level systemd; no root daemon required.
+- Routing observability with PID, CPU, reason, source cgroup, destination cgroup, and command.
 - cgroup v2 resource enforcement.
 
 ## Architecture
@@ -58,7 +59,7 @@ workload-guard diagnose
 workload-guard version
 ```
 
-`status` shows service state and CPU quotas. `diagnose` checks cgroup v2 and the configured workload units.
+`status` shows service state, CPU quotas, and currently routed workloads. Routed entries include PID, current CPU sample, routing reason (`known-heavy` or `sustained-cpu`), source cgroup, destination cgroup, and command. `diagnose` checks cgroup v2 and the configured workload units.
 
 ## Configuration file
 
@@ -155,7 +156,7 @@ The project is designed for user-level installation and does not require root.
 ./test.sh
 ```
 
-Tests cover Python syntax and routing/exclusion logic. A real end-to-end routing test requires a child process attached to a configured workload parent and is not faked by the test suite.
+Tests cover Python syntax and routing/exclusion logic. The integration test starts a nested systemd scope, drives a CPU-bound child through the real router, and verifies both cgroup movement and recorded routing state.
 
 ## Release
 

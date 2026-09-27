@@ -20,10 +20,11 @@ UNIT="workload-guard-e2e-$$.scope"
 PID_FILE="/tmp/linux-workload-guard-e2e.$$.pid"
 ROUTER_PID=''
 WORK_PID=''
+STATE_FILE="/tmp/linux-workload-guard-e2e.$$.routes.tsv"
 cleanup() {
   if [ -n "$ROUTER_PID" ]; then kill "$ROUTER_PID" 2>/dev/null || true; fi
   systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
-  rm -f "$PID_FILE"
+  rm -f "$PID_FILE" "$STATE_FILE"
 }
 trap cleanup EXIT INT TERM
 
@@ -50,6 +51,7 @@ env \
   WORKLOAD_GUARD_CPU_THRESHOLD=10 \
   WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice \
   WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice \
+  WORKLOAD_GUARD_STATE_FILE="$STATE_FILE" \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-e2e.$$.log 2>&1 &
 ROUTER_PID=$!
 
@@ -59,6 +61,9 @@ HEAVY_CGROUP="/sys/fs/cgroup$HEAVY_CGROUP"
 
 for _ in $(seq 1 40); do
   if grep -qx "$WORK_PID" "$HEAVY_CGROUP/cgroup.procs" 2>/dev/null; then
+    test -s "$STATE_FILE"
+    grep -q "^$WORK_PID	.*	sustained-cpu	" "$STATE_FILE"
+    grep -q "$HEAVY_CGROUP" "$STATE_FILE"
     printf '%s\n' 'integration routing: ok'
     exit 0
   fi

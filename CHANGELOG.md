@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2026-09-27
+
+Routing observability.
+
+### Added
+
+- `workload-guard status` now shows routed PIDs, CPU usage, routing reason, source cgroup, destination cgroup, and command.
+- Router maintains an atomic runtime route-state file under the user runtime directory.
+- Routing state distinguishes `known-heavy` command matches from `sustained-cpu` threshold routing.
+
 ## [0.2.0] - 2026-09-27
 
 Real cgroup-tree routing.

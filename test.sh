@@ -16,7 +16,7 @@ assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
 PY
-test "$("$ROOT/bin/workload-guard" version)" = "0.2.0"
+test "$("$ROOT/bin/workload-guard" version)" = "0.3.0"
 grep -q '^EnvironmentFile=-%h/.config/linux-workload-guard/workload-guard.env$' "$ROOT/systemd/workload-router.service"
 grep -q 'CONFIG_DIR="$HOME/.config/linux-workload-guard"' "$ROOT/install.sh"
 printf '%s\n' 'tests: ok'

@@ -5,6 +5,7 @@ After=protected-workload.slice heavy-workload.slice
 [Service]
 Environment=WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice
 Environment=WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice
+Environment=WORKLOAD_GUARD_STATE_FILE=%t/linux-workload-guard/routes.tsv
 EnvironmentFile=-%h/.config/linux-workload-guard/workload-guard.env
 ExecStart=%h/.local/bin/workload-router.py
 Restart=always
