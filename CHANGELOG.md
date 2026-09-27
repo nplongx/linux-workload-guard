@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.4] - 2026-09-27
+
+Scheduler-aware dynamic quota control.
+
+### Changed
+
+- Dynamic quota pressure decisions now combine CPU PSI with the router process's accumulated runqueue delay.
+- Raised default high/low CPU PSI thresholds to 40%/10% to avoid throttling heavy workloads solely because of moderate host contention.
+- Added WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS and WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS for scheduler-pressure hysteresis.
+
 ## [0.5.3] - 2026-09-27
 
 System profiling and faster quota response.

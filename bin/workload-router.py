@@ -15,10 +15,12 @@ QUOTA_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_INTERVAL_SEC", "5"))
 QUOTA_MIN = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN", "100"))
 QUOTA_MAX = float(os.getenv("WORKLOAD_GUARD_QUOTA_MAX", "400"))
 QUOTA_STEP = float(os.getenv("WORKLOAD_GUARD_QUOTA_STEP", "50"))
-QUOTA_PRESSURE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH", "0.20"))
-QUOTA_PRESSURE_LOW = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_LOW", "0.05"))
+QUOTA_PRESSURE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH", "0.40"))
+QUOTA_PRESSURE_LOW = float(os.getenv("WORKLOAD_GUARD_QUOTA_PRESSURE_LOW", "0.10"))
 QUOTA_THROTTLE_HIGH = float(os.getenv("WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH", "0.10"))
 QUOTA_MIN_DWELL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC", "10"))
+QUOTA_SCHED_DELAY_HIGH_MS = float(os.getenv("WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS", "20"))
+QUOTA_SCHED_DELAY_LOW_MS = float(os.getenv("WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS", "5"))
 STATS_SAVE_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC", "10"))
 STATS_FILE = os.getenv("WORKLOAD_GUARD_STATS_FILE", os.path.join(
     os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
@@ -207,6 +209,14 @@ def unit_quota(unit):
         pass
     return None
 
+def schedstat_delay_ms():
+    try:
+        with open(f"/proc/{os.getpid()}/schedstat") as f:
+            fields = f.read().split()
+        return int(fields[1]) / 1_000_000.0
+    except (OSError, ValueError, IndexError):
+        return None
+
 def set_unit_quota(unit, quota):
     try:
         subprocess.run(
@@ -217,16 +227,24 @@ def set_unit_quota(unit, quota):
     except (OSError, subprocess.SubprocessError):
         return False
 
-def dynamic_quota_target(current, pressure, demand, throttled_ratio=0.0):
+def dynamic_quota_target(current, pressure, demand, throttled_ratio=0.0, sched_delay_ms=None):
     if current is None:
         current = QUOTA_MIN
-    if pressure is not None and pressure >= QUOTA_PRESSURE_HIGH:
+    high_pressure = (
+        (pressure is not None and pressure >= QUOTA_PRESSURE_HIGH) or
+        (sched_delay_ms is not None and sched_delay_ms >= QUOTA_SCHED_DELAY_HIGH_MS)
+    )
+    low_pressure = (
+        (pressure is None or pressure <= QUOTA_PRESSURE_LOW) and
+        (sched_delay_ms is None or sched_delay_ms <= QUOTA_SCHED_DELAY_LOW_MS)
+    )
+    if high_pressure:
         return max(QUOTA_MIN, current - QUOTA_STEP)
-    if throttled_ratio >= QUOTA_THROTTLE_HIGH and (pressure is None or pressure < QUOTA_PRESSURE_HIGH):
+    if throttled_ratio >= QUOTA_THROTTLE_HIGH and not high_pressure:
         return min(QUOTA_MAX, current + QUOTA_STEP)
-    if pressure is not None and pressure <= QUOTA_PRESSURE_LOW and demand >= 0.60:
+    if low_pressure and demand >= 0.60:
         return min(QUOTA_MAX, current + QUOTA_STEP)
-    if demand < 0.15 and (pressure is None or pressure <= QUOTA_PRESSURE_LOW):
+    if demand < 0.15 and low_pressure:
         return max(QUOTA_MIN, current - QUOTA_STEP)
     return current
 
@@ -267,6 +285,7 @@ def main():
     current_quota=unit_quota(HEAVY_UNIT) if QUOTA_DYNAMIC else None
     quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
     quota_stat_time = time.monotonic()
+    quota_sched_prev = schedstat_delay_ms() if QUOTA_DYNAMIC else None
     logging.info('started threshold=%.0f%% sustained=%ss adaptive=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, ADAPTIVE)
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
@@ -307,9 +326,14 @@ def main():
             if now_mono >= quota_dwell_until and now_mono - last_quota_change >= QUOTA_INTERVAL_SEC:
                 pressure = cpu_pressure()
                 after_stat = cgroup_cpu_stat(heavy_cgroup)
+                sched_now = schedstat_delay_ms()
+                sched_delay_ms = None
                 throttled_ratio = 0.0
                 cgroup_demand = 0.0
                 now_stat_time = time.monotonic()
+                if quota_sched_prev is not None and sched_now is not None:
+                    sched_delay_ms = max(0.0, sched_now - quota_sched_prev)
+                quota_sched_prev = sched_now
                 if quota_stat_prev and after_stat:
                     elapsed = max(0.001, now_stat_time - quota_stat_time)
                     usage = max(0, after_stat.get("usage_usec", 0) - quota_stat_prev.get("usage_usec", 0))
@@ -328,11 +352,14 @@ def main():
                         for data in routes.values()
                     ))
                 demand = max(demand, cgroup_demand)
-                target = dynamic_quota_target(current_quota, pressure, demand, throttled_ratio)
+                target = dynamic_quota_target(
+                    current_quota, pressure, demand, throttled_ratio, sched_delay_ms
+                )
                 if target != current_quota and set_unit_quota(HEAVY_UNIT, target):
-                    logging.info('quota changed unit=%s old=%.0f%% new=%.0f%% pressure=%s demand=%.2f',
+                    logging.info('quota changed unit=%s old=%.0f%% new=%.0f%% pressure=%s sched_delay=%sms demand=%.2f',
                                  HEAVY_UNIT, current_quota or 0, target,
-                                 'n/a' if pressure is None else f'{pressure:.3f}', demand)
+                                 'n/a' if pressure is None else f'{pressure:.3f}',
+                                 'n/a' if sched_delay_ms is None else f'{sched_delay_ms:.2f}', demand)
                     current_quota = target
                     last_quota_change = now_mono
                     quota_dwell_until = now_mono + QUOTA_MIN_DWELL_SEC

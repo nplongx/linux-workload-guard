@@ -16,15 +16,18 @@ assert mod.in_cgroup_tree
 assert mod.command_class("npm run build") == "npm:run"
 assert mod.adaptive_score(95, {"samples": 10, "mean": 30, "variance": 25}) is not None
 assert mod.adaptive_score(80, {"samples": 2, "mean": 30, "variance": 25}) is None
-assert mod.dynamic_quota_target(200, 0.30, 0.9) == 150
+assert mod.dynamic_quota_target(200, 0.45, 0.9) == 150
 assert mod.dynamic_quota_target(200, 0.01, 0.9) == 250
 assert mod.dynamic_quota_target(200, 0.01, 0.2) == 200
 assert mod.dynamic_quota_target(200, 0.01, 0.2, 0.2) == 250
+assert mod.dynamic_quota_target(200, 0.10, 0.9, 0.0, 25) == 150
+assert mod.dynamic_quota_target(200, 0.10, 0.2, 0.0, 2) == 200
+assert mod.dynamic_quota_target(200, 0.30, 0.9) == 200
 assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
 PY
-test "$("$ROOT/bin/workload-guard" version)" = "0.5.3"
+test "$("$ROOT/bin/workload-guard" version)" = "0.5.4"
 test -x "$ROOT/bin/workload-profile"
 grep -q 'workload-profile' "$ROOT/install.sh"
 test "$(env -u WORKLOAD_GUARD_QUOTA_INTERVAL_SEC -u WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("r",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(int(m.QUOTA_INTERVAL_SEC), int(m.QUOTA_MIN_DWELL_SEC))' "$ROOT/bin/workload-router.py")" = "5 10"
