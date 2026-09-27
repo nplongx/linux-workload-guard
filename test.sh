@@ -27,10 +27,12 @@ assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
 PY
-test "$("$ROOT/bin/workload-guard" version)" = "0.5.4"
+test "$("$ROOT/bin/workload-guard" version)" = "0.6.0"
 test -x "$ROOT/bin/workload-profile"
+grep -q 'workload-guard quota' "$ROOT/bin/workload-guard"
 grep -q 'workload-profile' "$ROOT/install.sh"
 test "$(env -u WORKLOAD_GUARD_QUOTA_INTERVAL_SEC -u WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("r",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(int(m.QUOTA_INTERVAL_SEC), int(m.QUOTA_MIN_DWELL_SEC))' "$ROOT/bin/workload-router.py")" = "5 10"
 grep -q '^EnvironmentFile=-%h/.config/linux-workload-guard/workload-guard.env$' "$ROOT/systemd/workload-router.service"
 grep -q 'CONFIG_DIR="$HOME/.config/linux-workload-guard"' "$ROOT/install.sh"
+env -u WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD -u WORKLOAD_GUARD_RECOVERY_SAMPLES -u WORKLOAD_GUARD_RECOVERY_DWELL_SEC python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("r",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert m.RECOVERY_CPU_THRESHOLD == 35 and m.RECOVERY_SAMPLES == 10 and m.RECOVERY_DWELL_SEC == 20' "$ROOT/bin/workload-router.py"
 printf '%s\n' 'tests: ok'

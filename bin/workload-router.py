@@ -10,6 +10,9 @@ LEARNING_RATE = float(os.getenv("WORKLOAD_GUARD_LEARNING_RATE", "0.15"))
 ROUTE_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_ROUTE_THRESHOLD", "0.75"))
 COOLDOWN_SEC = float(os.getenv("WORKLOAD_GUARD_COOLDOWN_SEC", "20"))
 MIN_SAMPLES = int(os.getenv("WORKLOAD_GUARD_MIN_SAMPLES", "8"))
+RECOVERY_CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD", "35"))
+RECOVERY_SAMPLES = int(os.getenv("WORKLOAD_GUARD_RECOVERY_SAMPLES", "10"))
+RECOVERY_DWELL_SEC = float(os.getenv("WORKLOAD_GUARD_RECOVERY_DWELL_SEC", "20"))
 QUOTA_DYNAMIC = os.getenv("WORKLOAD_GUARD_DYNAMIC_QUOTA", "false").lower() in ("1", "true", "yes", "on")
 QUOTA_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_INTERVAL_SEC", "5"))
 QUOTA_MIN = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN", "100"))
@@ -271,11 +274,31 @@ def write_state(routes):
     except OSError as e:
         logging.debug("write state failed: %s", e)
 
+def load_state():
+    routes = {}
+    try:
+        with open(STATE_FILE) as f:
+            for line in f:
+                fields = line.rstrip("\n").split("\t", 5)
+                if len(fields) != 6:
+                    continue
+                try:
+                    pid, cpu = int(fields[0]), float(fields[1])
+                except ValueError:
+                    continue
+                routes[pid] = (cpu, fields[2], fields[3], fields[4], fields[5])
+    except OSError:
+        pass
+    return routes
+
 def main():
     prev={}
     hot={}
     moved=set()
-    routes={}
+    routes=load_state()
+    recovery_hot={}
+    recovery_since={}
+    route_prev={}
     stats=load_stats() if ADAPTIVE else {}
     last_move={}
     last_quota_change=0.0
@@ -286,7 +309,7 @@ def main():
     quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
     quota_stat_time = time.monotonic()
     quota_sched_prev = schedstat_delay_ms() if QUOTA_DYNAMIC else None
-    logging.info('started threshold=%.0f%% sustained=%ss adaptive=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, ADAPTIVE)
+    logging.info('started threshold=%.0f%% sustained=%ss recovery<%.0f%% adaptive=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, RECOVERY_CPU_THRESHOLD, ADAPTIVE)
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
         heavy_cgroup = user_cgroup(HEAVY_UNIT)
@@ -314,13 +337,41 @@ def main():
                     if known_heavy or sustained or adaptive_hot:
                         if pid in last_move and time.monotonic() - last_move[pid] < COOLDOWN_SEC:
                             continue
+                        source_path = proc_cgroup(pid)
+                        source_cgroup = SYSTEMD_PREFIX + source_path if source_path else gateway_cgroup
                         if pid not in moved and move(pid, heavy_cgroup):
                             moved.add(pid)
                             reason = "known-heavy" if known_heavy else ("sustained-cpu" if sustained else "adaptive")
-                            routes[pid] = (cpu, reason, gateway_cgroup, heavy_cgroup, cmd)
+                            routes[pid] = (cpu, reason, source_cgroup, heavy_cgroup, cmd)
                             last_move[pid] = time.monotonic()
                             state_dirty = True
                             logging.info('routed pid=%s cpu=%.1f%% reason=%s cmd=%s', pid,cpu,reason,cmd[:180])
+            for pid in list(routes):
+                if not os.path.exists(f"/proc/{pid}") or not in_cgroup_tree(pid, heavy_cgroup):
+                    moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
+                    continue
+                moved.add(pid)
+                cmd = cmdline(pid)
+                if not cmd or (routes[pid][4] and cmd != routes[pid][4]):
+                    logging.info('dropping stale route pid=%s after process identity changed', pid)
+                    moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
+                    continue
+                _, ut, st = proc_stat(pid)
+                prev_route = route_prev.get(pid)
+                if prev_route:
+                    dticks = ut + st - prev_route
+                    cpu = (dticks / max(1, os.sysconf(os.sysconf_names['SC_CLK_TCK'])) / SAMPLE_SEC) * 100
+                    if cpu < RECOVERY_CPU_THRESHOLD:
+                        recovery_hot[pid] = recovery_hot.get(pid, 0) + 1
+                        recovery_since.setdefault(pid, time.monotonic())
+                    else:
+                        recovery_hot[pid] = 0; recovery_since.pop(pid, None)
+                    if (recovery_hot.get(pid, 0) >= RECOVERY_SAMPLES and
+                            time.monotonic() - recovery_since.get(pid, time.monotonic()) >= RECOVERY_DWELL_SEC):
+                        source = routes[pid][2] if os.path.isdir(routes[pid][2]) else gateway_cgroup
+                        if move(pid, source):
+                            logging.info('unrouted pid=%s cpu=%.1f%% recovery', pid, cpu)
+                            moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
         if QUOTA_DYNAMIC and heavy_cgroup:
             now_mono = time.monotonic()
             if now_mono >= quota_dwell_until and now_mono - last_quota_change >= QUOTA_INTERVAL_SEC:
@@ -334,6 +385,7 @@ def main():
                 if quota_sched_prev is not None and sched_now is not None:
                     sched_delay_ms = max(0.0, sched_now - quota_sched_prev)
                 quota_sched_prev = sched_now
+                telemetry_ok = after_stat is not None
                 if quota_stat_prev and after_stat:
                     elapsed = max(0.001, now_stat_time - quota_stat_time)
                     usage = max(0, after_stat.get("usage_usec", 0) - quota_stat_prev.get("usage_usec", 0))
@@ -352,9 +404,9 @@ def main():
                         for data in routes.values()
                     ))
                 demand = max(demand, cgroup_demand)
-                target = dynamic_quota_target(
-                    current_quota, pressure, demand, throttled_ratio, sched_delay_ms
-                )
+                target = current_quota
+                if telemetry_ok and current_quota is not None and (pressure is not None or sched_delay_ms is not None):
+                    target = dynamic_quota_target(current_quota, pressure, demand, throttled_ratio, sched_delay_ms)
                 if target != current_quota and set_unit_quota(HEAVY_UNIT, target):
                     logging.info('quota changed unit=%s old=%.0f%% new=%.0f%% pressure=%s sched_delay=%sms demand=%.2f',
                                  HEAVY_UNIT, current_quota or 0, target,
@@ -374,7 +426,13 @@ def main():
         for pid in list(routes):
             if pid not in moved:
                 routes.pop(pid, None)
+                route_prev.pop(pid, None)
+                recovery_hot.pop(pid, None)
+                recovery_since.pop(pid, None)
                 state_dirty = True
+            else:
+                _, ut, st = proc_stat(pid)
+                route_prev[pid] = ut + st
         now_mono = time.monotonic()
         if state_dirty:
             write_state(routes)

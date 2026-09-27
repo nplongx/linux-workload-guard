@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0] - 2026-09-27
+
+Router hardening and workload recovery.
+
+### Added
+
+- Sustained low-CPU recovery for long-lived routed workloads.
+- Runtime route-state reconciliation after router restart, including stale PID/command identity checks.
+- Fail-safe dynamic quota behavior when required cgroup or host-pressure telemetry is unavailable.
+- `workload-guard quota` for current heavy-slice quota and controller telemetry.
+- Recovery tuning via `WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD`, `WORKLOAD_GUARD_RECOVERY_SAMPLES`, and `WORKLOAD_GUARD_RECOVERY_DWELL_SEC`.
+
+### Changed
+
+- Persisted routes are loaded and reconciled on router startup instead of being treated as empty after restart.
+- Route state is removed when a tracked PID exits, changes process identity, or leaves the heavy cgroup unexpectedly.
+
 ## [0.5.4] - 2026-09-27
 
 Scheduler-aware dynamic quota control.

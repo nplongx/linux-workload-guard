@@ -9,6 +9,7 @@ Usage:
   workload-guard status    Show services, quotas, and routed workloads
   workload-guard diagnose  Show configuration and cgroup paths
   workload-guard stats      Show adaptive workload statistics
+  workload-guard quota      Show current quota-controller telemetry
   workload-guard profile    Profile cgroups, CPU PSI, and scheduler latency
   workload-guard protect <command...>
   workload-guard version   Show version
@@ -44,6 +45,20 @@ show_routes() {
     [ -n "$current_cpu" ] || current_cpu="$cpu"
     printf '%-7s %-7s %-16s %-34s %-34s %s\n' "$pid" "${current_cpu}%" "$reason" "$source" "$target" "$cmd"
   done < "$state_file"
+}
+show_quota() {
+  unit="${WORKLOAD_GUARD_HEAVY_UNIT:-heavy-workload.slice}"
+  printf '\n[Quota controller]\n'
+  systemctl --user show "$unit" -p CPUQuotaPerSecUSec -p CPUWeight --no-pager 2>/dev/null || true
+  if [ -r /proc/pressure/cpu ]; then
+    awk '/^some / {print "CPU PSI some: " $2 " " $3 " " $4 " " $5 " " $6}' /proc/pressure/cpu
+  fi
+  cgroup=$(systemctl --user show "$unit" -p ControlGroup --value 2>/dev/null || true)
+  if [ -n "$cgroup" ] && [ -r "/sys/fs/cgroup$cgroup/cpu.stat" ]; then
+    awk '$1=="nr_periods" || $1=="nr_throttled" {printf "%s: %s\n", $1, $2}' "/sys/fs/cgroup$cgroup/cpu.stat"
+  fi
+  printf 'scheduler thresholds: high=%sms low=%sms\n' "${WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS:-20}" "${WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS:-5}"
+  printf 'PSI thresholds: high=%s low=%s\n' "${WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH:-0.40}" "${WORKLOAD_GUARD_QUOTA_PRESSURE_LOW:-0.10}"
 }
 show_stats() {
   state_file="${WORKLOAD_GUARD_STATS_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/linux-workload-guard/stats.json}"
@@ -82,6 +97,9 @@ case "${1:-status}" in
     ;;
   stats)
     show_stats
+    ;;
+  quota)
+    show_quota
     ;;
   profile)
     shift

@@ -22,6 +22,8 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - Low-overhead runtime state/statistics persistence.
 - Optional dynamic heavy-workload CPU quota using CPU pressure, scheduler pressure, throttling, and workload demand.
 - Explicit `workload-guard protect` helper for placing latency-sensitive commands in the protected slice.
+- Automatic recovery of long-lived routed workloads after sustained low CPU usage.
+- Restart-safe route-state reconciliation and fail-safe quota telemetry handling.
 - cgroup v2 resource enforcement.
 
 ## Architecture
@@ -62,6 +64,7 @@ After installation:
 ```bash
 workload-guard status
 workload-guard diagnose
+workload-guard quota
 workload-guard profile
 workload-guard version
 ```
@@ -69,6 +72,8 @@ workload-guard version
 `status` shows service state, CPU quotas, and currently routed workloads. Routed entries include PID, current CPU sample, routing reason (`known-heavy`, `sustained-cpu`, or `adaptive`), source cgroup, destination cgroup, and command. `diagnose` checks cgroup v2 and the configured workload units. `protect` runs a command directly inside `protected-workload.slice`.
 
 `profile` samples the cgroup v2 tree, reports top cgroups by CPU usage and throttling, shows system CPU PSI, and runs a scheduler wakeup-latency probe. Use `workload-guard profile --duration 5 --samples 200` for a longer snapshot. Scheduler latency is measured as timer-wakeup excess plus this process's `/proc/<pid>/schedstat` runqueue delay; it is a practical host-health signal, not a real-time scheduling guarantee.
+
+`quota` shows the current heavy-slice quota, CPU PSI, throttling counters, and configured scheduler/PSI thresholds used by the dynamic controller.
 
 ## Configuration file
 
@@ -113,6 +118,8 @@ Known heavy commands are routed immediately. Unknown commands are routed after f
 
 This avoids reacting to short-lived CPU spikes.
 
+Routed long-lived workloads are eligible for recovery after sustained CPU usage below 35% for 10 samples and at least 20 seconds. Recovery moves the process back to its original source cgroup when that cgroup still exists; if the source scope has disappeared, it falls back to the configured parent cgroup. A later sustained CPU burst can route it again.
+
 Adaptive mode is deliberately opt-in. Dynamic quota is also opt-in; when enabled it adjusts only the heavy workload slice, using CPU PSI pressure, scheduler runqueue delay, heavy-cgroup throttling, learned demand, bounded steps, and a 100–400% default range. High PSI alone is treated as strong pressure only at 40% by default; scheduler delay has its own 20ms high-pressure threshold. This avoids shrinking heavy-workload capacity because of moderate host contention while still reacting when the host is genuinely under scheduling pressure. It keeps a small per-command-class CPU baseline using online mean/variance updates; it is not a black-box model and requires a minimum history before it can route. Known-heavy and sustained-CPU rules remain active regardless of adaptive mode.
 
 ## Configuration
@@ -127,6 +134,9 @@ Environment variables:
 - `WORKLOAD_GUARD_ROUTE_THRESHOLD` — adaptive score required for routing, default `0.75`.
 - `WORKLOAD_GUARD_COOLDOWN_SEC` — minimum time between route attempts for a PID, default `20`.
 - `WORKLOAD_GUARD_MIN_SAMPLES` — historical samples required before adaptive scoring, default `8`.
+- `WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD` — CPU threshold below which a routed workload can recover, default `35`.
+- `WORKLOAD_GUARD_RECOVERY_SAMPLES` — consecutive low-CPU samples required for recovery, default `10`.
+- `WORKLOAD_GUARD_RECOVERY_DWELL_SEC` — minimum low-CPU dwell before recovery, default `20` seconds.
 - `WORKLOAD_GUARD_DYNAMIC_QUOTA` — enable dynamic heavy-slice quota, default `false`.
 - `WORKLOAD_GUARD_QUOTA_INTERVAL_SEC` — quota controller interval, default `5`.
 - `WORKLOAD_GUARD_QUOTA_MIN` / `MAX` — quota bounds, default `100` / `400`.
@@ -179,9 +189,11 @@ The project is designed for user-level installation and does not require root.
 
 ```bash
 ./test.sh
+./tests/integration-routing.sh
+./tests/recovery-routing.sh
 ```
 
-Tests cover Python syntax, routing/exclusion logic, and quota decisions. The integration test starts a nested systemd scope, drives a CPU-bound child through the real router, and verifies both cgroup movement and recorded routing state.
+Tests cover Python syntax, routing/exclusion logic, quota decisions, real cgroup routing, recovery after sustained low CPU, and route-state reconciliation across router restart. The integration tests require a systemd user manager and cgroup v2; otherwise they skip cleanly.
 
 ## Benchmark
 
