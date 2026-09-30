@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.2] - 2026-09-30
+
+Host health attribution and corrected scheduler history.
+
+### Added
+
+- History schema v2 with top CPU consumers, guarded CPU, and unmanaged CPU attribution.
+- `workload-guard diagnose` now classifies recent CPU pressure from stored telemetry.
+
+### Fixed
+
+- History scheduler delay now stores interval runqueue delay instead of cumulative `/proc/<pid>/schedstat` delay.
+- Legacy scheduler-delay samples are excluded from v2 scheduler aggregates.
+
 ## [0.6.1] - 2026-09-27
 
 Operational history telemetry.

@@ -70,13 +70,13 @@ workload-guard profile
 workload-guard version
 ```
 
-`status` shows service state, CPU quotas, and currently routed workloads. Routed entries include PID, current CPU sample, routing reason (`known-heavy`, `sustained-cpu`, or `adaptive`), source cgroup, destination cgroup, and command. `diagnose` checks cgroup v2 and the configured workload units. `protect` runs a command directly inside `protected-workload.slice`.
+`status` shows service state, CPU quotas, and currently routed workloads. Routed entries include PID, current CPU sample, routing reason (`known-heavy`, `sustained-cpu`, or `adaptive`), source cgroup, destination cgroup, and command. `diagnose` analyzes the last hour of history to separate guarded CPU pressure, unmanaged CPU pressure, and general system pressure. `protect` runs a command directly inside `protected-workload.slice`.
 
 `profile` samples the cgroup v2 tree, reports top cgroups by CPU usage and throttling, shows system CPU PSI, and runs a scheduler wakeup-latency probe. Use `workload-guard profile --duration 5 --samples 200` for a longer snapshot. Scheduler latency is measured as timer-wakeup excess plus this process's `/proc/<pid>/schedstat` runqueue delay; it is a practical host-health signal, not a real-time scheduling guarantee.
 
 `quota` shows the current heavy-slice quota, CPU PSI, throttling counters, and configured scheduler/PSI thresholds used by the dynamic controller.
 
-`history` summarizes the last 1 hour, 6 hours, and 24 hours from lightweight 5-minute snapshots. It reports routing/recovery activity, quota changes, heavy-slice CPU and throttling, CPU PSI, and scheduler delay. History is stored under `~/.local/state/linux-workload-guard/history.jsonl` by default and is intended for operational visibility rather than high-resolution profiling.
+`history` summarizes the last 1 hour, 6 hours, and 24 hours from lightweight 5-minute snapshots. It reports routing/recovery activity, quota changes, heavy-slice CPU and throttling, CPU PSI, scheduler delay, guarded CPU, and unmanaged CPU. History schema v2 also stores the top five CPU consumers with PID, command, CPU percentage, cgroup class, and cgroup path. Legacy scheduler-delay samples remain readable but are excluded from scheduler aggregates. History is stored under `~/.local/state/linux-workload-guard/history.jsonl` by default and is intended for operational visibility rather than high-resolution profiling.
 
 ## Configuration file
 

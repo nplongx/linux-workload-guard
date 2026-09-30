@@ -81,7 +81,8 @@ def report(label,age):
     rs=[x for x in rows if now-float(x.get('ts',0)) <= age]
     if not rs: print(f'\n{label}: no samples'); return
     def vals(k): return [float(x[k]) for x in rs if x.get(k) is not None]
-    q=vals('quota'); p=vals('cpu_psi_some_avg10'); s=vals('scheduler_delay_ms'); u=vals('heavy_cpu_pct'); t=vals('heavy_throttle_ratio')
+    v2=[x for x in rs if int(x.get('schema_version',1)) >= 2]
+    q=vals('quota'); p=vals('cpu_psi_some_avg10'); s=[float(x['scheduler_delay_ms']) for x in v2 if x.get('scheduler_delay_ms') is not None]; u=vals('heavy_cpu_pct'); t=vals('heavy_throttle_ratio')
     print(f'\n{label} ({len(rs)} samples)')
     print(f'  routed now       : {rs[-1].get("routed",0)}')
     def counter_delta(key):
@@ -101,8 +102,61 @@ def report(label,age):
     if s:
         p95=statistics.quantiles(s,n=20)[18] if len(s)>=2 else s[0]
         print(f'  scheduler delay  : avg {statistics.mean(s):.1f}ms, p95 {p95:.1f}ms, peak {max(s):.1f}ms')
+    g=vals('guarded_cpu_pct'); m=vals('unmanaged_cpu_pct')
+    if g: print(f'  guarded CPU avg  : {statistics.mean(g):.1f}%')
+    if m: print(f'  unmanaged CPU avg : {statistics.mean(m):.1f}%')
 for label,age in [('Last 1h',3600),('Last 6h',21600),('Last 24h',86400)]: report(label,age)
 print(f'\n  latest sample    : {time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(rows[-1]["ts"]))}')
+PY
+}
+show_diagnose() {
+  state_file="${WORKLOAD_GUARD_HISTORY_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/linux-workload-guard/history.jsonl}"
+  printf '\n[System diagnosis]\n'
+  python3 - "$state_file" "${WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH:-0.40}" "${WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS:-20}" <<'PY'
+import json, os, sys, time, statistics
+path=sys.argv[1]; psi_high=float(sys.argv[2]); sched_high=float(sys.argv[3]); now=time.time()
+rows=[]
+try:
+    with open(path) as f:
+        for line in f:
+            try:
+                x=json.loads(line)
+                if int(x.get('schema_version',1)) >= 2 and now-float(x.get('ts',0)) <= 3600: rows.append(x)
+            except Exception: pass
+except OSError: pass
+if not rows:
+    print('  no schema-v2 samples in last 1h'); raise SystemExit
+latest=rows[-1]
+psi=[float(x['cpu_psi_some_avg10']) for x in rows if x.get('cpu_psi_some_avg10') is not None]
+sched=[float(x['scheduler_delay_ms']) for x in rows if x.get('scheduler_delay_ms') is not None]
+guard=[float(x['guarded_cpu_pct']) for x in rows if x.get('guarded_cpu_pct') is not None]
+unmanaged=[float(x['unmanaged_cpu_pct']) for x in rows if x.get('unmanaged_cpu_pct') is not None]
+cpu_capacity=max(1, os.cpu_count() or 1) * 100.0
+g=statistics.mean(guard) if guard else 0.0; u=statistics.mean(unmanaged) if unmanaged else 0.0
+pressure_high=max(psi, default=0.0) >= psi_high
+scheduler_high=(statistics.mean(sched) >= sched_high if sched else False) or (max(sched, default=0.0) >= sched_high)
+g_share=g / cpu_capacity; u_share=u / cpu_capacity
+guarded_high=g_share >= 0.25 and g > u
+unmanaged_high=u_share >= 0.25 and u > g
+print(f'  samples            : {len(rows)}')
+print(f'  CPU pressure       : {"HIGH" if pressure_high else "NORMAL"} (PSI peak {max(psi, default=0)*100:.1f}%)')
+print(f'  Scheduler delay    : {"HIGH" if scheduler_high else "NORMAL"} (latest {float(latest.get("scheduler_delay_ms") or 0):.1f} ms)')
+print(f'  Guarded CPU        : {g:.1f}% avg')
+print(f'  Unmanaged CPU      : {u:.1f}% avg')
+if guarded_high and pressure_high:
+    source='guarded workload pressure'
+elif unmanaged_high and pressure_high:
+    source='unmanaged CPU pressure'
+elif pressure_high:
+    source='general system pressure (top process CPU does not explain PSI)'
+else:
+    source='no high CPU-pressure condition recorded'
+print(f'  Observed source    : {source}')
+routes=int(latest.get('routed',0) or 0)
+print(f'  Guard action       : {"routing active" if routes else "no routed workload"}')
+print('  Top consumers:')
+for item in latest.get('top_cpu',[])[:5]:
+    print(f'    {item.get("command","[unknown]")[:34]:34s} {float(item.get("cpu_pct",0)):6.1f}% {item.get("class","unknown")}')
 PY
 }
 show_stats() {
@@ -133,12 +187,7 @@ case "${1:-status}" in
     ;;
   diagnose)
     printf 'Linux Workload Guard %s\n' "$(version)"
-    printf 'cgroup v2: '
-    if [ -f /sys/fs/cgroup/cgroup.controllers ]; then printf 'yes\n'; else printf 'no\n'; fi
-    printf 'systemd user manager: '
-    if systemctl --user is-system-running >/dev/null 2>&1; then printf 'available\n'; else printf 'unavailable\n'; fi
-    printf 'router parent: %s\n' "${WORKLOAD_GUARD_PARENT_UNIT:-protected-workload.slice}"
-    printf 'router target: %s\n' "${WORKLOAD_GUARD_HEAVY_UNIT:-heavy-workload.slice}"
+    show_diagnose
     ;;
   stats)
     show_stats

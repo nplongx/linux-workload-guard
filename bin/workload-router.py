@@ -168,6 +168,57 @@ def append_history(snapshot):
         os.chmod(HISTORY_FILE, 0o600)
     except OSError as e: logging.debug("write history failed: %s", e)
 
+def proc_cpu_sample(pid):
+    try:
+        with open(f'/proc/{pid}/stat') as f: s=f.read()
+        end=s.rfind(')')
+        fields=s[end+2:].split()
+        return int(fields[19]), int(fields[11]) + int(fields[12])
+    except (OSError, ValueError, IndexError):
+        return None
+
+def history_cpu_attribution(prev, elapsed, protected_cgroup, heavy_cgroup):
+    hz = max(1, os.sysconf(os.sysconf_names['SC_CLK_TCK']))
+    current = {}
+    guarded_cpu = 0.0
+    unmanaged_cpu = 0.0
+    candidates = []
+    try:
+        pids = (int(name) for name in os.listdir('/proc') if name.isdigit())
+    except OSError:
+        return current, guarded_cpu, unmanaged_cpu, []
+    for pid in pids:
+        sample = proc_cpu_sample(pid)
+        if not sample:
+            continue
+        starttime, ticks = sample
+        current[pid] = (starttime, ticks)
+        old = prev.get(pid)
+        if not old or old[0] != starttime:
+            continue
+        cpu = max(0.0, (ticks - old[1]) / hz / max(0.001, elapsed) * 100.0)
+        if cpu <= 0.0:
+            continue
+        cgroup = proc_cgroup(pid)
+        protected = in_cgroup_tree(pid, protected_cgroup)
+        heavy = in_cgroup_tree(pid, heavy_cgroup)
+        if protected or heavy:
+            guarded_cpu += cpu
+        else:
+            unmanaged_cpu += cpu
+        candidates.append((cpu, pid, cgroup, protected, heavy))
+    top = []
+    for cpu, pid, cgroup, protected, heavy in sorted(candidates, reverse=True)[:5]:
+        cmd = cmdline(pid) or '[unknown]'
+        top.append({
+            'pid': pid,
+            'command': cmd[:240],
+            'cpu_pct': round(cpu, 1),
+            'class': 'protected' if protected else ('heavy' if heavy else 'unmanaged'),
+            'cgroup': cgroup or '',
+        })
+    return current, guarded_cpu, unmanaged_cpu, top
+
 def update_stat(stats, cls, cpu):
     item = stats.setdefault(cls, {"samples": 0, "mean": 0.0, "variance": 0.0})
     old_mean = float(item.get("mean", 0.0))
@@ -321,6 +372,9 @@ def main():
     quota_changes=0
     history_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
     history_stat_time = time.monotonic()
+    history_sched_prev = schedstat_delay_ms() if QUOTA_DYNAMIC else None
+    history_proc_prev = {}
+    history_proc_time = time.monotonic()
     state_dirty=True
     current_quota=unit_quota(HEAVY_UNIT) if QUOTA_DYNAMIC else None
     quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
@@ -330,6 +384,9 @@ def main():
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
         heavy_cgroup = user_cgroup(HEAVY_UNIT)
+        if not history_proc_prev:
+            history_proc_prev, _, _, _ = history_cpu_attribution({}, 1.0, gateway_cgroup, heavy_cgroup)
+            history_proc_time = time.monotonic()
         now={}
         if gateway_cgroup and heavy_cgroup:
             for pid in cgroup_tree_pids(gateway_cgroup):
@@ -470,11 +527,23 @@ def main():
                 throttled = max(0, hstat.get("nr_throttled", 0) - history_stat_prev.get("nr_throttled", 0))
                 usage_pct = usage / (elapsed * 10000.0)
                 throttle_ratio = throttled / periods if periods else 0.0
-            append_history({"ts": int(time.time()), "routed": len(routes), "route_events": route_events,
+            history_sched_now = schedstat_delay_ms() if QUOTA_DYNAMIC else None
+            history_sched_delay = None
+            if history_sched_prev is not None and history_sched_now is not None:
+                history_sched_delay = max(0.0, history_sched_now - history_sched_prev)
+            history_sched_prev = history_sched_now
+            proc_elapsed = max(0.001, now_mono - history_proc_time)
+            history_proc_prev, guarded_cpu, unmanaged_cpu, top_cpu = history_cpu_attribution(
+                history_proc_prev, proc_elapsed, gateway_cgroup, heavy_cgroup)
+            history_proc_time = now_mono
+            append_history({"schema_version": 2, "ts": int(time.time()), "routed": len(routes), "route_events": route_events,
                             "recovery_events": recovery_events, "quota_changes": quota_changes,
                             "quota": current_quota, "cpu_psi_some_avg10": cpu_pressure(),
-                            "scheduler_delay_ms": schedstat_delay_ms(), "heavy_cpu_pct": usage_pct,
-                            "heavy_throttle_ratio": throttle_ratio})
+                            "scheduler_delay_ms": history_sched_delay, "heavy_cpu_pct": usage_pct,
+                            "heavy_throttle_ratio": throttle_ratio,
+                            "guarded_cpu_pct": round(guarded_cpu, 1),
+                            "unmanaged_cpu_pct": round(unmanaged_cpu, 1),
+                            "top_cpu": top_cpu})
             history_stat_prev = hstat; history_stat_time = now_mono; last_history_save = now_mono
         prev=now
         time.sleep(SAMPLE_SEC)
