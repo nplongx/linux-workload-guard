@@ -1,0 +1,4 @@
+trial	burst_120ms_routed	shadow_burst_candidate	sustained_route_latency_s	recovery_completion_s	result
+1	no	no	1.08	3.36	pass
+2	no	no	1.06	3.08	pass
+3	no	no	1.05	3.35	pass

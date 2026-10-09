@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-if ! command -v systemd-run >/dev/null 2>&1 || ! command -v systemctl >/dev/null 2>&1 || [ ! -f /sys/fs/cgroup/cgroup.controllers ] || ! systemctl --user is-system-running >/dev/null 2>&1; then
+if ! command -v systemd-run >/dev/null 2>&1 || ! command -v systemctl >/dev/null 2>&1 || [ ! -f /sys/fs/cgroup/cgroup.controllers ] || ! systemctl --user show-environment >/dev/null 2>&1; then
   printf '%s\n' 'recovery routing: skipped (systemd/cgroup v2/user manager unavailable)'
   exit 0
 fi
@@ -76,10 +76,15 @@ env \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-recovery.$$.log 2>&1 &
 ROUTER_PID=$!
 sleep 0.5
+RECOVERY_START=$(python3 -c 'import time; print(time.monotonic())')
 printf '%s' idle > "$PHASE_FILE"
 for _ in $(seq 1 40); do
   if grep -qx "$WORK_PID" "$SOURCE_CGROUP/cgroup.procs" 2>/dev/null || grep -qx "$WORK_PID" "$PARENT_CGROUP/cgroup.procs" 2>/dev/null; then
-    printf '%s\n' 'recovery routing: ok'
+    RECOVERY_END=$(python3 -c 'import time; print(time.monotonic())')
+    python3 - "$RECOVERY_START" "$RECOVERY_END" <<'PY'
+import sys
+print(f'recovery routing: ok (idle-to-recovery {float(sys.argv[2])-float(sys.argv[1]):.2f}s)')
+PY
     exit 0
   fi
   sleep 0.25

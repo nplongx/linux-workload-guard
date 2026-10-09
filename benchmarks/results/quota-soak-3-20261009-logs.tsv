@@ -1,0 +1,6 @@
+timestamp	message
+-- No entries --
+2026-10-09T23:40:59+07:00	2026-10-09T23:40:27+07:00 bougainvillean workload-router.py[671895]: 2026-10-09 23:40:27,058 INFO quota changed unit=heavy-workload.slice old=150% new=200% pressure=0.194 sched_delay=0.00ms demand=0.66
+2026-10-09T23:40:59+07:00	2026-10-09T23:40:37+07:00 bougainvillean workload-router.py[671895]: 2026-10-09 23:40:37,192 INFO quota changed unit=heavy-workload.slice old=200% new=250% pressure=0.105 sched_delay=0.00ms demand=1.00
+2026-10-09T23:40:59+07:00	2026-10-09T23:40:47+07:00 bougainvillean workload-router.py[671895]: 2026-10-09 23:40:47,301 INFO quota changed unit=heavy-workload.slice old=250% new=200% pressure=0.043 sched_delay=4.88ms demand=0.00
+2026-10-09T23:40:59+07:00	2026-10-09T23:40:57+07:00 bougainvillean workload-router.py[671895]: 2026-10-09 23:40:57,429 INFO quota changed unit=heavy-workload.slice old=200% new=150% pressure=0.074 sched_delay=0.05ms demand=0.00

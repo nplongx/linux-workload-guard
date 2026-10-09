@@ -2,9 +2,31 @@
 import json, math, os, time, logging, subprocess
 
 SYSTEMD_PREFIX = "/sys/fs/cgroup"
+
+
+def shadow_float_env(name, default):
+    """Keep malformed shadow-only settings representable so validation can fail closed."""
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def shadow_int_env(name, default):
+    """Return an invalid sentinel rather than silently clamping a shadow sample count."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return 0
+
+
 SAMPLE_SEC = float(os.getenv("WORKLOAD_GUARD_SAMPLE_SEC", "2"))
 SUSTAINED_SAMPLES = int(os.getenv("WORKLOAD_GUARD_SUSTAINED_SAMPLES", "4"))
 CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_CPU_THRESHOLD", "70"))
+SHADOW_ENABLED = os.getenv("WORKLOAD_GUARD_SHADOW", "false").lower() in ("1", "true", "yes", "on")
+SHADOW_EWMA_ALPHA = shadow_float_env("WORKLOAD_GUARD_SHADOW_EWMA_ALPHA", 0.35)
+SHADOW_ROUTE_THRESHOLD = shadow_float_env("WORKLOAD_GUARD_SHADOW_ROUTE_THRESHOLD", CPU_THRESHOLD)
+SHADOW_SUSTAINED_SAMPLES = shadow_int_env("WORKLOAD_GUARD_SHADOW_SUSTAINED_SAMPLES", SUSTAINED_SAMPLES)
 ADAPTIVE = os.getenv("WORKLOAD_GUARD_ADAPTIVE", "false").lower() in ("1", "true", "yes", "on")
 LEARNING_RATE = float(os.getenv("WORKLOAD_GUARD_LEARNING_RATE", "0.15"))
 ROUTE_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_ROUTE_THRESHOLD", "0.75"))
@@ -13,7 +35,13 @@ MIN_SAMPLES = int(os.getenv("WORKLOAD_GUARD_MIN_SAMPLES", "8"))
 RECOVERY_CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD", "35"))
 RECOVERY_SAMPLES = int(os.getenv("WORKLOAD_GUARD_RECOVERY_SAMPLES", "10"))
 RECOVERY_DWELL_SEC = float(os.getenv("WORKLOAD_GUARD_RECOVERY_DWELL_SEC", "20"))
+SHADOW_CLEAR_THRESHOLD = shadow_float_env("WORKLOAD_GUARD_SHADOW_CLEAR_THRESHOLD", RECOVERY_CPU_THRESHOLD)
+SHADOW_RECOVERY_SAMPLES = shadow_int_env("WORKLOAD_GUARD_SHADOW_RECOVERY_SAMPLES", RECOVERY_SAMPLES)
+SHADOW_RECOVERY_DWELL_SEC = shadow_float_env("WORKLOAD_GUARD_SHADOW_RECOVERY_DWELL_SEC", RECOVERY_DWELL_SEC)
 QUOTA_DYNAMIC = os.getenv("WORKLOAD_GUARD_DYNAMIC_QUOTA", "false").lower() in ("1", "true", "yes", "on")
+QUOTA_AIMD_SHADOW = os.getenv("WORKLOAD_GUARD_AIMD_SHADOW", "false").lower() in ("1", "true", "yes", "on")
+QUOTA_AIMD_DECREASE = float(os.getenv("WORKLOAD_GUARD_AIMD_DECREASE", "0.80"))
+QUOTA_AIMD_ADD = float(os.getenv("WORKLOAD_GUARD_AIMD_ADD", "10"))
 QUOTA_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_QUOTA_INTERVAL_SEC", "5"))
 QUOTA_MIN = float(os.getenv("WORKLOAD_GUARD_QUOTA_MIN", "100"))
 QUOTA_MAX = float(os.getenv("WORKLOAD_GUARD_QUOTA_MAX", "400"))
@@ -252,6 +280,60 @@ def adaptive_score(cpu, stat):
     normalized = min(1.0, max(0.0, cpu / max(100.0, CPU_THRESHOLD)))
     return 0.65 * normalized + 0.35 * anomaly
 
+def update_shadow_policy(state, cpu, now, alpha=SHADOW_EWMA_ALPHA,
+                         route_threshold=SHADOW_ROUTE_THRESHOLD,
+                         clear_threshold=SHADOW_CLEAR_THRESHOLD,
+                         sustained_samples=SHADOW_SUSTAINED_SAMPLES,
+                         recovery_samples=SHADOW_RECOVERY_SAMPLES,
+                         recovery_dwell_sec=SHADOW_RECOVERY_DWELL_SEC):
+    """Update shadow-only EWMA/hysteresis state; return route/recover/None."""
+    smoothed = cpu if state.get("ewma") is None else alpha * cpu + (1.0 - alpha) * state["ewma"]
+    state["ewma"] = smoothed
+    if not state.get("active", False):
+        state["high_samples"] = state.get("high_samples", 0) + 1 if smoothed >= route_threshold else 0
+        if state["high_samples"] >= sustained_samples:
+            state["active"] = True
+            state["low_samples"] = 0
+            state["low_since"] = None
+            return "route"
+        return None
+
+    if smoothed <= clear_threshold:
+        state["low_samples"] = state.get("low_samples", 0) + 1
+        if state.get("low_since") is None:
+            state["low_since"] = now
+        if state["low_samples"] >= recovery_samples and now - state["low_since"] >= recovery_dwell_sec:
+            state["active"] = False
+            state["high_samples"] = 0
+            state["low_samples"] = 0
+            state["low_since"] = None
+            return "recover"
+    else:
+        state["low_samples"] = 0
+        state["low_since"] = None
+    return None
+
+def shadow_config_error(alpha=SHADOW_EWMA_ALPHA, route_threshold=SHADOW_ROUTE_THRESHOLD,
+                        clear_threshold=SHADOW_CLEAR_THRESHOLD,
+                        sustained_samples=SHADOW_SUSTAINED_SAMPLES,
+                        recovery_samples=SHADOW_RECOVERY_SAMPLES,
+                        recovery_dwell_sec=SHADOW_RECOVERY_DWELL_SEC):
+    """Return a readable validation error, or None for a safe shadow configuration."""
+    values = (alpha, route_threshold, clear_threshold, recovery_dwell_sec)
+    if not all(math.isfinite(float(value)) for value in values):
+        return "shadow thresholds, alpha, and dwell must be finite numbers"
+    if not 0 < alpha <= 1:
+        return "shadow EWMA alpha must be in (0, 1]"
+    if route_threshold <= clear_threshold:
+        return "shadow route threshold must be greater than clear threshold"
+    if route_threshold < 0 or clear_threshold < 0:
+        return "shadow CPU thresholds must be non-negative"
+    if sustained_samples < 1 or recovery_samples < 1:
+        return "shadow sample counts must be at least 1"
+    if recovery_dwell_sec < 0:
+        return "shadow recovery dwell must be non-negative"
+    return None
+
 def cpu_pressure():
     try:
         with open("/proc/pressure/cpu") as f:
@@ -319,7 +401,9 @@ def dynamic_quota_target(current, pressure, demand, throttled_ratio=0.0, sched_d
     )
     if high_pressure:
         return max(QUOTA_MIN, current - QUOTA_STEP)
-    if throttled_ratio >= QUOTA_THROTTLE_HIGH and not high_pressure:
+    # Throttling alone is not a reason to raise quota while scheduler pressure
+    # is in the hysteresis band; require corroborated low pressure for increases.
+    if throttled_ratio >= QUOTA_THROTTLE_HIGH and low_pressure:
         return min(QUOTA_MAX, current + QUOTA_STEP)
     if low_pressure and demand >= 0.60:
         return min(QUOTA_MAX, current + QUOTA_STEP)
@@ -327,12 +411,39 @@ def dynamic_quota_target(current, pressure, demand, throttled_ratio=0.0, sched_d
         return max(QUOTA_MIN, current - QUOTA_STEP)
     return current
 
-def move(pid, target_cgroup):
+def aimd_quota_target(current, pressure, demand, throttled_ratio=0.0, sched_delay_ms=None,
+                      decrease=QUOTA_AIMD_DECREASE, additive_increase=QUOTA_AIMD_ADD):
+    """Experimental AIMD quota proposal. Safe to call in shadow-only mode."""
+    if current is None or not math.isfinite(current):
+        return None
+    if not 0 < decrease < 1 or additive_increase <= 0:
+        return None
+    # AIMD is deliberately more conservative than the existing step controller:
+    # router-process runqueue delay alone is not proof of host/workload pressure.
+    # Require PSI to be available; a high router delay may corroborate elevated
+    # PSI, but must not trigger multiplicative decrease while PSI is low/missing.
+    high_pressure = pressure is not None and (
+        pressure >= QUOTA_PRESSURE_HIGH or
+        (pressure > QUOTA_PRESSURE_LOW and
+         sched_delay_ms is not None and
+         sched_delay_ms >= QUOTA_SCHED_DELAY_HIGH_MS)
+    )
+    low_pressure = (
+        pressure is not None and pressure <= QUOTA_PRESSURE_LOW and
+        (sched_delay_ms is None or sched_delay_ms <= QUOTA_SCHED_DELAY_LOW_MS)
+    )
+    if high_pressure:
+        return max(QUOTA_MIN, current * decrease)
+    if low_pressure and (demand >= 0.60 or throttled_ratio >= QUOTA_THROTTLE_HIGH):
+        return min(QUOTA_MAX, current + additive_increase)
+    return current
+
+def move(pid, target_cgroup, reason="unspecified"):
     try:
         with open(os.path.join(target_cgroup, "cgroup.procs"), "a") as f: f.write(str(pid)+"\n")
         return True
     except Exception as e:
-        logging.debug('move pid=%s failed: %s', pid, e)
+        logging.warning('cgroup move failed pid=%s reason=%s target=%s error=%s', pid, reason, target_cgroup, e)
         return False
 
 def write_state(routes):
@@ -368,8 +479,10 @@ def load_state():
     return routes
 
 def main():
+    global SHADOW_ENABLED
     prev={}
     hot={}
+    shadow_policy={}
     moved=set()
     routes=load_state()
     recovery_hot={}
@@ -384,17 +497,30 @@ def main():
     route_events=0
     recovery_events=0
     quota_changes=0
-    history_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
+    quota_observe = QUOTA_DYNAMIC or QUOTA_AIMD_SHADOW
+    history_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if quota_observe else None
     history_stat_time = time.monotonic()
-    history_sched_prev = schedstat_delay_ms() if QUOTA_DYNAMIC else None
+    history_sched_prev = schedstat_delay_ms() if quota_observe else None
     history_proc_prev = {}
     history_proc_time = time.monotonic()
     state_dirty=True
-    current_quota=unit_quota(HEAVY_UNIT) if QUOTA_DYNAMIC else None
-    quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if QUOTA_DYNAMIC else None
+    current_quota=unit_quota(HEAVY_UNIT) if quota_observe else None
+    quota_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if quota_observe else None
     quota_stat_time = time.monotonic()
-    quota_sched_prev = schedstat_delay_ms() if QUOTA_DYNAMIC else None
-    logging.info('started threshold=%.0f%% sustained=%ss recovery<%.0f%% adaptive=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, RECOVERY_CPU_THRESHOLD, ADAPTIVE)
+    quota_sched_prev = schedstat_delay_ms() if quota_observe else None
+    logging.info('started threshold=%.0f%% sustained=%ss recovery<%.0f%% adaptive=%s shadow=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, RECOVERY_CPU_THRESHOLD, ADAPTIVE, SHADOW_ENABLED)
+    if SHADOW_ENABLED:
+        shadow_error = shadow_config_error()
+        if shadow_error:
+            logging.error("shadow mode disabled due to invalid configuration: %s", shadow_error)
+            SHADOW_ENABLED = False
+    if SHADOW_ENABLED:
+        logging.info('shadow policy=ewma-hysteresis alpha=%.2f route>=%.1f%% clear<=%.1f%% sustained_samples=%s recovery_samples=%s recovery_dwell=%.1fs; actions are log-only',
+                     SHADOW_EWMA_ALPHA, SHADOW_ROUTE_THRESHOLD, SHADOW_CLEAR_THRESHOLD,
+                     SHADOW_SUSTAINED_SAMPLES, SHADOW_RECOVERY_SAMPLES, SHADOW_RECOVERY_DWELL_SEC)
+    if QUOTA_AIMD_SHADOW:
+        logging.info('quota policy=aimd-shadow decrease=%.3f additive_increase=%.1f; proposals are log-only',
+                     QUOTA_AIMD_DECREASE, QUOTA_AIMD_ADD)
     ensure_workload_units()
     missing_cgroups = None
     while True:
@@ -415,7 +541,9 @@ def main():
             history_proc_time = time.monotonic()
         now={}
         if gateway_cgroup and heavy_cgroup:
-            for pid in cgroup_tree_pids(gateway_cgroup):
+            protected_pids = cgroup_tree_pids(gateway_cgroup)
+            heavy_pids = cgroup_tree_pids(heavy_cgroup) if SHADOW_ENABLED else set()
+            for pid in protected_pids | heavy_pids:
                 cmd=cmdline(pid)
                 if not cmd or is_excluded(cmd): continue
                 _,ut,st=proc_stat(pid)
@@ -427,26 +555,36 @@ def main():
                     cls = command_class(cmd)
                     stat = update_stat(stats, cls, cpu) if ADAPTIVE else None
                     score = adaptive_score(cpu, stat) if ADAPTIVE else None
-                    if cpu >= CPU_THRESHOLD:
-                        hot[pid]=hot.get(pid,0)+1
-                    else:
-                        hot[pid]=0
-                    known_heavy = command_heavy(cmd)
-                    sustained = hot.get(pid,0) >= SUSTAINED_SAMPLES
-                    adaptive_hot = score is not None and score >= ROUTE_THRESHOLD
-                    if known_heavy or sustained or adaptive_hot:
-                        if pid in last_move and time.monotonic() - last_move[pid] < COOLDOWN_SEC:
-                            continue
-                        source_path = proc_cgroup(pid)
-                        source_cgroup = SYSTEMD_PREFIX + source_path if source_path else gateway_cgroup
-                        if pid not in moved and move(pid, heavy_cgroup):
-                            moved.add(pid)
+                    if SHADOW_ENABLED:
+                        shadow = shadow_policy.setdefault(pid, {"ewma": None, "active": False, "high_samples": 0, "low_samples": 0, "low_since": None})
+                        shadow_action = update_shadow_policy(shadow, cpu, time.monotonic())
+                        if shadow_action:
+                            logging.info('shadow decision=%s pid=%s cpu=%.1f%% ewma=%.1f%% route_threshold=%.1f%% clear_threshold=%.1f%% high_samples=%s low_samples=%s actual_group=%s cmd=%s',
+                                         shadow_action, pid, cpu, shadow["ewma"], SHADOW_ROUTE_THRESHOLD,
+                                         SHADOW_CLEAR_THRESHOLD, shadow["high_samples"], shadow["low_samples"],
+                                         "protected" if pid in protected_pids else "heavy", cmd[:180])
+                    if pid in protected_pids:
+                        if cpu >= CPU_THRESHOLD:
+                            hot[pid]=hot.get(pid,0)+1
+                        else:
+                            hot[pid]=0
+                        known_heavy = command_heavy(cmd)
+                        sustained = hot.get(pid,0) >= SUSTAINED_SAMPLES
+                        adaptive_hot = score is not None and score >= ROUTE_THRESHOLD
+                        if known_heavy or sustained or adaptive_hot:
+                            if pid in last_move and time.monotonic() - last_move[pid] < COOLDOWN_SEC:
+                                continue
+                            source_path = proc_cgroup(pid)
+                            source_cgroup = SYSTEMD_PREFIX + source_path if source_path else gateway_cgroup
                             reason = "known-heavy" if known_heavy else ("sustained-cpu" if sustained else "adaptive")
-                            routes[pid] = (cpu, reason, source_cgroup, heavy_cgroup, cmd)
-                            last_move[pid] = time.monotonic()
-                            route_events += 1
-                            state_dirty = True
-                            logging.info('routed pid=%s cpu=%.1f%% reason=%s cmd=%s', pid,cpu,reason,cmd[:180])
+                            if pid not in moved and move(pid, heavy_cgroup, reason):
+                                moved.add(pid)
+                                routes[pid] = (cpu, reason, source_cgroup, heavy_cgroup, cmd)
+                                last_move[pid] = time.monotonic()
+                                route_events += 1
+                                state_dirty = True
+                                logging.info('route decision=accepted pid=%s cpu=%.1f%% reason=%s threshold=%.1f%% sustained_samples=%s cmd=%s',
+                                             pid, cpu, reason, CPU_THRESHOLD, hot.get(pid, 0), cmd[:180])
             for pid in list(routes):
                 if not os.path.exists(f"/proc/{pid}") or not in_cgroup_tree(pid, heavy_cgroup):
                     moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
@@ -474,7 +612,7 @@ def main():
                             logging.info('unrouted pid=%s cpu=%.1f%% recovery', pid, cpu)
                             recovery_events += 1
                             moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
-        if QUOTA_DYNAMIC and heavy_cgroup:
+        if quota_observe and heavy_cgroup:
             now_mono = time.monotonic()
             if now_mono >= quota_dwell_until and now_mono - last_quota_change >= QUOTA_INTERVAL_SEC:
                 pressure = cpu_pressure()
@@ -509,7 +647,15 @@ def main():
                 target = current_quota
                 if telemetry_ok and current_quota is not None and (pressure is not None or sched_delay_ms is not None):
                     target = dynamic_quota_target(current_quota, pressure, demand, throttled_ratio, sched_delay_ms)
-                if target != current_quota and set_unit_quota(HEAVY_UNIT, target):
+                if QUOTA_AIMD_SHADOW and telemetry_ok and current_quota is not None:
+                    aimd_target = aimd_quota_target(current_quota, pressure, demand, throttled_ratio, sched_delay_ms)
+                    if aimd_target is not None and aimd_target != current_quota:
+                        logging.info('quota shadow=aimd current=%.0f%% proposed=%.0f%% pressure=%s sched_delay=%sms demand=%.2f throttled=%.3f action=log-only',
+                                     current_quota, aimd_target,
+                                     'n/a' if pressure is None else f'{pressure:.3f}',
+                                     'n/a' if sched_delay_ms is None else f'{sched_delay_ms:.2f}',
+                                     demand, throttled_ratio)
+                if QUOTA_DYNAMIC and target != current_quota and set_unit_quota(HEAVY_UNIT, target):
                     logging.info('quota changed unit=%s old=%.0f%% new=%.0f%% pressure=%s sched_delay=%sms demand=%.2f',
                                  HEAVY_UNIT, current_quota or 0, target,
                                  'n/a' if pressure is None else f'{pressure:.3f}',
@@ -520,7 +666,9 @@ def main():
                     quota_dwell_until = now_mono + QUOTA_MIN_DWELL_SEC
         alive=set(now)
         for pid in list(hot):
-            if pid not in alive: hot.pop(pid,None)
+            if pid not in protected_pids: hot.pop(pid,None)
+        for pid in list(shadow_policy):
+            if pid not in alive: shadow_policy.pop(pid, None)
         for pid in list(moved):
             if not os.path.exists(f"/proc/{pid}") or not in_cgroup_tree(pid, heavy_cgroup):
                 moved.discard(pid)
@@ -553,7 +701,7 @@ def main():
                 throttled = max(0, hstat.get("nr_throttled", 0) - history_stat_prev.get("nr_throttled", 0))
                 usage_pct = usage / (elapsed * 10000.0)
                 throttle_ratio = throttled / periods if periods else 0.0
-            history_sched_now = schedstat_delay_ms() if QUOTA_DYNAMIC else None
+            history_sched_now = schedstat_delay_ms() if quota_observe else None
             history_sched_delay = None
             if history_sched_prev is not None and history_sched_now is not None:
                 history_sched_delay = max(0.0, history_sched_now - history_sched_prev)

@@ -17,7 +17,8 @@ import time
 REPS = int(os.getenv("REPS", "3"))
 DURATION = float(os.getenv("DURATION", "30"))
 WORKERS = int(os.getenv("WORKERS", "1"))
-RESULT = pathlib.Path(os.getenv("RESULT", "/tmp/lwg-routing-contention.tsv"))
+REQUIRE_ROUTED = os.getenv("REQUIRE_ROUTED", "false").lower() in ("1", "true", "yes", "on")
+RESULT = pathlib.Path(os.getenv("RESULT", "/tmp/routing-contention.tsv"))
 CGROOT = pathlib.Path("/sys/fs/cgroup")
 
 def ctl(*args, check=True):
@@ -119,9 +120,12 @@ def run_trial(mode, rep, directory, hog, probe):
         with sample_path.open("a") as raw:
             for t,wake,work in rows:
                 raw.write(f"{mode}\t{rep}\t{t-trial_start:.6f}\t{wake:.6f}\t{work:.6f}\n")
+        route_complete = mode != "router" or peak_workers_in_heavy == WORKERS
+        validity_reason = "" if route_complete else f"routing-incomplete:{peak_workers_in_heavy}/{WORKERS}"
         return {"mode":mode,"rep":rep,"samples":len(all_ms),"elapsed_s":round(now-start,3),
                 "routed_at_s":"" if routed_at is None else round(routed_at,3),
                 "workers_in_heavy":peak_workers_in_heavy,"worker_count":WORKERS,
+                "trial_valid":int(route_complete),"validity_reason":validity_reason,
                 "all_mean_ms":statistics.mean(all_ms),"all_p50_ms":pct(all_ms,.50),
                 "all_p95_ms":pct(all_ms,.95),"all_p99_ms":pct(all_ms,.99),"all_max_ms":max(all_ms),
                 "work_p95_ms":pct(work_ms,.95),
@@ -151,7 +155,7 @@ def main():
     orig_heavy=show("heavy-workload.slice","CPUQuotaPerSecUSec")
     orig_weights=(show("protected-workload.slice","CPUWeight"),show("heavy-workload.slice","CPUWeight"))
     RESULT.parent.mkdir(parents=True,exist_ok=True)
-    fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","worker_count","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","psi_some_avg10","router_was_active"]
+    fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","worker_count","trial_valid","validity_reason","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","psi_some_avg10","router_was_active"]
     try:
         with tempfile.TemporaryDirectory(prefix="lwg-routing-bench-") as td:
             directory=pathlib.Path(td); hog,probe=write_worker_files(directory); results=[]
@@ -164,15 +168,20 @@ def main():
                         print(f"trial {rep}/{REPS}: {mode} ({DURATION:.0f}s, {WORKERS} CPU workers)",flush=True)
                         row=run_trial(mode,rep,directory,hog,probe)
                         writer.writerow(row); f.flush(); results.append(row)
-                        print("  samples={samples}, wakeup p95={all_p95_ms:.2f} ms, p99={all_p99_ms:.2f} ms, work p95={work_p95_ms:.2f} ms, routed={workers_in_heavy}/{worker_count}, route_at={routed_at_s}s".format(**row),flush=True)
+                        validity = "valid" if row["trial_valid"] else row["validity_reason"]
+                        print("  samples={samples}, wakeup p95={all_p95_ms:.2f} ms, p99={all_p99_ms:.2f} ms, work p95={work_p95_ms:.2f} ms, routed={workers_in_heavy}/{worker_count}, route_at={routed_at_s}s, {validity}".format(**row, validity=validity),flush=True)
                         time.sleep(3)
             print(f"raw results: {RESULT}")
             print("\nSummary by mode (mean of per-trial percentiles; ms):")
             for mode in ("baseline","router"):
                 group=[r for r in results if r["mode"]==mode]
                 for key in ("all_p50_ms","all_p95_ms","all_p99_ms","work_p95_ms","steady_p95_ms","steady_p99_ms","steady_work_p95_ms"):
-                    vals=[r[key] for r in group if isinstance(r[key],(int,float)) and r[key]==r[key]]
-                    print(f"  {mode:8s} {key:16s} {statistics.mean(vals):.3f}" if vals else f"  {mode:8s} {key:16s} n/a")
+                    eligible=[r for r in group if r["trial_valid"]]
+                    vals=[r[key] for r in eligible if isinstance(r[key],(int,float)) and r[key]==r[key]]
+                    print(f"  {mode:8s} {key:16s} {statistics.mean(vals):.3f} (n={len(vals)})" if vals else f"  {mode:8s} {key:16s} n/a (no valid trials)")
+            invalid=[r for r in results if not r["trial_valid"]]
+            if REQUIRE_ROUTED and invalid:
+                raise SystemExit(f"benchmark invalid: {len(invalid)} router trial(s) failed to route all workers; see {RESULT}")
     finally:
         # Always restore quotas as they were observed, and restore the service's initial state.
         ctl("stop","workload-router.service",check=False)

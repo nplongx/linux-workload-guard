@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.6.5-rc.1] - 2026-10-09
+
+Release candidate; not yet recommended for broad production deployment.
+
+### Added
+
+- Routing-policy baseline checks for transient-burst false positives, sustained-load detection latency, and idle-to-recovery latency, with repeated per-trial results.
+- Opt-in EWMA + hysteresis shadow policy that logs hypothetical route/recovery transitions without moving cgroups or changing quota.
+- Opt-in log-only AIMD quota proposals using the existing PSI, scheduler-delay, demand, and throttling telemetry; production quota enforcement remains unchanged unless dynamic quota is explicitly enabled.
+- Deterministic controller replay comparing bounded-step, AIMD, and a Gradient2-inspired proposal on synthetic telemetry, explicitly labeled as policy screening rather than host-performance evidence.
+- Deterministic replay traces comparing the existing CPU-threshold policy with shadow EWMA/hysteresis, including noisy-burst cases and a five-sample tuning candidate.
+- Live shadow integration test covering transient-burst rejection, sustained-load routing, and recovery, with three repeated trials recorded.
+- CI coverage across Ubuntu 22.04 and 24.04, including routing recovery and shadow integration checks.
+
+### Fixed
+
+- Dynamic quota no longer increases solely because of throttling while scheduler pressure remains in the hysteresis band.
+- Uninstall removes the installed `workload-profile` helper while preserving user configuration.
+
+### Changed
+
+- AIMD shadow decrease now requires available PSI; router-process runqueue delay alone cannot trigger a multiplicative decrease, and only corroborates elevated PSI. The existing bounded-step controller is unchanged.
+- Route-decision logs now include the trigger reason and relevant threshold/sample context; failed cgroup moves emit warnings with target and reason.
+- Integration tests detect user-systemd availability through the manager API, allowing them to run even when the manager reports a degraded state for unrelated units.
+- Invalid shadow-policy parameters now disable shadow mode with an explicit error instead of running with unsafe thresholds.
+- Malformed shadow-only numeric settings are now converted to invalid sentinels and rejected by validation, rather than crashing the router during module initialization or silently clamping sample counts.
+
 ## [0.6.4] - 2026-10-09
 
 Make workload routing startup resilient.

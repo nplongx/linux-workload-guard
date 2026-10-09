@@ -1,0 +1,15 @@
+trace	policy	samples	route_time_s	recovery_time_s	route_events	recovery_events	events
+single_sample_spike	baseline	21			0	0	none
+single_sample_spike	shadow	21			0	0	none
+short_burst	baseline	22			0	0	none
+short_burst	shadow	22			0	0	none
+noisy_short_burst	baseline	24			0	0	none
+noisy_short_burst	shadow	24			0	0	none
+sustained_then_idle	baseline	30	6.00	40.00	1	1	route@6.00s;recover@40.00s
+sustained_then_idle	shadow	30	8.00	44.00	1	1	route@8.00s;recover@44.00s
+near_threshold_oscillation	baseline	44			0	0	none
+near_threshold_oscillation	shadow	44			0	0	none
+moderate_sustained_then_idle	baseline	30	6.00	40.00	1	1	route@6.00s;recover@40.00s
+moderate_sustained_then_idle	shadow	30	8.00	42.00	1	1	route@8.00s;recover@42.00s
+noisy_sustained_then_idle	baseline	50			0	0	none
+noisy_sustained_then_idle	shadow	50	8.00	62.00	1	1	route@8.00s;recover@62.00s

@@ -1,0 +1,5 @@
+trial	workload	event	shadow_time_local	production_time_local	shadow_minus_production_seconds	result	notes
+1	sustained_cpu_15s_then_idle_25s	route	20:30:57.634	20:30:57.645	-0.011	pass	Shadow candidate appeared about 11 ms before production route; process exited before shadow recovery dwell completed.
+2	sustained_cpu_15s_then_idle_40s	route	20:32:20.659	20:32:20.666	-0.007	pass	Shadow candidate appeared about 7 ms before production route.
+2	sustained_cpu_15s_then_idle_40s	recover	20:32:53.010	20:32:48.968	4.042	pass	Shadow recovery candidate followed production recovery by about 4.0 s due to EWMA decay and shadow recovery conditions.
+3	120ms_bursts_each_second_for_12s	route_or_recover	NA	NA	NA	pass	No shadow or production route event observed during the burst workload.

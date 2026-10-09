@@ -6,7 +6,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Test
@@ -19,8 +23,14 @@ jobs:
       - name: Validate systemd units
         run: systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
       - name: Shell syntax
-        run: sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup
+        run: sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/integration-routing.sh tests/recovery-routing.sh tests/shadow-routing.sh tests/install-uninstall.sh
+      - name: Install/uninstall smoke test
+        run: ./tests/install-uninstall.sh
       - name: Version smoke test
         run: ./bin/workload-guard version
       - name: Integration routing
         run: ./tests/integration-routing.sh
+      - name: Recovery routing
+        run: ./tests/recovery-routing.sh
+      - name: Shadow routing
+        run: ./tests/shadow-routing.sh

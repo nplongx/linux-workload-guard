@@ -1,0 +1,11 @@
+trial	metric	seconds	transient_burst_routed	result
+1	sustained_detection	0.80	no	pass
+2	sustained_detection	0.79	no	pass
+3	sustained_detection	0.79	no	pass
+4	sustained_detection	0.79	no	pass
+5	sustained_detection	0.80	no	pass
+1	idle_to_recovery	1.56	na	pass
+2	idle_to_recovery	1.57	na	pass
+3	idle_to_recovery	1.56	na	pass
+4	idle_to_recovery	1.56	na	pass
+5	idle_to_recovery	1.56	na	pass
