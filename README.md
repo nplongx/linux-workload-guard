@@ -2,6 +2,8 @@
 
 Generic Linux/systemd resource guard for CPU-heavy workloads on developer and automation machines.
 
+**Project planning:** [v1.0.0 release roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md)
+
 ## Purpose
 
 Keep one workload from monopolizing the machine while still allowing heavy work to use a controlled amount of CPU.
