@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.4] - 2026-10-09
+
+Make workload routing startup resilient.
+
+### Fixed
+
+- The router service explicitly wants the protected and heavy workload slices, so systemd starts them before the router.
+- The router also attempts to start both configured slices when launched directly and logs a clear warning when their cgroup paths are unavailable, instead of silently skipping all routing work.
+
+### Added
+
+- Reproducible CPU-quota and router-contention benchmarks, with per-trial summaries and raw probe samples documented in the README.
+
 ## [0.6.3] - 2026-10-09
 
 More accurate runtime diagnosis.

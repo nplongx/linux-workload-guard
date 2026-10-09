@@ -52,6 +52,20 @@ def user_cgroup(unit):
         return None
     return SYSTEMD_PREFIX + value
 
+def ensure_workload_units():
+    """Start the configured slices before resolving their cgroup paths."""
+    for unit in (PARENT_UNIT, HEAVY_UNIT):
+        try:
+            result = subprocess.run(
+                ["systemctl", "--user", "start", unit],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True, timeout=5,
+            )
+            if result.returncode:
+                logging.warning("could not start %s: %s", unit, result.stderr.strip() or "systemctl failed")
+        except (OSError, subprocess.SubprocessError) as e:
+            logging.warning("could not start %s: %s", unit, e)
+
 
 def proc_stat(pid):
     try:
@@ -381,9 +395,21 @@ def main():
     quota_stat_time = time.monotonic()
     quota_sched_prev = schedstat_delay_ms() if QUOTA_DYNAMIC else None
     logging.info('started threshold=%.0f%% sustained=%ss recovery<%.0f%% adaptive=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, RECOVERY_CPU_THRESHOLD, ADAPTIVE)
+    ensure_workload_units()
+    missing_cgroups = None
     while True:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
         heavy_cgroup = user_cgroup(HEAVY_UNIT)
+        if not gateway_cgroup or not heavy_cgroup:
+            missing = tuple(unit for unit, path in ((PARENT_UNIT, gateway_cgroup), (HEAVY_UNIT, heavy_cgroup)) if not path)
+            if missing != missing_cgroups:
+                logging.warning("routing paused: missing ControlGroup for %s; check user systemd manager and slice units", ", ".join(missing))
+                missing_cgroups = missing
+            time.sleep(SAMPLE_SEC)
+            continue
+        if missing_cgroups is not None:
+            logging.info("routing resumed; workload cgroups are available")
+            missing_cgroups = None
         if not history_proc_prev:
             history_proc_prev, _, _, _ = history_cpu_attribution({}, 1.0, gateway_cgroup, heavy_cgroup)
             history_proc_time = time.monotonic()

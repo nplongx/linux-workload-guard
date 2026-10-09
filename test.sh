@@ -3,8 +3,11 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python3 -m py_compile "$ROOT/bin/workload-router.py"
 python3 -m py_compile "$ROOT/bin/workload-profile"
+python3 -m py_compile "$ROOT/benchmarks/routing-contention.py"
 python3 - "$ROOT/bin/workload-router.py" <<'PY'
 import importlib.util, sys
+from types import SimpleNamespace
+from unittest.mock import patch
 spec = importlib.util.spec_from_file_location("router", sys.argv[1])
 mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
 for command in ("npm run build", "cargo test", "pytest -q", "ffmpeg -i in out"):
@@ -25,9 +28,18 @@ assert mod.dynamic_quota_target(200, 0.10, 0.2, 0.0, 2) == 200
 assert mod.dynamic_quota_target(200, 0.30, 0.9) == 200
 assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
+assert callable(mod.ensure_workload_units)
+with patch.object(mod.subprocess, "run", side_effect=[
+    SimpleNamespace(returncode=0, stderr=""),
+    SimpleNamespace(returncode=0, stderr=""),
+]) as start_units:
+    mod.ensure_workload_units()
+    assert start_units.call_count == 2
+    assert start_units.call_args_list[0].args[0][-1] == mod.PARENT_UNIT
+    assert start_units.call_args_list[1].args[0][-1] == mod.HEAVY_UNIT
 print("unit checks: ok")
 PY
-test "$("$ROOT/bin/workload-guard" version)" = "0.6.3"
+test "$("$ROOT/bin/workload-guard" version)" = "0.6.4"
 test -x "$ROOT/bin/workload-profile"
 grep -q 'workload-guard quota' "$ROOT/bin/workload-guard"
 grep -q 'workload-guard history' "$ROOT/bin/workload-guard"
@@ -65,6 +77,7 @@ printf '%s\n' "$diagnosis" | grep -q 'CPU pressure       : UNKNOWN (PSI missing)
 grep -q 'workload-profile' "$ROOT/install.sh"
 test "$(env -u WORKLOAD_GUARD_QUOTA_INTERVAL_SEC -u WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("r",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(int(m.QUOTA_INTERVAL_SEC), int(m.QUOTA_MIN_DWELL_SEC))' "$ROOT/bin/workload-router.py")" = "5 10"
 grep -q '^EnvironmentFile=-%h/.config/linux-workload-guard/workload-guard.env$' "$ROOT/systemd/workload-router.service"
+grep -q '^Wants=protected-workload.slice heavy-workload.slice$' "$ROOT/systemd/workload-router.service"
 grep -q 'CONFIG_DIR="$HOME/.config/linux-workload-guard"' "$ROOT/install.sh"
 env -u WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD -u WORKLOAD_GUARD_RECOVERY_SAMPLES -u WORKLOAD_GUARD_RECOVERY_DWELL_SEC python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("r",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert m.RECOVERY_CPU_THRESHOLD == 35 and m.RECOVERY_SAMPLES == 10 and m.RECOVERY_DWELL_SEC == 20' "$ROOT/bin/workload-router.py"
 printf '%s\n' 'tests: ok'

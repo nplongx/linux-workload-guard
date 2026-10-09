@@ -1,5 +1,6 @@
 [Unit]
 Description=Auto-route heavy workloads to bounded CPU budget
+Wants=protected-workload.slice heavy-workload.slice
 After=protected-workload.slice heavy-workload.slice
 
 [Service]

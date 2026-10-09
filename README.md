@@ -43,7 +43,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
                        CPU quota
 ```
 
-The router intentionally uses cgroup containment for automatic routing. It considers processes inside the configured parent cgroup and its nested systemd scopes, preventing unrelated system processes from being captured just because they happen to use CPU.
+The router intentionally uses cgroup containment for automatic routing. It considers processes inside the configured parent cgroup and its nested systemd scopes, preventing unrelated system processes from being captured just because they happen to use CPU. The service starts both configured workload slices before routing begins; if systemd cannot provide either cgroup path, the router logs a warning instead of silently skipping routing.
 
 ## Default budgets
 
@@ -201,36 +201,77 @@ Tests cover Python syntax, routing/exclusion logic, quota decisions, real cgroup
 
 ## Benchmark
 
-The dynamic-quota controller was benchmarked on **2026-09-27** on:
+### CPU quota scaling (2026-10-09)
 
-- Intel Core i5-8250U, 8 logical CPUs
-- Linux kernel 7.0.0-34-generic
-- systemd 259.5
-- Python 3.14.4
+This is a **fixed-work quota sweep**, not a benchmark of the dynamic controller's decision quality. It measures how long one CPU-bound workload takes when `heavy-workload.slice` is assigned different static CPU quotas.
 
-The benchmark uses a fixed CPU-only C workload: **8 worker processes**, each performing **250 million** integer-mixing iterations. The same amount of work is run at each heavy-slice quota, so lower completion time means higher throughput. Each quota was measured in 3 valid runs, with quota levels interleaved between rounds to reduce ordering and thermal bias. An initial warm-up run was excluded from the reported set when its cgroup CPU time was inconsistent with the configured quota.
+**Test environment**
 
-| Heavy quota | Mean completion | Std. dev. | Mean cgroup CPU time | Throttled periods | Speedup vs 100% |
+- Intel Core i5-8250U, 4 cores / 8 logical CPUs (Hyper-Threading)
+- Linux kernel `7.0.0-38-generic`; Ubuntu systemd `259.5-0ubuntu3.4`
+- GCC `15.2.0`; benchmark compiled with `-O2 -march=native`
+- Python `3.14.4` is used by the guard runtime; the benchmark workload itself is C
+- Desktop/browser activity was present; this was not an isolated or idle host
+
+**Method**
+
+- The C workload performs the same fixed amount of integer-mixing work in **8 worker processes**, each running **250,000,000 iterations**.
+- Tested quotas: 100%, 150%, 200%, 250%, 300%, 350%, and 400% (100% represents one logical CPU's worth of quota).
+- **5 runs per quota, 35 trials total.** Quota order was interleaved across rounds; the script waits 2 seconds after changing quota and 2 seconds between trials. All 35 trials completed and are included; no results were intentionally excluded.
+- Elapsed time is measured around the complete worker group. Cgroup `cpu.stat` deltas record CPU time and throttling counters. CPU PSI `some avg10/avg60` is sampled at the end of each trial and is host-wide rolling telemetry, not workload-only attribution.
+- Summary values are arithmetic mean and sample standard deviation of elapsed time. Speedup is the 100% mean divided by each quota's mean. “Throttled periods” is the pooled `nr_throttled / nr_periods` percentage, not the percentage of wall-clock time spent throttled.
+
+| Heavy quota | Mean elapsed | Std. dev. | Median | Periods throttled | Speedup vs 100% |
 |---:|---:|---:|---:|---:|---:|
-| 100% | 13.36 s | 0.04 s | 13.4 s | 133.7 | 1.00x |
-| 150% | 9.06 s | 0.19 s | 13.6 s | 90.0 | 1.48x |
-| 200% | 6.96 s | 0.09 s | 13.9 s | 69.0 | 1.92x |
-| 250% | 5.55 s | 0.08 s | 13.9 s | 55.3 | 2.41x |
-| 300% | 4.81 s | 0.11 s | 14.3 s | 47.7 | 2.78x |
-| 350% | 4.30 s | 0.11 s | 14.9 s | 42.3 | 3.11x |
-| 400% | 4.02 s | 0.14 s | 15.7 s | 39.3 | 3.33x |
+| 100% | 18.084 s | 1.378 s | 17.919 s | 99.3% | 1.00x |
+| 150% | 11.895 s | 1.129 s | 12.049 s | 99.3% | 1.52x |
+| 200% | 9.031 s | 0.442 s | 8.948 s | 98.0% | 2.00x |
+| 250% | 7.688 s | 0.143 s | 7.707 s | 93.0% | 2.35x |
+| 300% | 6.253 s | 0.653 s | 5.946 s | 89.5% | 2.89x |
+| 350% | 5.468 s | 0.141 s | 5.458 s | 91.5% | 3.31x |
+| 400% | 5.083 s | 0.304 s | 5.075 s | 71.7% | 3.56x |
 
-The result shows strong throughput gains as the quota increases, but diminishing returns: moving from 350% to 400% reduced completion time by about 6.6%, versus about 32% from 100% to 150%. The workload still benefits measurably from the full 400% ceiling; this benchmark does not establish a single universally optimal quota.
+**Interpretation:** On this machine and under the observed background load, increasing the quota from 100% to 400% reduced mean completion time by **71.9%** (18.084 s to 5.083 s, or 3.56x speedup). Returns diminish at the upper end: moving from 350% to 400% improved mean elapsed time by about **7.0%**. The run-to-run coefficient of variation ranged from 1.9% to 10.4%, so the 300% results in particular were noisier than the 250% and 350% results.
 
-A separate sustained 400% contention snapshot measured CPU PSI some avg10=22.23%, wakeup latency p95 0.14 ms, p99 2.27 ms, maximum 2.54 ms, and process runqueue delay 12.79 ms. Full CPU PSI remained 0%. Background desktop/browser activity was present during the measurement, so PSI and scheduler metrics are host-health observations rather than isolated measurements of the heavy workload alone.
+The host's sampled CPU PSI `some avg10` values were high during the sweep (roughly 36–82% across trials), while `full` PSI remained 0%. These are host-wide rolling measurements influenced by both the benchmark and other processes; they should not be read as isolated latency measurements or evidence that the guard improves interactive responsiveness. CPU frequency, thermal state, scheduler contention, and Hyper-Threading can all affect timings. This is one machine/run and does not establish a universal optimal quota or quantify the dynamic controller's policy benefits.
 
-Run the reproducible quota benchmark with:
+The per-trial raw data is checked in at [`benchmarks/results/lwg-quota-benchmark-2026-10-09.tsv`](benchmarks/results/lwg-quota-benchmark-2026-10-09.tsv). Reproduce the same workload size and repetition count with:
 
-~~~bash
-./benchmarks/quota-benchmark.sh
-~~~
+```bash
+RESULT=/tmp/lwg-quota-results.tsv REPS=5 WORK=250000000 ./benchmarks/quota-benchmark.sh
+```
 
-The script stops the router during the controlled sweep, restores the heavy quota to 400%, and restarts the router if it was active before the benchmark. Raw results default to /tmp/linux-workload-guard-quota-results.tsv.
+The script stops `workload-router.service` for the static quota sweep and restarts it if it was active before the run. Its cleanup sets the quota to 400% before restarting; if dynamic quota is enabled, the controller can subsequently change the quota in response to live telemetry.
+
+### Router contention test (2026-10-09)
+
+This second test evaluates the **end-to-end routing behavior** with a small synthetic interactive task running alongside a CPU-bound process. It is separate from the static quota sweep above.
+
+**Method and conditions**
+
+- Five 20-second trials per mode (router off / router on), with the order alternated between rounds: **10 trials and 9,990 probe samples total**.
+- One CPU-bound Python worker and one periodic probe run as separate systemd scopes under `protected-workload.slice`. The protected slice is temporarily set to a 100% CPU quota; `heavy-workload.slice` starts at 400%.
+- The probe schedules a small 5,000-iteration task every 20 ms and records both wakeup lateness (actual start minus scheduled time) and task execution duration. These are synthetic scheduler/CPU-contention indicators, not application-level UI latency.
+- In router-on trials, the installed router configuration was used, including its 2-second sampling, four sustained high-CPU samples, adaptive classification, and dynamic quota controller. The CPU-bound worker was successfully moved to `heavy-workload.slice` in **all five trials**, after 8.4–9.5 seconds. It remained in the protected slice in baseline trials with the router stopped.
+- For steady-state comparisons, baseline samples are taken after the first 12 seconds; router-on samples are taken from two seconds after the actual move. Summary numbers below are the **median of the five per-trial percentiles**, which is less sensitive to a single noisy run than averaging all samples.
+
+| Steady-state metric | Router off | Router on | Change |
+|---|---:|---:|---:|
+| Probe wakeup lateness, p95 | 0.176 ms | 0.156 ms | 11.7% lower |
+| Probe wakeup lateness, p99 | 2.032 ms | 1.810 ms | 10.9% lower |
+| Probe task execution time, p95 | 8.418 ms | 3.398 ms | 59.6% lower |
+
+The steady-state task-execution p95 was consistent across router-on trials (3.15–3.57 ms), while baseline results varied more (3.37–11.65 ms). Wakeup-lateness results were noisy and the p95 improvement was modest; one router-on trial also had a high wakeup-lateness tail. Therefore, this test supports the narrower conclusion that routing this particular CPU worker out of the protected slice reduced the synthetic probe's execution time in this environment. It **does not prove a general 59.6% improvement in real interactive responsiveness**, and it cannot isolate routing from all background scheduling, CPU-frequency, or dynamic-quota effects.
+
+Per-trial summaries are available in [`benchmarks/results/lwg-routing-contention-2026-10-09.tsv`](benchmarks/results/lwg-routing-contention-2026-10-09.tsv); all 9,990 raw probe samples are in [`benchmarks/results/lwg-routing-contention-2026-10-09.samples.tsv`](benchmarks/results/lwg-routing-contention-2026-10-09.samples.tsv). Reproduce the test with:
+
+```bash
+REPS=5 DURATION=20 WORKERS=1 \
+  RESULT=/tmp/lwg-routing-contention.tsv \
+  ./benchmarks/routing-contention.py
+```
+
+**This is a controlled stress test and temporarily changes runtime slice quotas and stops/restarts the user router.** The script restores the quotas and router active state observed at startup. Run it when a short burst of CPU load is acceptable; the router-on mode uses the installed dynamic quota settings.
 
 ## Release
 
