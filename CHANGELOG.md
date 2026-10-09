@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.3] - 2026-10-09
+
+More accurate runtime diagnosis.
+
+### Changed
+
+- History schema v3 names `/proc/<router-pid>/schedstat` telemetry `router_runqueue_delay_ms` so it cannot be mistaken for host-wide scheduler delay.
+- `diagnose` no longer labels CPU consumers as causal sources based only on CPU share; it reports CPU composition as descriptive evidence.
+- CPU pressure classification uses current PSI or repeated high-PSI samples, rather than a single historical peak; missing PSI is reported as unknown.
+- Added regression checks for transient pressure spikes, router-only runqueue telemetry, and missing PSI.
+
 ## [0.6.2] - 2026-09-30
 
 Host health attribution and corrected scheduler history.

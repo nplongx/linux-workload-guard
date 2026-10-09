@@ -27,11 +27,41 @@ assert mod.PARENT_UNIT == "protected-workload.slice"
 assert mod.HEAVY_UNIT == "heavy-workload.slice"
 print("unit checks: ok")
 PY
-test "$("$ROOT/bin/workload-guard" version)" = "0.6.2"
+test "$("$ROOT/bin/workload-guard" version)" = "0.6.3"
 test -x "$ROOT/bin/workload-profile"
 grep -q 'workload-guard quota' "$ROOT/bin/workload-guard"
 grep -q 'workload-guard history' "$ROOT/bin/workload-guard"
 grep -q 'schema_version' "$ROOT/bin/workload-guard"
+tmp_history=$(mktemp)
+trap 'rm -f "$tmp_history"' EXIT HUP INT TERM
+python3 - "$tmp_history" <<'PY'
+import json, sys, time
+now=time.time()
+rows=[
+ {"schema_version":3,"ts":now-300,"cpu_psi_some_avg10":0.60,"router_runqueue_delay_ms":900,"guarded_cpu_pct":0,"unmanaged_cpu_pct":500,"top_cpu":[]},
+ {"schema_version":3,"ts":now,"cpu_psi_some_avg10":0.05,"router_runqueue_delay_ms":2,"guarded_cpu_pct":0,"unmanaged_cpu_pct":500,"top_cpu":[]},
+]
+with open(sys.argv[1], 'w') as f:
+ for row in rows: f.write(json.dumps(row)+'\n')
+PY
+diagnosis=$(WORKLOAD_GUARD_HISTORY_FILE="$tmp_history" "$ROOT/bin/workload-guard" diagnose)
+printf '%s\n' "$diagnosis" | grep -q 'CPU pressure       : NORMAL'
+printf '%s\n' "$diagnosis" | grep -q 'router process only; not host-wide'
+printf '%s\n' "$diagnosis" | grep -q 'does not prove cause'
+python3 - "$tmp_history" <<'PY'
+import json, sys, time
+with open(sys.argv[1], 'w') as f:
+ f.write(json.dumps({"schema_version":3,"ts":time.time(),"cpu_psi_some_avg10":0.55,"router_runqueue_delay_ms":25,"guarded_cpu_pct":20,"unmanaged_cpu_pct":30})+'\n')
+PY
+diagnosis=$(WORKLOAD_GUARD_HISTORY_FILE="$tmp_history" "$ROOT/bin/workload-guard" diagnose)
+printf '%s\n' "$diagnosis" | grep -q 'CPU pressure       : HIGH'
+python3 - "$tmp_history" <<'PY'
+import json, sys, time
+with open(sys.argv[1], 'w') as f:
+ f.write(json.dumps({"schema_version":3,"ts":time.time(),"guarded_cpu_pct":0,"unmanaged_cpu_pct":0})+'\n')
+PY
+diagnosis=$(WORKLOAD_GUARD_HISTORY_FILE="$tmp_history" "$ROOT/bin/workload-guard" diagnose)
+printf '%s\n' "$diagnosis" | grep -q 'CPU pressure       : UNKNOWN (PSI missing)'
 grep -q 'workload-profile' "$ROOT/install.sh"
 test "$(env -u WORKLOAD_GUARD_QUOTA_INTERVAL_SEC -u WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("r",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(int(m.QUOTA_INTERVAL_SEC), int(m.QUOTA_MIN_DWELL_SEC))' "$ROOT/bin/workload-router.py")" = "5 10"
 grep -q '^EnvironmentFile=-%h/.config/linux-workload-guard/workload-guard.env$' "$ROOT/systemd/workload-router.service"

@@ -536,10 +536,10 @@ def main():
             history_proc_prev, guarded_cpu, unmanaged_cpu, top_cpu = history_cpu_attribution(
                 history_proc_prev, proc_elapsed, gateway_cgroup, heavy_cgroup)
             history_proc_time = now_mono
-            append_history({"schema_version": 2, "ts": int(time.time()), "routed": len(routes), "route_events": route_events,
+            append_history({"schema_version": 3, "ts": int(time.time()), "routed": len(routes), "route_events": route_events,
                             "recovery_events": recovery_events, "quota_changes": quota_changes,
                             "quota": current_quota, "cpu_psi_some_avg10": cpu_pressure(),
-                            "scheduler_delay_ms": history_sched_delay, "heavy_cpu_pct": usage_pct,
+                            "router_runqueue_delay_ms": history_sched_delay, "heavy_cpu_pct": usage_pct,
                             "heavy_throttle_ratio": throttle_ratio,
                             "guarded_cpu_pct": round(guarded_cpu, 1),
                             "unmanaged_cpu_pct": round(unmanaged_cpu, 1),

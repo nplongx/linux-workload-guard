@@ -7,7 +7,7 @@ Linux Workload Guard
 
 Usage:
   workload-guard status    Show services, quotas, and routed workloads
-  workload-guard diagnose  Show configuration and cgroup paths
+  workload-guard diagnose  Explain recent CPU pressure and telemetry limits
   workload-guard stats      Show adaptive workload statistics
   workload-guard quota      Show current quota-controller telemetry
   workload-guard history    Summarize recent runtime health (1h/6h/24h)
@@ -82,7 +82,7 @@ def report(label,age):
     if not rs: print(f'\n{label}: no samples'); return
     def vals(k): return [float(x[k]) for x in rs if x.get(k) is not None]
     v2=[x for x in rs if int(x.get('schema_version',1)) >= 2]
-    q=vals('quota'); p=vals('cpu_psi_some_avg10'); s=[float(x['scheduler_delay_ms']) for x in v2 if x.get('scheduler_delay_ms') is not None]; u=vals('heavy_cpu_pct'); t=vals('heavy_throttle_ratio')
+    q=vals('quota'); p=vals('cpu_psi_some_avg10'); s=[float(x['router_runqueue_delay_ms']) for x in rs if int(x.get('schema_version',1)) >= 3 and x.get('router_runqueue_delay_ms') is not None]; u=vals('heavy_cpu_pct'); t=vals('heavy_throttle_ratio')
     print(f'\n{label} ({len(rs)} samples)')
     print(f'  routed now       : {rs[-1].get("routed",0)}')
     def counter_delta(key):
@@ -101,7 +101,7 @@ def report(label,age):
     if p: print(f'  CPU PSI avg10    : {statistics.mean(p)*100:.1f}% (peak {max(p)*100:.1f}%)')
     if s:
         p95=statistics.quantiles(s,n=20)[18] if len(s)>=2 else s[0]
-        print(f'  scheduler delay  : avg {statistics.mean(s):.1f}ms, p95 {p95:.1f}ms, peak {max(s):.1f}ms')
+        print(f'  router runqueue  : avg {statistics.mean(s):.1f}ms, p95 {p95:.1f}ms, peak {max(s):.1f}ms (router process only)')
     g=vals('guarded_cpu_pct'); m=vals('unmanaged_cpu_pct')
     if g: print(f'  guarded CPU avg  : {statistics.mean(g):.1f}%')
     if m: print(f'  unmanaged CPU avg : {statistics.mean(m):.1f}%')
@@ -112,9 +112,9 @@ PY
 show_diagnose() {
   state_file="${WORKLOAD_GUARD_HISTORY_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/linux-workload-guard/history.jsonl}"
   printf '\n[System diagnosis]\n'
-  python3 - "$state_file" "${WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH:-0.40}" "${WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS:-20}" <<'PY'
-import json, os, sys, time, statistics
-path=sys.argv[1]; psi_high=float(sys.argv[2]); sched_high=float(sys.argv[3]); now=time.time()
+  python3 - "$state_file" "${WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH:-0.40}" <<'PY'
+import json, sys, time, statistics
+path=sys.argv[1]; psi_high=float(sys.argv[2]); now=time.time()
 rows=[]
 try:
     with open(path) as f:
@@ -125,33 +125,27 @@ try:
             except Exception: pass
 except OSError: pass
 if not rows:
-    print('  no schema-v2 samples in last 1h'); raise SystemExit
+    print('  no schema-v2+ samples in last 1h'); raise SystemExit
 latest=rows[-1]
 psi=[float(x['cpu_psi_some_avg10']) for x in rows if x.get('cpu_psi_some_avg10') is not None]
-sched=[float(x['scheduler_delay_ms']) for x in rows if x.get('scheduler_delay_ms') is not None]
+router_delay=[float(x['router_runqueue_delay_ms']) for x in rows if int(x.get('schema_version',1)) >= 3 and x.get('router_runqueue_delay_ms') is not None]
 guard=[float(x['guarded_cpu_pct']) for x in rows if x.get('guarded_cpu_pct') is not None]
 unmanaged=[float(x['unmanaged_cpu_pct']) for x in rows if x.get('unmanaged_cpu_pct') is not None]
-cpu_capacity=max(1, os.cpu_count() or 1) * 100.0
 g=statistics.mean(guard) if guard else 0.0; u=statistics.mean(unmanaged) if unmanaged else 0.0
-pressure_high=max(psi, default=0.0) >= psi_high
-scheduler_high=(statistics.mean(sched) >= sched_high if sched else False) or (max(sched, default=0.0) >= sched_high)
-g_share=g / cpu_capacity; u_share=u / cpu_capacity
-guarded_high=g_share >= 0.25 and g > u
-unmanaged_high=u_share >= 0.25 and u > g
+latest_psi=float(latest['cpu_psi_some_avg10']) if latest.get('cpu_psi_some_avg10') is not None else None
+high_samples=sum(value >= psi_high for value in psi)
+pressure_high=(latest_psi is not None and latest_psi >= psi_high) or high_samples >= 2
 print(f'  samples            : {len(rows)}')
-print(f'  CPU pressure       : {"HIGH" if pressure_high else "NORMAL"} (PSI peak {max(psi, default=0)*100:.1f}%)')
-print(f'  Scheduler delay    : {"HIGH" if scheduler_high else "NORMAL"} (latest {float(latest.get("scheduler_delay_ms") or 0):.1f} ms)')
+print(f'  CPU pressure       : {"HIGH" if pressure_high else ("UNKNOWN" if latest_psi is None else "NORMAL")} (PSI latest {latest_psi*100:.1f}% / peak {max(psi, default=0)*100:.1f}%; {high_samples}/{len(psi)} samples >= threshold)' if latest_psi is not None else '  CPU pressure       : UNKNOWN (PSI missing)')
+print(f'  Router runqueue   : latest {router_delay[-1]:.1f} ms (router process only; not host-wide)' if router_delay else '  Router runqueue   : unavailable')
 print(f'  Guarded CPU        : {g:.1f}% avg')
 print(f'  Unmanaged CPU      : {u:.1f}% avg')
-if guarded_high and pressure_high:
-    source='guarded workload pressure'
-elif unmanaged_high and pressure_high:
-    source='unmanaged CPU pressure'
-elif pressure_high:
-    source='general system pressure (top process CPU does not explain PSI)'
+if pressure_high:
+    source='CPU contention observed; CPU attribution is descriptive, not causal'
 else:
-    source='no high CPU-pressure condition recorded'
-print(f'  Observed source    : {source}')
+    source='no sustained/current high CPU-pressure condition recorded' if latest_psi is not None else 'insufficient PSI data to classify CPU pressure'
+print(f'  Pressure finding   : {source}')
+print(f'  CPU composition    : guarded={g:.1f}% / unmanaged={u:.1f}% average (does not prove cause)')
 routes=int(latest.get('routed',0) or 0)
 print(f'  Guard action       : {"routing active" if routes else "no routed workload"}')
 print('  Top consumers:')
