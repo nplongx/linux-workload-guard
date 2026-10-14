@@ -264,6 +264,45 @@ RECOVERY_CGROUP=$(systemctl --user show "$RECOVERY_UNIT" -p ControlGroup --value
 test -n "$RECOVERY_CGROUP"
 RECOVERY_CGROUP="/sys/fs/cgroup$RECOVERY_CGROUP"
 
+# Some hosted/containerized runners have cgroup v2 and a user systemd manager,
+# but do not delegate the CPU controller counters needed by the dynamic quota
+# decision (or reject CPUQuota writes). Distinguish that environment limitation
+# from a controller regression before asserting live actuation.
+CPU_STAT_READY=0
+for _ in $(seq 1 20); do
+  if python3 - "$HEAVY_CGROUP/cpu.stat" <<'PY'
+import sys
+try:
+    data = {}
+    for line in open(sys.argv[1]):
+        fields = line.split()
+        if len(fields) != 2 or fields[0] in data:
+            raise ValueError("malformed cpu.stat")
+        data[fields[0]] = int(fields[1])
+    required = ("usage_usec", "nr_periods", "nr_throttled")
+    if any(key not in data or data[key] < 0 for key in required):
+        raise ValueError("required CPU controller counters unavailable")
+except (OSError, ValueError):
+    raise SystemExit(1)
+PY
+  then CPU_STAT_READY=1; break; fi
+  sleep 0.1
+done
+if [ "$CPU_STAT_READY" -ne 1 ]; then
+  printf '%s\n' 'controller integration: skipped (test cgroup does not expose usage_usec/nr_periods/nr_throttled required for quota decisions)'
+  exit 0
+fi
+if ! systemctl --user set-property "$HEAVY_UNIT" CPUQuota=100% >/dev/null 2>&1; then
+  printf '%s\n' 'controller integration: skipped (test environment rejects isolated CPUQuota property changes)'
+  exit 0
+fi
+QUOTA_PROPERTY=$(systemctl --user show "$HEAVY_UNIT" -p CPUQuotaPerSecUSec --value 2>/dev/null || true)
+case "$QUOTA_PROPERTY" in ''|infinity|infinity\ *)
+  printf '%s\n' 'controller integration: skipped (isolated test quota property is unavailable)'
+  exit 0
+  ;;
+esac
+
 # A brief burst must be rejected before sustained load is introduced.
 printf burst > "$PHASE_FILE"
 for _ in $(seq 1 40); do [ -s "$PID_FILE_1.done" ] && [ -s "$PID_FILE_2.done" ] && break; sleep 0.05; done
