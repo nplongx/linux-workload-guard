@@ -21,12 +21,14 @@ for helper in workload-router.py run-workload workload-guard workload-profile li
 done
 test -f "$HOME/.local/share/linux-workload-guard/VERSION"
 test -f "$HOME/.config/linux-workload-guard/workload-guard.env"
+test -f "$HOME/.config/systemd/user/protected-workload-recovery.slice"
 
 "$ROOT/uninstall.sh"
 for helper in workload-router.py run-workload workload-guard workload-profile limit-browser-automation-cgroup; do
     test ! -e "$HOME/.local/bin/$helper" || { echo "uninstall left $helper behind" >&2; exit 1; }
 done
 test ! -e "$HOME/.local/share/linux-workload-guard/VERSION"
+test ! -e "$HOME/.config/systemd/user/protected-workload-recovery.slice"
 test -f "$HOME/.config/linux-workload-guard/workload-guard.env" || {
     echo 'uninstall unexpectedly removed the user configuration' >&2; exit 1;
 }

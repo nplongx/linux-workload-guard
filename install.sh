@@ -13,6 +13,7 @@ install -m 0755 "$ROOT/bin/workload-profile" "$BIN/workload-profile"
 install -m 0644 "$ROOT/VERSION" "$DATA/VERSION"
 install -m 0755 "$ROOT/bin/limit-browser-automation-cgroup" "$BIN/limit-browser-automation-cgroup"
 install -m 0644 "$ROOT/systemd/protected-workload.slice" "$USER_SYSTEMD/protected-workload.slice"
+install -m 0644 "$ROOT/systemd/protected-workload-recovery.slice" "$USER_SYSTEMD/protected-workload-recovery.slice"
 install -m 0644 "$ROOT/systemd/heavy-workload.slice" "$USER_SYSTEMD/heavy-workload.slice"
 install -m 0644 "$ROOT/systemd/browser-automation.slice" "$USER_SYSTEMD/browser-automation.slice"
 install -m 0644 "$ROOT/systemd/browser-automation-budget.service" "$USER_SYSTEMD/browser-automation-budget.service"
@@ -22,7 +23,7 @@ if [ ! -f "$CONFIG_DIR/workload-guard.env" ]; then
   install -m 0644 "$ROOT/config/workload-guard.env.example" "$CONFIG_DIR/workload-guard.env"
 fi
 systemctl --user daemon-reload
-systemctl --user enable --now protected-workload.slice heavy-workload.slice
+systemctl --user enable --now protected-workload.slice protected-workload-recovery.slice heavy-workload.slice
 systemctl --user enable --now browser-automation-budget.timer
 systemctl --user enable --now workload-router.service
 printf '%s\n' 'Linux Workload Guard installed.'

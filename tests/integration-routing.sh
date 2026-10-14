@@ -17,6 +17,7 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
 fi
 
 UNIT="workload-guard-e2e-$$.scope"
+. "$ROOT/tests/recovery-unit.sh"
 PID_FILE="/tmp/linux-workload-guard-e2e.$$.pid"
 ROUTER_PID=''
 WORK_PID=''
@@ -30,12 +31,14 @@ cleanup() {
   if [ -n "$WORK_PID" ]; then kill "$WORK_PID" 2>/dev/null || true; fi
   systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
   if [ "$SERVICE_WAS_ACTIVE" -eq 1 ]; then systemctl --user start workload-router.service >/dev/null 2>&1 || true; fi
+  cleanup_test_recovery_unit
   rm -f "$PID_FILE" "$STATE_FILE" "$PHASE_FILE" "$WORKER" "$PHASE_FILE.done" "/tmp/linux-workload-guard-e2e.$$.log"
 }
 trap cleanup EXIT INT TERM
 
+setup_test_recovery_unit
 if [ "$SERVICE_WAS_ACTIVE" -eq 1 ]; then systemctl --user stop workload-router.service; fi
-systemctl --user start protected-workload.slice heavy-workload.slice
+systemctl --user start protected-workload.slice "$TEST_RECOVERY_UNIT" heavy-workload.slice
 
 cat > "$WORKER" <<PY
 import os, time
@@ -77,6 +80,7 @@ env \
   WORKLOAD_GUARD_SUSTAINED_SAMPLES=3 \
   WORKLOAD_GUARD_CPU_THRESHOLD=10 \
   WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice \
+  WORKLOAD_GUARD_RECOVERY_UNIT="$TEST_RECOVERY_UNIT" \
   WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice \
   WORKLOAD_GUARD_STATE_FILE="$STATE_FILE" \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-e2e.$$.log 2>&1 &

@@ -1,0 +1,7 @@
+[Unit]
+Description=Stable recovery destination for routed workloads
+
+[Slice]
+# This leaf slice remains available when a transient source scope disappears.
+# It inherits the parent protected-workload.slice CPU budget.
+CPUWeight=1000

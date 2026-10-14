@@ -6,6 +6,7 @@ if ! command -v systemd-run >/dev/null 2>&1 || ! command -v systemctl >/dev/null
   exit 0
 fi
 UNIT="workload-guard-recovery-$$.scope"
+. "$ROOT/tests/recovery-unit.sh"
 PID_FILE="/tmp/linux-workload-guard-recovery.$$.pid"
 PHASE_FILE="/tmp/linux-workload-guard-recovery.$$.phase"
 WORKER="/tmp/linux-workload-guard-recovery.$$.py"
@@ -16,11 +17,13 @@ cleanup() {
   [ -n "$ROUTER_PID" ] && kill "$ROUTER_PID" 2>/dev/null || true
   [ -n "$WORK_PID" ] && kill "$WORK_PID" 2>/dev/null || true
   systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
+  cleanup_test_recovery_unit
   rm -f "$PID_FILE" "$PHASE_FILE" "$STATE_FILE" "$WORKER" "/tmp/linux-workload-guard-recovery.$$.log"
 }
 trap cleanup EXIT INT TERM
+setup_test_recovery_unit
 printf '%s' hot > "$PHASE_FILE"
-systemctl --user start protected-workload.slice heavy-workload.slice
+systemctl --user start protected-workload.slice "$TEST_RECOVERY_UNIT" heavy-workload.slice
 cat > "$WORKER" <<PY
 import time
 phase_file = "$PHASE_FILE"
@@ -41,6 +44,8 @@ SOURCE_CGROUP=$(awk -F: '$1=="0" {print "/sys/fs/cgroup" $3}' "/proc/$WORK_PID/c
 test -n "$SOURCE_CGROUP"
 PARENT_CGROUP=$(systemctl --user show protected-workload.slice -p ControlGroup --value)
 PARENT_CGROUP="/sys/fs/cgroup$PARENT_CGROUP"
+RECOVERY_CGROUP=$(systemctl --user show "$TEST_RECOVERY_UNIT" -p ControlGroup --value)
+RECOVERY_CGROUP="/sys/fs/cgroup$RECOVERY_CGROUP"
 env \
   WORKLOAD_GUARD_SAMPLE_SEC=0.25 \
   WORKLOAD_GUARD_SUSTAINED_SAMPLES=2 \
@@ -49,6 +54,7 @@ env \
   WORKLOAD_GUARD_RECOVERY_SAMPLES=2 \
   WORKLOAD_GUARD_RECOVERY_DWELL_SEC=1 \
   WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice \
+  WORKLOAD_GUARD_RECOVERY_UNIT="$TEST_RECOVERY_UNIT" \
   WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice \
   WORKLOAD_GUARD_STATE_FILE="$STATE_FILE" \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-recovery.$$.log 2>&1 &
@@ -71,6 +77,7 @@ env \
   WORKLOAD_GUARD_RECOVERY_SAMPLES=2 \
   WORKLOAD_GUARD_RECOVERY_DWELL_SEC=1 \
   WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice \
+  WORKLOAD_GUARD_RECOVERY_UNIT="$TEST_RECOVERY_UNIT" \
   WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice \
   WORKLOAD_GUARD_STATE_FILE="$STATE_FILE" \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-recovery.$$.log 2>&1 &
@@ -79,7 +86,7 @@ sleep 0.5
 RECOVERY_START=$(python3 -c 'import time; print(time.monotonic())')
 printf '%s' idle > "$PHASE_FILE"
 for _ in $(seq 1 40); do
-  if grep -qx "$WORK_PID" "$SOURCE_CGROUP/cgroup.procs" 2>/dev/null || grep -qx "$WORK_PID" "$PARENT_CGROUP/cgroup.procs" 2>/dev/null; then
+  if grep -qx "$WORK_PID" "$SOURCE_CGROUP/cgroup.procs" 2>/dev/null || grep -qx "$WORK_PID" "$PARENT_CGROUP/cgroup.procs" 2>/dev/null || grep -qx "$WORK_PID" "$RECOVERY_CGROUP/cgroup.procs" 2>/dev/null; then
     RECOVERY_END=$(python3 -c 'import time; print(time.monotonic())')
     python3 - "$RECOVERY_START" "$RECOVERY_END" <<'PY'
 import sys
