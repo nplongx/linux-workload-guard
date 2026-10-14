@@ -352,10 +352,20 @@ def cgroup_cpu_stat(cgroup):
         data = {}
         with open(os.path.join(cgroup, "cpu.stat")) as f:
             for line in f:
-                key, value = line.split()[:2]
-                data[key] = int(value)
+                fields = line.split()
+                if len(fields) != 2:
+                    return None
+                key, value = fields
+                parsed = int(value)
+                if parsed < 0:
+                    return None
+                data[key] = parsed
+        # Treat incomplete snapshots as unavailable telemetry. In particular,
+        # never infer zero usage/throttling from a partially readable cpu.stat.
+        if not {"usage_usec", "nr_periods", "nr_throttled"}.issubset(data):
+            return None
         return data
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError):
         return None
 
 def unit_quota(unit):

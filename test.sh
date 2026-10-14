@@ -20,6 +20,23 @@ assert not mod.command_heavy("python app.py")
 assert mod.is_excluded("python /home/x/workload-router.py")
 assert not mod.is_excluded("/usr/bin/google-chrome")
 assert mod.in_cgroup_tree
+# Malformed or incomplete cgroup telemetry must fail closed.
+import os, tempfile
+with tempfile.TemporaryDirectory() as cgroup:
+    stat_path = os.path.join(cgroup, "cpu.stat")
+    with open(stat_path, "w") as f:
+        f.write("usage_usec 100\nnr_periods 4\nnr_throttled 1\n")
+    assert mod.cgroup_cpu_stat(cgroup) == {"usage_usec": 100, "nr_periods": 4, "nr_throttled": 1}
+    for malformed in (
+        "usage_usec 100\nnr_periods 4\n",
+        "usage_usec not-a-number\nnr_periods 4\nnr_throttled 1\n",
+        "usage_usec -1\nnr_periods 4\nnr_throttled 1\n",
+        "usage_usec 100\nmalformed-line\nnr_periods 4\nnr_throttled 1\n",
+    ):
+        with open(stat_path, "w") as f:
+            f.write(malformed)
+        assert mod.cgroup_cpu_stat(cgroup) is None, repr(malformed)
+assert mod.cgroup_cpu_stat(None) is None
 assert mod.command_class("npm run build") == "npm:run"
 assert mod.adaptive_score(95, {"samples": 10, "mean": 30, "variance": 25}) is not None
 assert mod.adaptive_score(80, {"samples": 2, "mean": 30, "variance": 25}) is None

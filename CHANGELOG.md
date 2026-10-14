@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Dynamic quota telemetry now fails closed when cgroup `cpu.stat` is malformed, contains negative counters, or omits required usage/throttling fields.
+
 ## [0.6.5-rc.1] - 2026-10-09
 
 Release candidate; not yet recommended for broad production deployment.
