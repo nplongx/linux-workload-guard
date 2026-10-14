@@ -30,7 +30,10 @@ def replay():
         elapsed = index * interval
         target = quota
         if elapsed >= dwell_until and elapsed - last_change >= interval:
-            target = router.dynamic_quota_target(quota, pressure, demand)
+            # The trace explicitly supplies a valid low scheduler-delay sample
+            # alongside low PSI; missing scheduler telemetry must not be
+            # synthesized into a low-pressure classification.
+            target = router.dynamic_quota_target(quota, pressure, demand, sched_delay_ms=0.0)
         if target != quota:
             changes.append(elapsed)
             quota = target

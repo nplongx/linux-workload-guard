@@ -14,10 +14,34 @@ ROUTER_WAS_ACTIVE=0
 if systemctl --user is-active --quiet workload-router.service; then
     ROUTER_WAS_ACTIVE=1
 fi
+ORIGINAL_QUOTA=$(systemctl --user show heavy-workload.slice -p CPUQuotaPerSecUSec --value)
+restore_quota() {
+    case "$ORIGINAL_QUOTA" in
+        *ms)
+            percent=$(awk -v q="${ORIGINAL_QUOTA%ms}" 'BEGIN { if (q ~ /^[0-9]+([.][0-9]+)?$/ && q > 0) printf "%.1f", q / 10; else exit 1 }') || return 1
+            systemctl --user set-property heavy-workload.slice CPUQuota="${percent}%" >/dev/null 2>&1
+            ;;
+        *us)
+            percent=$(awk -v q="${ORIGINAL_QUOTA%us}" 'BEGIN { if (q ~ /^[0-9]+([.][0-9]+)?$/ && q > 0) printf "%.1f", q / 10000; else exit 1 }') || return 1
+            systemctl --user set-property heavy-workload.slice CPUQuota="${percent}%" >/dev/null 2>&1
+            ;;
+        *s)
+            percent=$(awk -v q="${ORIGINAL_QUOTA%s}" 'BEGIN { if (q ~ /^[0-9]+([.][0-9]+)?$/ && q > 0) printf "%.1f", q * 100; else exit 1 }') || return 1
+            systemctl --user set-property heavy-workload.slice CPUQuota="${percent}%" >/dev/null 2>&1
+            ;;
+        infinity|infinity\ *)
+            systemctl --user set-property heavy-workload.slice CPUQuota=infinity >/dev/null 2>&1
+            ;;
+        *)
+            printf 'warning: cannot decode original CPUQuotaPerSecUSec=%s; leaving quota unchanged by cleanup\n' "$ORIGINAL_QUOTA" >&2
+            return 1
+            ;;
+    esac
+}
 cleanup() {
     set +e
     rm -rf "$TMP"
-    systemctl --user set-property heavy-workload.slice CPUQuota=400% >/dev/null 2>&1
+    restore_quota || printf 'warning: failed to restore original heavy-workload.slice CPU quota (%s)\n' "$ORIGINAL_QUOTA" >&2
     if [ "$ROUTER_WAS_ACTIVE" -eq 1 ]; then
         systemctl --user start workload-router.service >/dev/null 2>&1
     fi
