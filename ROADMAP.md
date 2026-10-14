@@ -5,7 +5,7 @@ This roadmap describes the project's intended path from the current `v0.6.5-rc.1
 ## Current status
 
 - **Current release:** [`v0.6.5-rc.1`](https://github.com/nplongx/linux-workload-guard/releases/tag/v0.6.5-rc.1) (pre-release)
-- **CI baseline:** Ubuntu 22.04 and 24.04 checks passed for the earlier release-candidate commit. The current hardening changes still need a fresh hosted matrix run; local results do not substitute for that run.
+- **Hosted CI:** hardening commit `c39272e` passed the Ubuntu 22.04 and 24.04 matrix in [run 38532132779](https://github.com/nplongx/linux-workload-guard/actions/runs/38532132779). Both jobs passed. Ubuntu 22.04 explicitly skipped only the dynamic-quota integration stage because its delegated cgroup did not expose `usage_usec`, `nr_periods`, and `nr_throttled`; Ubuntu 24.04 ran and passed that stage. This is an environment-specific coverage gap, not a claim that the controller path was validated on Ubuntu 22.04.
 - **Scope:** Dynamic quota control is opt-in. AIMD remains a log-only shadow experiment; experimental replay results are not production controller behavior.
 - **Known validation limit:** Live testing has exercised the scheduler-delay path. The production PSI high-pressure threshold has not yet been directly crossed in live decision-making at its default setting; deterministic tests cover the relevant logic.
 
@@ -71,7 +71,7 @@ The time ranges below are planning estimates from the current RC, not promises. 
 
 **Exit gate:** evidence is repeatable, limitations are explicit, and no unexplained regression exceeds the project's documented acceptance limits.
 
-**Current RC2 blockers:** direct live observation of PSI at the production `0.40` decision boundary; hosted Ubuntu 22.04/24.04 CI results for the hardening commit; valid repeated multi-worker comparison; recorded throughput and guard CPU/memory overhead; and cross-host evidence where another host is available. If a safe live crossing cannot be produced without excessive load, keep the branch explicitly unvalidated rather than changing production thresholds to manufacture a result.
+**Current RC2 blockers:** direct live observation of PSI at the production `0.40` decision boundary; valid repeated multi-worker comparisons across environments (the available 5-second smoke runs are diagnostic, not acceptance-level performance evidence); and cross-host evidence where another host is available. Hosted CI is green, but the dynamic-quota integration stage was environment-skipped on Ubuntu 22.04 because its delegated cgroup lacked required CPU counters; obtain CPU-controller integration evidence on that version or document the supported-environment limit before stable release. If a safe live crossing cannot be produced without excessive load, keep the branch explicitly unvalidated rather than changing production thresholds to manufacture a result.
 
 ### Phase 3 — RC3 soak and recovery
 
