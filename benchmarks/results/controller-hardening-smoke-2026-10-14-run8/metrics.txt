@@ -1,0 +1,9 @@
+probe_baseline: n=251 wakeup_lateness_ms p50/p95/p99=0.086/0.271/18.611; work_duration_ms p50/p95/p99=1.389/17.597/18.984
+probe_enabled: n=260 wakeup_lateness_ms p50/p95/p99=0.093/0.420/1.450; work_duration_ms p50/p95/p99=1.262/1.779/4.503
+cpu_bound_baseline: workers=2 aggregate_python_loop_iterations_per_second=49219.596
+cpu_bound_enabled: workers=2 aggregate_python_loop_iterations_per_second=57862.474
+guard_enabled_window: wall_s=5.174 cpu_s=0.060 one_core_cpu_pct=1.16 rss_start/end_kib=18200/18224 peak_rss_kib=18224 router_process_runqueue_delay_delta_ms=17.240
+host_cpu_psi_some_avg10_pct: baseline_start/end=1.71/5.91; enabled_start/end=5.91/7.89
+transition_timing_s: both_workers_routed=1.050; first_quota_increase=1.335; idle_to_quota_decrease_and_recovery=2.371
+quota_stability: transitions=6 direction_reversals=1 values=100->150,150->200,200->250,250->200,200->150,150->100
+metrics_scope: one bounded synthetic host run; loop iterations and probe timings are workload-specific, not application SLA evidence

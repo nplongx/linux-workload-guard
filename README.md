@@ -45,7 +45,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
                        CPU quota
 ```
 
-The router intentionally uses cgroup containment for automatic routing. It considers processes inside the configured parent cgroup and its nested systemd scopes, preventing unrelated system processes from being captured just because they happen to use CPU. The service starts both configured workload slices before routing begins; if systemd cannot provide either cgroup path, the router logs a warning instead of silently skipping routing.
+The router intentionally uses cgroup containment for automatic routing. It considers processes inside the configured parent cgroup and its nested systemd scopes, preventing unrelated system processes from being captured just because they happen to use CPU. The service starts the parent, stable recovery leaf, and heavy-workload slices before routing begins; if systemd cannot provide the required cgroup paths, the router pauses routing instead of silently proceeding without a safe recovery destination.
 
 ## Default budgets
 
@@ -53,6 +53,7 @@ The router intentionally uses cgroup containment for automatic routing. It consi
 |---|---:|
 | Protected application/agent | 150% |
 | Heavy workload slice | 400% |
+| Recovery destination | Inherits the protected slice budget |
 | Browser automation | 200% |
 
 Protected workloads also get higher `CPUWeight` (`1000`) than heavy workloads (`100`). This makes scheduler contention favor latency-sensitive protected work while the heavy slice remains quota-bounded.
@@ -172,6 +173,20 @@ Routed long-lived workloads are eligible for recovery after sustained CPU usage 
 
 Adaptive mode is deliberately opt-in. Dynamic quota is also opt-in; when enabled it adjusts only the heavy workload slice, using CPU PSI pressure, scheduler runqueue delay, heavy-cgroup throttling, learned demand, bounded steps, and a 100–400% default range. High PSI alone is treated as strong pressure only at 40% by default; scheduler delay has its own 20ms high-pressure threshold. This avoids shrinking heavy-workload capacity because of moderate host contention while still reacting when the host is genuinely under scheduling pressure. It keeps a small per-command-class CPU baseline using online mean/variance updates; it is not a black-box model and requires a minimum history before it can route. Known-heavy and sustained-CPU rules remain active regardless of adaptive mode.
 
+### Controller safety and degraded telemetry
+
+The quota controller now treats telemetry as a time-bounded observation window rather than assuming every readable counter is valid:
+
+- CPU PSI parsing rejects missing, malformed, non-finite, or out-of-range `some.avg10` values. The production high-pressure boundary remains `0.40`; the deterministic regression test verifies exactly `0.40` and a value just below it. This does **not** substitute for a live test that crosses `0.40` on a host.
+- `cpu.stat` snapshots require `usage_usec`, `nr_periods`, and `nr_throttled`, with no duplicate keys, malformed rows, negative values, counter regressions, or impossible throttled-period deltas. Missing baselines, stale sample windows, or reset counters skip quota decisions and require a new valid interval before actuation resumes.
+- Unknown PSI is not treated as low pressure. A missing or malformed signal cannot justify a quota increase; the independent production scheduler-delay high-pressure path remains available. AIMD proposals require valid PSI and remain log-only.
+- CPU utilization uses elapsed sample time and process start time from `/proc/<pid>/stat`. Recovery pauses on unreadable, stale, or regressing process counters rather than interpreting them as idle. Route state persists process start time to detect PID reuse even when command lines match.
+- When the heavy cgroup disappears or its `ControlGroup` changes, quota counters are re-baselined. Failed `systemctl` quota writes do not update the controller's confirmed quota and use bounded retry backoff. Missing workload cgroups are retried periodically.
+- Recovery returns a process to its original source scope if that cgroup still exists. If systemd has removed the transient scope, recovery uses the stable `protected-workload-recovery.slice` leaf under the protected CPU budget; it does not fall back to the protected slice root, which can reject process migration with `EBUSY` under cgroup v2 domain-controller rules.
+- Legacy route-state records without a process start time are deliberately not trusted for PID-based recovery after upgrade. If an old record referred to a process that remains in the heavy slice, the router drops that record rather than risk moving a reused PID; inspect the process and cgroup before taking any manual recovery action.
+
+Dynamic quota remains opt-in (`WORKLOAD_GUARD_DYNAMIC_QUOTA=false` by default). AIMD remains a log-only proposal path (`WORKLOAD_GUARD_AIMD_SHADOW=false` by default). Do not promote experimental replay-only policies to production enforcement based on synthetic traces.
+
 ## Configuration
 
 Environment variables:
@@ -195,12 +210,13 @@ Environment variables:
 - `WORKLOAD_GUARD_QUOTA_MIN` / `MAX` — quota bounds, default `100` / `400`.
 - `WORKLOAD_GUARD_QUOTA_STEP` — maximum quota change per controller step, default `50`.
 - `WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH` / `LOW` — CPU PSI pressure thresholds, default `0.40` / `0.10`.
-- `WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH` — heavy cgroup throttling ratio that permits quota growth, default `0.10`.
+- `WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH` — heavy cgroup throttling ratio that may corroborate quota growth when demand is at least `0.30` and PSI plus scheduler delay both confirm low pressure, default `0.10`.
 - `WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC` — minimum time between quota direction changes, default `10`.
 - `WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS` / `LOW_MS` — scheduler runqueue-delay thresholds, default `20` / `5` ms.
 - `WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC` — adaptive-statistics disk flush interval, default `10`.
 - `WORKLOAD_GUARD_HISTORY_INTERVAL_SEC` — runtime health snapshot interval, default `300` seconds.
 - `WORKLOAD_GUARD_EXCLUDE_PATTERNS` — comma-separated command-line patterns excluded from routing.
+- `WORKLOAD_GUARD_RECOVERY_UNIT` — stable leaf slice used when a routed process's original source cgroup has disappeared. Default is a `-recovery.slice` leaf beneath the configured parent (normally `protected-workload-recovery.slice`); custom parent slices must provide this unit or set the variable to an existing safe leaf.
 - `WORKLOAD_GUARD_BROWSER_PROCESS_PATTERN` — process pattern for the optional browser automation budget; empty by default.
 
 ### Controller research and safe comparison
@@ -221,6 +237,7 @@ For a deterministic pressure-to-recovery quota replay using the production targe
 The repository contains generic workload primitives plus optional integrations for common workload classes. These are integrations, not the identity of the project:
 
 - `systemd/protected-workload.slice` — 150% protected workload budget.
+- `systemd/protected-workload-recovery.slice` — stable leaf destination for recovery if a transient source scope disappears; inherits the protected slice budget.
 - `systemd/heavy-workload.slice` — 400% heavy workload budget.
 - `systemd/browser-automation.slice` — 200% browser automation budget.
 
@@ -260,7 +277,9 @@ The project is designed for user-level installation and does not require root.
 ./tests/recovery-routing.sh
 ```
 
-Tests cover Python syntax, routing/exclusion logic, quota decisions, real cgroup routing, recovery after sustained low CPU, and route-state reconciliation across router restart. The integration tests require a systemd user manager and cgroup v2; otherwise they skip cleanly.
+Tests cover Python syntax, routing/exclusion logic, quota decisions, telemetry reset/staleness, PID reuse, service-command timeouts, real cgroup routing, recovery after sustained low CPU, and route-state reconciliation across router restart. The integration tests require a systemd user manager and cgroup v2; otherwise they print `SKIP` and exit successfully.
+
+Run the deterministic controller regression directly with `python3 tests/controller-hardening.py`. On a host with a working systemd user manager and cgroup v2, run `./tests/controller-integration.sh` to exercise the combined path using temporary, uniquely named slices: brief-burst rejection, two competing CPU-bound workers, routing, dynamic quota increase/decrease, AIMD log-only behavior, cgroup recreation, and idle recovery to a leaf slice. It does not change the installed service's environment or the normal `protected-workload.slice` / `heavy-workload.slice`. The test uses shortened sampling and test-only thresholds; it is functional regression coverage, not a production-latency or long-soak benchmark.
 
 ## Benchmark
 
@@ -304,7 +323,7 @@ The per-trial raw data is checked in at [`benchmarks/results/quota-benchmark-202
 RESULT=/tmp/quota-results.tsv REPS=5 WORK=250000000 ./benchmarks/quota-benchmark.sh
 ```
 
-The script stops `workload-router.service` for the static quota sweep and restarts it if it was active before the run. Its cleanup sets the quota to 400% before restarting; if dynamic quota is enabled, the controller can subsequently change the quota in response to live telemetry.
+The script stops `workload-router.service` for the static quota sweep and restarts it only if it was active before the run. Cleanup attempts to restore the `CPUQuotaPerSecUSec` observed before the sweep, rather than hard-coding 400%; inspect the warning output and effective quota if systemd reports an unsupported/unrecognized original value. If dynamic quota is enabled, the controller can subsequently change the quota as usual.
 
 ### Router contention test (2026-10-09)
 
@@ -347,6 +366,10 @@ DURATION=20 REPS=3 WORKERS=1 REQUIRE_ROUTED=true \
 The multi-worker case is a routing test only if the router actually moves all worker processes into `heavy-workload.slice`. Because the router evaluates CPU thresholds per process, multi-worker trials may not trigger routing; inspect `trial_valid` and `validity_reason` in the TSV before comparing results.
 
 A follow-up isolated run with five paired trials per mode routed the single worker in all five router trials (8.4–9.5 s). Median per-trial wake-up p95 was 0.179 ms baseline versus 0.118 ms with routing; wake-up p99 was 2.198 ms versus 0.984 ms; probe-work p95 was 6.829 ms versus 3.342 ms. Median paired changes were -24.1%, -63.9%, and -51.1%, respectively. This is encouraging but still synthetic, single-host evidence; one baseline trial had a much higher work-duration tail, and it does not establish general UI-latency improvement. Raw results are in [`benchmarks/results/routing-contention-isolated-1worker-5rep-2026-10-09.tsv`](benchmarks/results/routing-contention-isolated-1worker-5rep-2026-10-09.tsv).
+
+**Hardening integration evidence (2026-10-14):** on Ubuntu 26.04.1 LTS, kernel `7.0.0-38-generic` (`x86_64`, Python 3.14.4, systemd 259.5, cgroup v2, 8 logical CPUs), three repeated final-code runs exercised burst rejection, routing two competing workers, dynamic quota increase/decrease, AIMD log-only proposals, recovery to a dedicated fallback leaf, and routing/recovery after heavy-cgroup removal/recreation. Across those three runs, median worker routing was 1.066 s, first quota increase 1.353 s, and idle-to-decrease/recovery 2.377 s. Probe p95 wake-up lateness medians were 0.997 ms baseline / 0.420 ms enabled; p99 medians were 18.181 / 1.453 ms. The probe is synthetic and runs in this test's CPU-limited hierarchy. The Python-loop throughput median was 44,039 iterations/s baseline and 54,466 enabled, but load/PSI varied between short runs; do not infer generalized performance improvement. Router CPU measured about 1.16% of one logical CPU and peak RSS median was about 18.2 MiB over a 5.1-second interval. These are one-host smoke evidence only. Full per-run output and raw samples are in [`benchmarks/results/controller-hardening-smoke-2026-10-14.md`](benchmarks/results/controller-hardening-smoke-2026-10-14.md).
+
+**Evidence limits to keep in view:** all performance probes here are synthetic and single-host. Earlier 2- and 4-worker benchmark trials did not route their workers and are invalid as router-on/router-off comparisons (they remain useful only as load observations). The default production PSI high branch at `0.40` has deterministic boundary coverage but has not been observed crossing the threshold in a live controller decision; test-only quota pressure thresholds force only the low-pressure branch. No second-host validation or 24-hour/72-hour soak has been completed. The smoke throughput and overhead figures are short measurements, not acceptance-level performance evidence.
 
 ## Release
 

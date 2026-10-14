@@ -1,0 +1,18 @@
+recorded_at=2026-10-14T14:25:30+07:00
+command=WORKLOAD_GUARD_CONTROLLER_RESULTS_DIR=/home/long/linux-workload-guard/benchmarks/results/controller-hardening-smoke-2026-10-14-run7 ./tests/controller-integration.sh
+host=Linux bougainvillean 7.0.0-38-generic #38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026 x86_64 GNU/Linux
+python=Python 3.14.4
+logical_cpus=8
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+VERSION_ID="26.04"
+cgroup_version=2
+systemd 259 (259.5-0ubuntu3.4)
+baseline_duration_seconds=5.034891
+enabled_duration_seconds=5.184887
+test_parent_unit=lwg-controller-it-1000-588022-parent.slice
+test_recovery_unit=lwg-controller-it-1000-588022-parent-recovery.slice
+test_heavy_unit=lwg-controller-it-1000-588022-heavy.slice
+test_dynamic_quota=true
+test_aimd_shadow=true
+test_psi_threshold_override=0.99/1.00 (test-only; production .10/.40 not modified)
+test_scheduler_delay_threshold_override=99999/100000ms (test-only)

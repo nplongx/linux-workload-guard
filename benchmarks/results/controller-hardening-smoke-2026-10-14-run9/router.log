@@ -1,0 +1,32 @@
+2026-10-14 14:26:22,269 INFO started threshold=10% sustained=0.75s recovery<35% adaptive=False shadow=True
+2026-10-14 14:26:22,269 INFO shadow policy=ewma-hysteresis alpha=0.35 route>=10.0% clear<=5.0% sustained_samples=3 recovery_samples=2 recovery_dwell=1.0s; actions are log-only
+2026-10-14 14:26:22,269 INFO quota policy=aimd-shadow decrease=0.800 additive_increase=10.0; proposals are log-only
+2026-10-14 14:26:22,370 INFO quota telemetry baseline reset for cgroup=/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/lwg.slice/lwg-controller.slice/lwg-controller-it.slice/lwg-controller-it-1000.slice/lwg-controller-it-1000-590812.slice/lwg-controller-it-1000-590812-heavy.slice
+2026-10-14 14:26:22,384 WARNING quota decision skipped reason=cgroup-changed
+2026-10-14 14:26:22,671 INFO quota telemetry recovered; controller decisions resumed
+2026-10-14 14:26:23,240 INFO shadow decision=route pid=590873 cpu=59.0% ewma=27.3% route_threshold=10.0% clear_threshold=5.0% high_samples=3 low_samples=0 actual_group=protected cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:23,851 INFO shadow decision=route pid=590872 cpu=69.0% ewma=52.2% route_threshold=10.0% clear_threshold=5.0% high_samples=3 low_samples=0 actual_group=protected cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:23,857 INFO route decision=accepted pid=590872 cpu=69.0% reason=sustained-cpu threshold=10.0% sustained_samples=3 cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:23,858 INFO route decision=accepted pid=590873 cpu=70.7% reason=sustained-cpu threshold=10.0% sustained_samples=3 cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:24,154 INFO quota shadow=aimd current=100% proposed=110% pressure=0.100 sched_delay=0.40ms demand=1.00 throttled=0.667 action=log-only
+2026-10-14 14:26:24,170 INFO quota changed unit=lwg-controller-it-1000-590812-heavy.slice old=100% new=150% pressure=0.100 sched_delay=0.40ms demand=1.00
+2026-10-14 14:26:26,296 INFO quota shadow=aimd current=150% proposed=160% pressure=0.103 sched_delay=2.61ms demand=1.00 throttled=0.955 action=log-only
+2026-10-14 14:26:26,312 INFO quota changed unit=lwg-controller-it-1000-590812-heavy.slice old=150% new=200% pressure=0.103 sched_delay=2.61ms demand=1.00
+2026-10-14 14:26:28,480 INFO quota shadow=aimd current=200% proposed=210% pressure=0.105 sched_delay=2.65ms demand=0.87 throttled=0.182 action=log-only
+2026-10-14 14:26:28,488 INFO quota changed unit=lwg-controller-it-1000-590812-heavy.slice old=200% new=250% pressure=0.105 sched_delay=2.65ms demand=0.87
+2026-10-14 14:26:29,665 INFO unrouted pid=590872 cpu=0.0% recovery
+2026-10-14 14:26:29,666 INFO unrouted pid=590873 cpu=0.0% recovery
+2026-10-14 14:26:30,571 INFO quota changed unit=lwg-controller-it-1000-590812-heavy.slice old=250% new=200% pressure=0.095 sched_delay=0.00ms demand=0.00
+2026-10-14 14:26:31,719 INFO shadow decision=recover pid=590872 cpu=3.5% ewma=2.3% route_threshold=10.0% clear_threshold=5.0% high_samples=0 low_samples=0 actual_group=protected cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:31,720 INFO shadow decision=recover pid=590873 cpu=0.0% ewma=1.0% route_threshold=10.0% clear_threshold=5.0% high_samples=0 low_samples=0 actual_group=protected cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:32,577 INFO quota changed unit=lwg-controller-it-1000-590812-heavy.slice old=200% new=150% pressure=0.085 sched_delay=0.02ms demand=0.00
+2026-10-14 14:26:33,140 WARNING routing paused: missing ControlGroup for lwg-controller-it-1000-590812-heavy.slice; check user systemd manager and slice units
+2026-10-14 14:26:33,459 INFO routing resumed; workload cgroups are available
+2026-10-14 14:26:33,468 INFO quota telemetry baseline reset for cgroup=/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/lwg.slice/lwg-controller.slice/lwg-controller-it.slice/lwg-controller-it-1000.slice/lwg-controller-it-1000-590812.slice/lwg-controller-it-1000-590812-heavy.slice
+2026-10-14 14:26:34,338 INFO shadow decision=route pid=590872 cpu=75.4% ewma=53.9% route_threshold=10.0% clear_threshold=5.0% high_samples=3 low_samples=0 actual_group=protected cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:34,350 INFO route decision=accepted pid=590872 cpu=75.4% reason=sustained-cpu threshold=10.0% sustained_samples=3 cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:34,350 INFO shadow decision=route pid=590873 cpu=72.3% ewma=53.7% route_threshold=10.0% clear_threshold=5.0% high_samples=3 low_samples=0 actual_group=protected cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:34,351 INFO route decision=accepted pid=590873 cpu=72.3% reason=sustained-cpu threshold=10.0% sustained_samples=3 cmd=python3 /tmp/lwg-controller-it-1000-590812.py
+2026-10-14 14:26:34,948 INFO quota changed unit=lwg-controller-it-1000-590812-heavy.slice old=150% new=100% pressure=0.069 sched_delay=0.00ms demand=0.01
+2026-10-14 14:26:36,072 INFO unrouted pid=590872 cpu=0.0% recovery
+2026-10-14 14:26:36,073 INFO unrouted pid=590873 cpu=0.0% recovery

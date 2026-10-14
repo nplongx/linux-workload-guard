@@ -4,7 +4,23 @@
 
 ### Fixed
 
-- Dynamic quota telemetry now fails closed when cgroup `cpu.stat` is malformed, contains negative counters, or omits required usage/throttling fields.
+- Dynamic quota telemetry now rejects malformed, duplicate, negative, missing, reset, or impossible cgroup counters, and skips stale observation windows instead of silently converting counter regressions to zero.
+- Missing, malformed, non-finite, or out-of-range CPU PSI is reported as unavailable; unknown pressure no longer counts as low pressure for quota increases.
+- Process sampling now rejects malformed `/proc/<pid>/stat` data and measures CPU usage over real sample intervals. Recovery does not treat failed process reads, counter regressions, or stale intervals as idle CPU.
+- Route state now persists process start time to detect PID reuse, including same-command reuse. Legacy route-state records without start time are no longer trusted for recovery actions.
+- Recovery falls back to a stable leaf slice under `protected-workload.slice` when a transient source scope disappears. It avoids moving processes into a slice root that can reject the move with `EBUSY` when child controllers are enabled.
+- Quota telemetry baselines reset when the heavy cgroup path disappears or changes. Missing cgroups trigger bounded unit-start retries, and failed quota writes retain the last confirmed quota with capped exponential retry backoff.
+- Dynamic quota demand now uses current routed-process samples instead of only the CPU sample that originally triggered routing. AIMD remains an independent log-only proposal path.
+- Routed CPU demand is averaged over the full interval between quota observations. A pre-fix integration trace exposed an upward quota rebound after an idle transition; the integration test now verifies no upward quota transition after route recovery and a complete dwell window.
+- Recent throttling can no longer trigger quota growth after demand falls below the corroboration threshold; scheduler delay is sampled through dwell windows to avoid treating accumulated delay as one sudden interval spike.
+- The static quota benchmark now restores its initially observed quota instead of unconditionally leaving `heavy-workload.slice` at 400% after the sweep.
+
+### Added
+
+- Deterministic controller hardening tests for PSI threshold boundaries, counter resets/anomalies, stale windows, PID identity, legacy state, service timeouts, and the quota/AIMD/recovery decision sequence.
+- Isolated systemd integration coverage for transient-burst rejection, routing two competing workers, dynamic quota increase/decrease, AIMD log-only behavior, and recovery. The test uses temporary slice units and does not change the installed service configuration.
+- `protected-workload-recovery.slice` provides a stable leaf fallback inherited from the protected CPU budget; the installer, uninstaller, and service dependencies now include it.
+- The bounded integration smoke test reports synthetic probe p50/p95/p99, CPU-bound loop throughput, host PSI observations, router process CPU/RSS and scheduler-delay delta, quota transitions, and detection/recovery timings. Single-run smoke metrics are not performance acceptance evidence.
 
 ## [0.6.5-rc.1] - 2026-10-09
 

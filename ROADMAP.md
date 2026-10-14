@@ -5,9 +5,24 @@ This roadmap describes the project's intended path from the current `v0.6.5-rc.1
 ## Current status
 
 - **Current release:** [`v0.6.5-rc.1`](https://github.com/nplongx/linux-workload-guard/releases/tag/v0.6.5-rc.1) (pre-release)
-- **CI:** Ubuntu 22.04 and 24.04 checks passed for the release candidate.
+- **CI baseline:** Ubuntu 22.04 and 24.04 checks passed for the earlier release-candidate commit. The current hardening changes still need a fresh hosted matrix run; local results do not substitute for that run.
 - **Scope:** Dynamic quota control is opt-in. AIMD remains a log-only shadow experiment; experimental replay results are not production controller behavior.
 - **Known validation limit:** Live testing has exercised the scheduler-delay path. The production PSI high-pressure threshold has not yet been directly crossed in live decision-making at its default setting; deterministic tests cover the relevant logic.
+
+### RC1 hardening evidence — 2026-10-14
+
+The current hardening pass closes several code-level failure modes without changing release version or promoting experimental controllers:
+
+- PSI parsing rejects missing, malformed, non-finite, duplicate, and out-of-range `some.avg10` values. The default `0.40` decision boundary and a just-below-boundary value are covered deterministically; this is **not** a live crossing of `0.40`.
+- cgroup CPU telemetry rejects malformed/incomplete snapshots, missing baselines, stale intervals, counter regressions, and impossible throttling deltas. Invalid windows yield no quota proposal and require a new valid measurement interval before resuming.
+- Process samples use `/proc/<pid>/stat` start time and actual elapsed sample time. PID reuse and unreadable/regressing samples cannot be treated as valid low-CPU recovery observations. Route state carries the start time; legacy records without it are not trusted for PID-based recovery.
+- A stable `protected-workload-recovery.slice` leaf is the fallback when a transient source scope disappears. A live integration failure reproduced `EBUSY` when recovery targeted the parent slice root; this fallback now targets a leaf and regression tests cover cgroup removal/recreation.
+- ControlGroup changes/disappearance reset quota baselines. Failed quota writes keep the last confirmed internal value with capped retry backoff. Current per-process demand is used after routing, rather than indefinitely reusing the route-trigger sample.
+- A new isolated integration test exercises burst rejection, two competing CPU-bound workers, dynamic quota increase/decrease, AIMD log-only proposals, idle recovery, and cgroup disappearance/recreation. The current version also records a short synthetic paired baseline/enabled probe with p50/p95/p99 wake-up lateness and work duration, Python-loop throughput, host PSI, router process CPU/RSS/HWM, runqueue-delay delta, quota transitions, and routing/quota/recovery timing.
+- Three repeated runs of the final bounded controller smoke test (raw files plus aggregation in `benchmarks/results/controller-hardening-smoke-2026-10-14.md`) measured median route detection of 1.066 s, first quota increase at 1.353 s, idle-to-quota-decrease/recovery at 2.377 s, router CPU near 1.16% of one logical CPU, and peak RSS near 18.2 MiB. The test-only pressure settings deliberately did not exercise the production PSI-high branch.
+- The static quota benchmark cleanup now attempts to restore its initially observed quota instead of unconditionally leaving the heavy slice at `400%`.
+
+The evidence remains host-limited. Existing repeated latency comparisons are synthetic, single-host measurements. Earlier 2- and 4-worker benchmark trials did not route the workers and are not valid router-on/router-off comparisons. The three 5-second-per-mode integration probes are smoke measurements; they are not stable performance or overhead acceptance evidence. There is no confirmed second-host validation or 24-hour/72-hour soak. Broad routed-workload throughput remains uncharacterized.
 
 ## v1.0.0 goal
 
@@ -51,8 +66,12 @@ The time ranges below are planning estimates from the current RC, not promises. 
 - Validate scheduler-delay and PSI signals independently where possible, including live validation of the default production PSI threshold.
 - Compare routing enabled versus baseline; record latency percentiles, throughput, quota changes, recovery, and overhead.
 - Confirm behavior on supported Ubuntu versions and record kernel/cgroup/environment details with results.
+- Retain trial validity metadata, raw samples, actual route count, initial/effective quota, service restarts, PSI, scheduler-delay deltas, and elapsed detection/recovery times. Do not compare a router trial unless all required workers actually route.
+- Include a valid two-or-more-worker contention scenario or document an explicit supported-load limitation if the per-process routing trigger prevents reliable routing.
 
 **Exit gate:** evidence is repeatable, limitations are explicit, and no unexplained regression exceeds the project's documented acceptance limits.
+
+**Current RC2 blockers:** direct live observation of PSI at the production `0.40` decision boundary; hosted Ubuntu 22.04/24.04 CI results for the hardening commit; valid repeated multi-worker comparison; recorded throughput and guard CPU/memory overhead; and cross-host evidence where another host is available. If a safe live crossing cannot be produced without excessive load, keep the branch explicitly unvalidated rather than changing production thresholds to manufacture a result.
 
 ### Phase 3 — RC3 soak and recovery
 
@@ -64,6 +83,8 @@ The time ranges below are planning estimates from the current RC, not promises. 
 - Publish a concise release-readiness report with commands, environment, results, and known limitations.
 
 **Exit gate:** no release-blocking issue is found; any remaining limitation has a documented mitigation.
+
+**Soak evidence status:** no 24-hour run or 72-hour target run is recorded as of 2026-10-14. Existing load traces are short experiments and cannot be counted toward this gate. The soak report must record its continuous start/end timestamps, host/kernel/cgroup details, router restarts/errors, routed process counts, quota transitions/oscillation, PSI and scheduler-delay telemetry availability, CPU/memory overhead, and recovery events.
 
 ### Phase 4 — v1.0.0 release preparation
 
@@ -122,3 +143,20 @@ Keep sensing, decision, and actuation separated. Compare candidate controllers i
 Issues and pull requests that improve a release acceptance criterion are especially welcome. Please include the environment, reproduction steps, expected versus observed behavior, and test evidence. For controller or performance changes, include baseline comparisons and explain how the change can be disabled or rolled back.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [CHANGELOG.md](CHANGELOG.md) for shipped changes.
+
+## Operational rollback and release checklist
+
+For an operator rollback of the experimental adaptive quota path, edit `~/.config/linux-workload-guard/workload-guard.env` and set `WORKLOAD_GUARD_DYNAMIC_QUOTA=false`; set `WORKLOAD_GUARD_AIMD_SHADOW=false` if its diagnostic logs are also unwanted, then run `systemctl --user restart workload-router.service`. Verify the service is active, check its journal for configuration/telemetry errors, and inspect `CPUQuotaPerSecUSec` on `heavy-workload.slice`. If quota was changed before the rollback, restore only the previously recorded/known quota value; do not assume `400%` is the correct runtime restoration value. The router does not automatically reset the heavy slice quota merely because dynamic control is disabled.
+
+Before promoting a candidate, verify every item below with fresh evidence:
+
+- [ ] Local regression, routing, recovery, shadow, install/uninstall, systemd, and shell checks pass; record environmental skips separately from passes.
+- [ ] Hosted CI for Ubuntu 22.04 and 24.04 passes at the candidate SHA; record whether runtime integration tests ran or skipped.
+- [ ] PSI `0.40` default live-decision validation completed safely, or release notes explicitly retain it as unvalidated.
+- [ ] Repeated valid baseline/enabled trials report p50/p95/p99, throughput, actual route validity, recovery, quota transitions, and guard CPU/memory overhead.
+- [ ] Additional host/workload evidence collected where available, with kernel/cgroup details.
+- [ ] RC3 soak of at least 24 hours completed (target 72 hours where practical) with report and no release-blocking stability issue.
+- [ ] Upgrade, rollback, legacy route-state behavior, and operator troubleshooting reviewed.
+- [ ] Release version, changelog, tag, release notes, and candidate SHA all agree.
+
+Do not release `v1.0.0` while any required acceptance gate remains unverified. AIMD, Gradient2-inspired replay, PID, weighted fairness, eBPF, and `sched_ext` are not production controller features.
