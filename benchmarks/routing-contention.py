@@ -75,6 +75,25 @@ def write_worker_files(directory):
     hog = directory / "hog.py"
     if WORKLOAD_KIND == "terminal-openssl":
         hog.write_text('''import os, re, subprocess, sys, time\npidfile, progress, output, duration = sys.argv[1:5]\nseconds=max(10, int(float(duration)-3))\nwith open(output, "w") as log:\n p=subprocess.Popen(["openssl", "speed", "-seconds", str(seconds), "-bytes", "16384", "sha256"], stdout=log, stderr=subprocess.STDOUT)\n open(pidfile,"w").write(str(p.pid))\n rc=p.wait()\nrate=float("nan")\nfor line in open(output, errors="replace"):\n if line.lstrip().startswith("sha256"):\n  values=re.findall(r"([0-9]+(?:\\.[0-9]+)?)(?:k)?", line)\n  if values:\n   try: rate=float(values[-1])\n   except ValueError: pass\nwith open(progress,"a",buffering=1) as f: f.write(f"{time.monotonic():.6f}\\t{int(rate) if rate==rate and rate>0 else 0}\\n")\nraise SystemExit(rc)\n''')
+    elif WORKLOAD_KIND == "terminal-gzip":
+        hog.write_text('''import os,subprocess,sys,time
+pidfile,progress=sys.argv[1:3]
+p=subprocess.Popen(["gzip","-1","-c","/dev/zero"],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+open(pidfile,"w").write(str(p.pid))
+total=0; deadline=time.monotonic()+1.0
+with open(progress,"a",buffering=1) as f:
+ try:
+  while True:
+   chunk=p.stdout.read(65536)
+   if not chunk: break
+   total += len(chunk); now=time.monotonic()
+   if now >= deadline:
+    f.write(f"{now:.6f}\\t{total}\\n"); deadline=now+1.0
+ finally:
+  p.terminate()
+  try: p.wait(timeout=2)
+  except subprocess.TimeoutExpired: p.kill(); p.wait()
+''')
     elif WORKLOAD_KIND == "terminal-build":
         srcdir = directory / "build-src"
         srcdir.mkdir(exist_ok=True)
@@ -319,10 +338,12 @@ def main():
     global CREATED_UNIT_FILES
     if REPS < 1 or WORKERS < 1 or DURATION < 20:
         raise SystemExit("REPS and WORKERS must be positive; DURATION must be >=20s for comparable steady windows")
-    if WORKLOAD_KIND not in ("synthetic", "terminal-openssl", "terminal-build"):
-        raise SystemExit("WORKLOAD_KIND must be synthetic, terminal-openssl, or terminal-build")
+    if WORKLOAD_KIND not in ("synthetic", "terminal-openssl", "terminal-gzip", "terminal-build"):
+        raise SystemExit("WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, or terminal-build")
     if WORKLOAD_KIND == "terminal-openssl" and not shutil.which("openssl"):
         raise SystemExit("WORKLOAD_KIND=terminal-openssl requires the openssl CLI")
+    if WORKLOAD_KIND == "terminal-gzip" and not shutil.which("gzip"):
+        raise SystemExit("WORKLOAD_KIND=terminal-gzip requires the gzip CLI")
     if WORKLOAD_KIND == "terminal-build" and not shutil.which(os.getenv("CC", "cc")):
         raise SystemExit("WORKLOAD_KIND=terminal-build requires a C compiler (CC or cc)")
     if not pathlib.Path("/sys/fs/cgroup/cgroup.controllers").exists():
@@ -380,7 +401,7 @@ def main():
             f.write(f"router_sustained_samples={os.getenv('BENCH_ROUTER_SUSTAINED_SAMPLES', '4')}\n")
             f.write(f"router_cpu_threshold_percent={os.getenv('BENCH_ROUTER_CPU_THRESHOLD', '70')}\n")
             f.write("percentile_method=nearest-rank ceil(p*n)-1\n")
-            f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block); terminal-build mode is completed generated C compile-and-link cycles/s\n")
+            f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block); terminal-gzip mode is compressed output bytes/s; terminal-build mode is completed generated C compile-and-link cycles/s\n")
             f.write("steady_state_window=common elapsed time >=12s after probe start in both modes; routing must have converged before window for a valid router trial\n")
             f.write("noise_diagnostics=host CPU PSI some avg10 and /proc/loadavg 1m sampled at each trial start/end; diagnostic only, no post-hoc exclusion\n")
             f.write("router_overhead=isolated router process CPU percentage of one logical CPU and VmHWM peak RSS\n")
