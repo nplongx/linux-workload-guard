@@ -1,0 +1,65 @@
+acceptance_status=PASS
+result_tsv=benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.tsv
+raw_samples_tsv=benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.samples.tsv
+manifest=benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.environment.txt
+git_revision=38556e48e2a73d6132492cf66dfa0e67028eebd0
+workload_kind=terminal-gzip
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+duration_seconds=30.0
+workers=2
+minimum_pairs=5
+minimum_steady_samples_per_mode=500
+max_median_paired_latency_ratio=1.10
+min_median_paired_throughput_ratio=0.90
+max_router_cpu_pct_one_core=5.0
+max_router_peak_rss_kib=32768
+scope=GNU gzip -1 compression of /dev/zero and periodic probe only; PASS does not generalize to other CLI workloads
+variation_method=paired-ratio range/IQR plus deterministic bootstrap percentile interval; resamples=10000; seed=20261015; descriptive only
+PASS: repetition 1 routed all 2 intended worker(s)
+PASS: repetition 1 steady samples baseline/router=601/763
+PASS: repetition 1 router CPU=0.331% of one logical CPU
+PASS: repetition 1 router peak RSS=19896 KiB
+PAIR: repetition 1 steady_p95_ms ratio=0.982
+PAIR: repetition 1 steady_p99_ms ratio=0.983
+PAIR: repetition 1 steady_work_p95_ms ratio=0.688
+PAIR: repetition 1 worker_throughput_per_sec ratio=1.457
+PASS: repetition 2 routed all 2 intended worker(s)
+PASS: repetition 2 steady samples baseline/router=702/729
+PASS: repetition 2 router CPU=0.364% of one logical CPU
+PASS: repetition 2 router peak RSS=19948 KiB
+PAIR: repetition 2 steady_p95_ms ratio=1.020
+PAIR: repetition 2 steady_p99_ms ratio=1.003
+PAIR: repetition 2 steady_work_p95_ms ratio=0.740
+PAIR: repetition 2 worker_throughput_per_sec ratio=0.989
+PASS: repetition 3 routed all 2 intended worker(s)
+PASS: repetition 3 steady samples baseline/router=714/753
+PASS: repetition 3 router CPU=0.297% of one logical CPU
+PASS: repetition 3 router peak RSS=19800 KiB
+PAIR: repetition 3 steady_p95_ms ratio=1.002
+PAIR: repetition 3 steady_p99_ms ratio=0.998
+PAIR: repetition 3 steady_work_p95_ms ratio=0.721
+PAIR: repetition 3 worker_throughput_per_sec ratio=0.992
+PASS: repetition 4 routed all 2 intended worker(s)
+PASS: repetition 4 steady samples baseline/router=778/778
+PASS: repetition 4 router CPU=0.265% of one logical CPU
+PASS: repetition 4 router peak RSS=20000 KiB
+PAIR: repetition 4 steady_p95_ms ratio=0.990
+PAIR: repetition 4 steady_p99_ms ratio=1.018
+PAIR: repetition 4 steady_work_p95_ms ratio=0.999
+PAIR: repetition 4 worker_throughput_per_sec ratio=0.997
+PASS: repetition 5 routed all 2 intended worker(s)
+PASS: repetition 5 steady samples baseline/router=718/724
+PASS: repetition 5 router CPU=0.331% of one logical CPU
+PASS: repetition 5 router peak RSS=20012 KiB
+PAIR: repetition 5 steady_p95_ms ratio=0.994
+PAIR: repetition 5 steady_p99_ms ratio=1.002
+PAIR: repetition 5 steady_work_p95_ms ratio=0.715
+PAIR: repetition 5 worker_throughput_per_sec ratio=0.980
+PASS: median paired steady_p95_ms ratio=0.994 limit=≤1.10
+VARIATION: steady_p95_ms ratio min=0.982 q1=0.990 median=0.994 q3=1.002 max=1.020; bootstrap95CI=[0.982,1.020] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired steady_p99_ms ratio=1.002 limit=≤1.10
+VARIATION: steady_p99_ms ratio min=0.983 q1=0.998 median=1.002 q3=1.003 max=1.018; bootstrap95CI=[0.983,1.018] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired steady_work_p95_ms ratio=0.721 limit=≤1.10
+VARIATION: steady_work_p95_ms ratio min=0.688 q1=0.715 median=0.721 q3=0.740 max=0.999; bootstrap95CI=[0.688,0.999] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired worker_throughput_per_sec ratio=0.992 limit=≥0.90
+VARIATION: worker_throughput_per_sec ratio min=0.980 q1=0.989 median=0.992 q3=0.997 max=1.457; bootstrap95CI=[0.980,1.457] (resamples=10000, seed=20261015; descriptive, not a gate override)

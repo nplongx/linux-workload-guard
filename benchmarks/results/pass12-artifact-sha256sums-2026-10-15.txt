@@ -1,0 +1,17 @@
+5cfcb56f5cbafd0ded9244ba145221538b780c091fde90e1d76644313a879eed  benchmarks/results/release-readiness-2026-10-15-pass12.md
+4ceaac6c91d2ba909e4aca70d82bb63fcdd34e6d08429c2590586230ccee58dc  benchmarks/results/local-verification-pass12-2026-10-15.log
+3b9dd81038be7de8242fb1f6b27d037b074cb487add7b53c4703d9d7f60dff44  benchmarks/results/routing-contention-scope-aggregate-synthetic-5rep30-pass12-2026-10-15.tsv
+9f4731f95fd45329a2feae6e800ff8b3a339fe6d650116428792252a810903a4  benchmarks/results/routing-contention-scope-aggregate-synthetic-5rep30-pass12-2026-10-15.samples.tsv
+56692337e27bee6086cf1be2b5e3a497a62701bc2ba3b443041ac848a1838fe2  benchmarks/results/routing-contention-scope-aggregate-synthetic-5rep30-pass12-2026-10-15.environment.txt
+4a7ef2954818bfb0ecacda570b7203fc6bdc1619142eed5f0026d4faced9956c  benchmarks/results/routing-contention-scope-aggregate-synthetic-5rep30-pass12-2026-10-15.router.log
+1dc57a2424ddf0bf8e16a81ce0058fa04d740b5ef7a675ae432d4154922a9627  benchmarks/results/routing-contention-scope-aggregate-synthetic-5rep30-pass12-2026-10-15.acceptance.txt
+39ad8a92c69a31d2e1aa73fa24e758110db8ca075f317bd7e1212cf99acd4af2  benchmarks/results/routing-contention-scope-build-5rep30-pass12-2026-10-15.tsv
+7a03e71678865bf7405d1c0e1cbf98ac3696a9dec4c8b0edd38a9f58949594d3  benchmarks/results/routing-contention-scope-build-5rep30-pass12-2026-10-15.samples.tsv
+0e054ff343eb247a883066dd4e9d44c77d4c626d1ad6bbc2a2c2360f0d28b536  benchmarks/results/routing-contention-scope-build-5rep30-pass12-2026-10-15.environment.txt
+21ea3fba027bce64b50151026a0a3040a8c36785b220a9c91063340f998dc74f  benchmarks/results/routing-contention-scope-build-5rep30-pass12-2026-10-15.router.log
+598a0a148866de618bc57bbd4156ee860772ede05743b6cbf089901440ea4021  benchmarks/results/routing-contention-scope-build-5rep30-pass12-2026-10-15.acceptance.txt
+00393145a4e3ad485242f2d76f4e1c0c282a255c187e0b30accaadd8bd3963ed  benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.tsv
+18b37a9a3b93c24ee9e9b829af6bbc0499d753c12bdae794aaaa414aeb96aa81  benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.samples.tsv
+790296d76c78dd8d04c46b59018461897575e4fe7746ee185e67cdea390fca00  benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.environment.txt
+2f2777ac7316e191f6ba12618896bec46d5560287d61a98962ef9117566dea80  benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.router.log
+5730a4815b013bad344abb9b065283d98534aa361ce3622610258fd770302dc0  benchmarks/results/routing-contention-scope-gzip-5rep30-pass12-2026-10-15.acceptance.txt
