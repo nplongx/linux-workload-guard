@@ -1,0 +1,3 @@
+collection.txt: OK
+environment.txt: OK
+gates.txt: OK

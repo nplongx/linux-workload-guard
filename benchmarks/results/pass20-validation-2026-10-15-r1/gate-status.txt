@@ -1,0 +1,12 @@
+Local full test suite and static validation: PASS
+Hosted Ubuntu 22.04 compatibility job: PASS
+Hosted Ubuntu 24.04 compatibility job: PASS
+Ubuntu 22.04 delegated CPU telemetry/quota actuation-readback: SKIP / OPEN (missing nr_periods and nr_throttled in delegated cpu.stat)
+Independent-host preregistered ABBA: NOT RUN
+Throughput acceptance: OPEN / CONFOUNDED_INCONCLUSIVE; threshold 0.90 unchanged
+Dedicated-host rollback drill: NOT RUN / OPEN
+Natural production PSI crossing at 0.40: NOT RUN
+Continuous RC soak: NOT RUN; minimum 24 hours, target 72 hours
+Stable release: NO-GO; version 0.6.5-rc.1; no v1.0.0 tag
+No production service lifecycle, quota, routing/controller policy or threshold changes were made.
+No CPU-bound benchmark was run locally; CI tests use isolated bounded test slices.

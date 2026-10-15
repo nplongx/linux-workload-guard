@@ -1,0 +1,4 @@
+recorded_at=2026-10-15T22:52:20+07:00
+source_commit=0e6a9b440d17dfbf757cd9607b52201d56009216
+origin_main=0e6a9b440d17dfbf757cd9607b52201d56009216
+version=0.6.5-rc.1

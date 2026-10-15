@@ -1,0 +1,2 @@
+recorded_at=2026-10-15T22:50:48+07:00
+command= <./test.sh>

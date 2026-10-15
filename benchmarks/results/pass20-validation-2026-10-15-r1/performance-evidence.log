@@ -1,0 +1,2 @@
+performance reviewer rejects invalid limits and detects PSI confounding / unordered evidence
+performance review tests: ok (PASS/FAIL/INCOMPLETE/CONFOUNDED_INCONCLUSIVE, paired ratios, PSI noise and evidence-order guards)

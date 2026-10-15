@@ -1,0 +1,2 @@
+recorded_at=2026-10-15T22:51:32+07:00
+command= <./tests/routing-benchmark-safety.sh>

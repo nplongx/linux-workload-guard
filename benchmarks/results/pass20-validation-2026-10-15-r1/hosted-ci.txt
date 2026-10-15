@@ -1,0 +1,13 @@
+run_id=38763768973
+url=https://github.com/nplongx/linux-workload-guard/actions/runs/38763768973
+source_commit=0e6a9b440d17dfbf757cd9607b52201d56009216
+status=completed
+conclusion=success
+ubuntu_22_04_job=PASS (compatibility matrix)
+ubuntu_22_04_preflight_safety=PASS
+ubuntu_22_04_delegated_cpu_runtime_gate=SKIP / OPEN
+ubuntu_22_04_skip_reason=delegated cpu.stat missing required counters usage_usec/nr_periods/nr_throttled; available keys usage_usec,user_usec,system_usec,core_sched.force_idle_usec
+ubuntu_24_04_job=PASS (compatibility matrix)
+ubuntu_24_04_preflight_safety=PASS
+ubuntu_24_04_delegated_cpu_runtime_gate=PASS within ephemeral CI test slice only; not independent-host evidence
+interpretation=green CI matrix does not close the Ubuntu 22.04 delegated runtime gate, independent-host ABBA, rollback, natural PSI crossing, throughput acceptance, or soak

@@ -24,8 +24,8 @@ Date: 2026-10-15. Version remains `0.6.5-rc.1`.
 
 | Gate | Status | Closure condition |
 |---|---|---|
-| Local deterministic tests / static checks | PASS | `./test.sh`, Python compile, shell/Bash syntax, systemd verify, version smoke, `git diff --check`; Pass 19 SHA-256 manifest re-verified |
-| Ubuntu 22.04/24.04 compatibility CI | PENDING | Hosted CI for final commit |
+| Local deterministic tests / static checks | PASS | Full suite, Python compile, shell/Bash syntax, systemd verify, version smoke, `git diff --check`; Pass 19 SHA-256 manifest re-verified |
+| Ubuntu 22.04/24.04 compatibility CI | PASS — [run 38763768973](https://github.com/nplongx/linux-workload-guard/actions/runs/38763768973) | Both OS jobs and all CI steps succeeded |
 | Delegated CPU telemetry + quota actuation/readback | SKIP / OPEN | Real delegated test cgroup exposes required counters; bounded write and effective readback proven |
 | Independent-host preregistered ABBA | NOT RUN | Authorized independent host; all paired samples retained; PSI controls satisfied |
 | Throughput acceptance | OPEN / CONFOUNDED_INCONCLUSIVE | Threshold remains `0.90`; valid pairs and preregistered noise limits required |
@@ -35,3 +35,11 @@ Date: 2026-10-15. Version remains `0.6.5-rc.1`.
 | Stable release | NO-GO | Every mandatory gate has valid evidence; no `v1.0.0` tag until then |
 
 No host-dependent gate may be inferred from a green compatibility matrix, synthetic replay, root-cgroup counters, or a read-only preflight.
+
+## Final evidence and hosted CI
+
+- Implementation commit: `0e6a9b440d17dfbf757cd9607b52201d56009216`; `HEAD=origin/main` at the code revision.
+- Hosted CI: [run 38763768973](https://github.com/nplongx/linux-workload-guard/actions/runs/38763768973), conclusion `success`, Ubuntu 22.04 and Ubuntu 24.04 jobs both PASS. Ubuntu 22.04 runtime step is explicitly `SKIP / OPEN` because the delegated test cgroup lacks `nr_periods` and `nr_throttled`; Ubuntu 24.04 controller integration passed only within its ephemeral CI test slice.
+- Evidence bundle: [`benchmarks/results/pass20-validation-2026-10-15-r1/`](../benchmarks/results/pass20-validation-2026-10-15-r1/). All recorded local command exit statuses are 0. The nested preflight manifest and top-level SHA-256 manifest were verified; the top-level manifest excludes only itself and its verification-output file to avoid self-reference.
+- The corrected preflight confirms the user service is active/running, `MainPID=358400`, `NRestarts=0`, and user `heavy-workload.slice` quota is 100%. Same-named system-scope units are inactive/unlimited and are explicitly separate. No production mutation or local CPU-bound benchmark occurred.
+- Version remains `0.6.5-rc.1`; no `v1.0.0` tag; stable release remains NO-GO.

@@ -1,0 +1,21 @@
+recorded_at=2026-10-15T22:52:20+07:00
+source_commit=0e6a9b440d17dfbf757cd9607b52201d56009216
+origin_main=0e6a9b440d17dfbf757cd9607b52201d56009216
+version=0.6.5-rc.1
+hostname=bougainvillean
+os_release=PRETTY_NAME="Ubuntu 26.04.1 LTS"
+kernel=Linux 7.0.0-38-generic x86_64 GNU/Linux
+architecture=x86_64
+cgroup_mode=v2
+user_systemd_manager=available
+router_user_service=ActiveState=active;SubState=running;MainPID=358400;NRestarts=0;ExecMainStatus=0;
+heavy_user_slice=ActiveState=active;ControlGroup=/user.slice/user-1000.slice/user@1000.service/heavy.slice/heavy-workload.slice;CPUQuotaPerSecUSec=1s;
+router_system_service_separate_scope=ActiveState=inactive;SubState=dead;MainPID=0;NRestarts=0;
+heavy_system_slice_separate_scope=CPUQuotaPerSecUSec=infinity;
+host_cpu_psi=some avg10=0.11 avg60=0.69 avg300=1.93 total=2981958787;full avg10=0.00 avg60=0.00 avg300=0.00 total=0;
+tracked_worktree=clean
+untracked_historical_entries_before_bundle=254
+historical_artifacts_deleted_or_overwritten=NONE
+production_policy_or_quota_mutation=NONE
+production_service_lifecycle_mutation=NONE
+cpu_bound_benchmark_executed_locally=NONE
