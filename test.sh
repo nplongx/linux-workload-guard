@@ -4,12 +4,14 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python3 -m py_compile "$ROOT/bin/workload-router.py"
 python3 -m py_compile "$ROOT/bin/workload-profile"
 python3 -m py_compile "$ROOT/benchmarks/routing-contention.py"
+python3 -m py_compile "$ROOT/benchmarks/live-psi-observe.py"
+python3 -m py_compile "$ROOT/benchmarks/performance-review.py"
 python3 -m py_compile "$ROOT/benchmarks/shadow-policy-replay.py"
 python3 -m py_compile "$ROOT/benchmarks/controller-replay.py"
 python3 -m py_compile "$ROOT/benchmarks/quota-pressure-replay.py"
 python3 -m py_compile "$ROOT/tests/controller-hardening.py"
 python3 "$ROOT/tests/controller-hardening.py"
-sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/recovery-unit.sh" "$ROOT/tests/soak-monitor.sh" "$ROOT/tests/routing-benchmark-safety.sh" "$ROOT/tests/quota-benchmark-safety.sh" "$ROOT/benchmarks/soak-monitor.sh"
+sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/recovery-unit.sh" "$ROOT/tests/soak-monitor.sh" "$ROOT/tests/routing-benchmark-safety.sh" "$ROOT/tests/quota-benchmark-safety.sh" "$ROOT/tests/live-psi-observe-safety.sh" "$ROOT/tests/performance-review.sh" "$ROOT/benchmarks/soak-monitor.sh"
 bash -n "$ROOT/benchmarks/quota-benchmark.sh" "$ROOT/benchmarks/routing-contention-isolated.sh"
 if grep -Eq 'systemctl --user (start|stop|restart|try-restart|reload|set-property) workload-router\.service|systemctl --user set-property (protected-workload\.slice|heavy-workload\.slice)' \
   "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh"; then
@@ -24,6 +26,8 @@ fi
 "$ROOT/tests/quota-benchmark-safety.sh"
 "$ROOT/tests/routing-benchmark-safety.sh"
 "$ROOT/tests/soak-monitor.sh"
+"$ROOT/tests/live-psi-observe-safety.sh"
+"$ROOT/tests/performance-review.sh"
 python3 - "$ROOT/bin/workload-router.py" <<'PY'
 import importlib.util, sys
 from types import SimpleNamespace

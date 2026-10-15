@@ -1,0 +1,4 @@
+mode	rep	samples	elapsed_s	routed_at_s	workers_in_heavy	worker_count	trial_valid	validity_reason	all_mean_ms	all_p50_ms	all_p95_ms	all_p99_ms	all_max_ms	work_p95_ms	steady_n	steady_mean_ms	steady_p50_ms	steady_p95_ms	steady_p99_ms	steady_max_ms	steady_work_p95_ms	psi_some_avg10	router_enabled_during_trial
+baseline	1	784	20.347		0	2	1		3.6779738890306124	0.100631	19.621556	39.545585	43.64914	57.450002	310	3.911461	0.102721	19.708142	39.537069	43.173179	55.85935	23.0	0
+router	1	791	20.235		0	2	0	routing-incomplete:0/2	3.983615662452592	0.099753	19.614132	39.153192	42.043307	57.967295	0	nan	nan	nan	nan	nan	nan	25.1	1
+router	2	804	20.269		0	2	0	routing-incomplete:0/2	3.515456380597015	0.102625	19.520265	38.914364	39.865422	42.25839	0	nan	nan	nan	nan	nan	nan	28.07	1

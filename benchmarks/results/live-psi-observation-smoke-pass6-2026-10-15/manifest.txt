@@ -1,0 +1,17 @@
+started_at=2026-10-15T13:27:01+07:00
+ended_at=2026-10-15T13:27:03+07:00
+requested_duration_seconds=2
+observed_duration_seconds=2.032
+sample_count=4
+service_mainpid_start=358400
+service_mainpid_end=358400
+service_nrestarts_start=0
+service_nrestarts_end=0
+quota_effective_start=1s
+quota_effective_end=1s
+psi_some_avg10_ge_40_percent_samples=0
+controller_quota_change_lines=0
+journal_capture=PASS
+collection_status=COMPLETE
+acceptance_status=NOT_RUN
+note=Passive observation only; correlate crossing timestamp, controller decision, and effective quota transition manually. No workload/config/quota changes made.

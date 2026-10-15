@@ -1,0 +1,22 @@
+started_at=2026-10-15T13:19:08+0700
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+python=3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]
+logical_cpus=8
+systemd=systemd 259 (259.5-0ubuntu3.4)
+cgroup_mode=v2
+repetitions=5
+workers=2
+duration_seconds=20.0
+parent_unit=lwgb1000x656170parent.slice
+heavy_unit=lwgb1000x656170parent-heavy.slice
+recovery_unit=lwgb1000x656170parent-recovery.slice
+parent_cpu_quota=100%; heavy_child_cpu_quota=100%; both modes share the same 100% parent aggregate ceiling
+capacity_model=equal aggregate CPU ceiling; heavy slice is nested beneath parent
+dynamic_quota=false; production user service/configuration/quotas untouched
+router_sample_seconds=2
+router_sustained_samples=4
+router_cpu_threshold_percent=70
+percentile_method=nearest-rank ceil(p*n)-1
+command=REPS=5 DURATION=20.0 WORKERS=2 RESULT=/tmp/lwg-paired-equal-capacity-20261015-131908.tsv python3 benchmarks/routing-contention.py
+result_status=INCOMPLETE
+ended_at=2026-10-15T13:20:45+0700

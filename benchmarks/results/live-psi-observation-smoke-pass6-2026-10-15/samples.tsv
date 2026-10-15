@@ -1,0 +1,5 @@
+timestamp	monotonic_seconds	some_avg10_percent	some_avg60_percent	some_avg300_percent	full_avg10_percent	full_avg60_percent	full_avg300_percent	service_active	service_mainpid	service_nrestarts	quota_effective_property
+2026-10-15T13:27:01.735+07:00	0.023569	1.6800	2.8500	4.8500	0.0000	0.0000	0.0000	active	358400	0	1s
+2026-10-15T13:27:02.212+07:00	0.500070	1.6800	2.8500	4.8500	0.0000	0.0000	0.0000	active	358400	0	1s
+2026-10-15T13:27:02.712+07:00	1.000184	1.6800	2.8500	4.8500	0.0000	0.0000	0.0000	active	358400	0	1s
+2026-10-15T13:27:03.212+07:00	1.500178	1.6800	2.8500	4.8500	0.0000	0.0000	0.0000	active	358400	0	1s

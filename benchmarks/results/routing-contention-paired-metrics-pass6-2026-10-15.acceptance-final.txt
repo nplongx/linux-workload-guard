@@ -1,0 +1,54 @@
+acceptance_status=FAIL
+result_tsv=benchmarks/results/routing-contention-paired-metrics-pass6-2026-10-15.tsv
+manifest=benchmarks/results/routing-contention-paired-metrics-pass6-2026-10-15.environment.txt
+minimum_pairs=5
+minimum_steady_samples_per_mode=500
+max_median_paired_latency_ratio=1.10
+min_median_paired_throughput_ratio=0.90
+max_router_cpu_pct_one_core=5.0
+max_router_peak_rss_kib=32768
+scope=synthetic routing probe only; PASS does not close representative terminal-workload release gate
+PASS: repetition 1 routed all 1 intended worker(s)
+PASS: repetition 1 steady samples baseline/router=898/978
+PASS: repetition 1 router CPU=0.155% of one logical CPU
+PASS: repetition 1 router peak RSS=18436 KiB
+PAIR: repetition 1 steady_p95_ms ratio=3.248
+PAIR: repetition 1 steady_p99_ms ratio=3.525
+PAIR: repetition 1 steady_work_p95_ms ratio=0.411
+PAIR: repetition 1 worker_iterations_per_sec ratio=0.752
+PASS: repetition 2 routed all 1 intended worker(s)
+PASS: repetition 2 steady samples baseline/router=898/970
+PASS: repetition 2 router CPU=0.155% of one logical CPU
+PASS: repetition 2 router peak RSS=18368 KiB
+PAIR: repetition 2 steady_p95_ms ratio=1.036
+PAIR: repetition 2 steady_p99_ms ratio=0.932
+PAIR: repetition 2 steady_work_p95_ms ratio=1.417
+PAIR: repetition 2 worker_iterations_per_sec ratio=0.772
+PASS: repetition 3 routed all 1 intended worker(s)
+PASS: repetition 3 steady samples baseline/router=899/980
+PASS: repetition 3 router CPU=0.125% of one logical CPU
+PASS: repetition 3 router peak RSS=18492 KiB
+PAIR: repetition 3 steady_p95_ms ratio=1.029
+PAIR: repetition 3 steady_p99_ms ratio=1.494
+PAIR: repetition 3 steady_work_p95_ms ratio=2.198
+PAIR: repetition 3 worker_iterations_per_sec ratio=1.029
+PASS: repetition 4 routed all 1 intended worker(s)
+PASS: repetition 4 steady samples baseline/router=898/982
+PASS: repetition 4 router CPU=0.125% of one logical CPU
+PASS: repetition 4 router peak RSS=18432 KiB
+PAIR: repetition 4 steady_p95_ms ratio=1.015
+PAIR: repetition 4 steady_p99_ms ratio=1.352
+PAIR: repetition 4 steady_work_p95_ms ratio=0.208
+PAIR: repetition 4 worker_iterations_per_sec ratio=1.066
+PASS: repetition 5 routed all 1 intended worker(s)
+PASS: repetition 5 steady samples baseline/router=899/980
+PASS: repetition 5 router CPU=0.125% of one logical CPU
+PASS: repetition 5 router peak RSS=18496 KiB
+PAIR: repetition 5 steady_p95_ms ratio=1.023
+PAIR: repetition 5 steady_p99_ms ratio=5.970
+PAIR: repetition 5 steady_work_p95_ms ratio=2.199
+PAIR: repetition 5 worker_iterations_per_sec ratio=0.942
+PASS: median paired steady_p95_ms ratio=1.029 limit=≤1.10
+FAIL: median paired steady_p99_ms ratio=1.494 limit=≤1.10
+FAIL: median paired steady_work_p95_ms ratio=1.417 limit=≤1.10
+PASS: median paired worker_iterations_per_sec ratio=0.942 limit=≥0.90

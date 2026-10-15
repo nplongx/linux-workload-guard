@@ -1,0 +1,84 @@
+===== ./test.sh =====
+2026-10-15 14:26:34,417 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-15 14:26:34,417 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-15 14:26:34,422 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 14:26:34,423 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 14:26:34,424 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 14:26:34,425 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 14:26:34,426 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 14:26:34,428 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 14:26:34,429 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 14:26:34,430 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-15 14:26:34,431 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 14:26:34,433 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-15 14:26:34,434 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-15 14:26:34,436 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 14:26:34,439 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-15 14:26:34,441 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interrupted run finalized INCOMPLETE)
+performance review tests: ok (PASS/FAIL/INCOMPLETE, paired ratios, no fabricated acceptance)
+unit checks: ok
+invalid shadow configuration: safely rejected
+invalid quota configuration: safely rejected
+custom parent recovery leaf: safely derived
+tests: ok
+RESULT=0 CMD=./test.sh
+===== ./tests/install-uninstall.sh =====
+Linux Workload Guard installed.
+Linux Workload Guard removed.
+install/uninstall smoke: ok (systemctl mocked; user config preserved)
+RESULT=0 CMD=./tests/install-uninstall.sh
+===== ./tests/integration-routing.sh =====
+integration routing: ok (120ms burst not routed; sustained detection 0.80s)
+RESULT=0 CMD=./tests/integration-routing.sh
+===== ./tests/recovery-routing.sh =====
+recovery routing: ok (idle-to-recovery 1.83s)
+RESULT=0 CMD=./tests/recovery-routing.sh
+===== ./tests/shadow-routing.sh =====
+shadow routing: ok (120ms burst rejected; sustained route observed in 1.05s; recovery completed in 3.35s including idle phase)
+RESULT=0 CMD=./tests/shadow-routing.sh
+===== ./tests/controller-integration.sh =====
+production PSI boundary: below/equal/above 0.40; missing/stale hold; bounded quota readback passed in temporary slice
+probe_baseline: n=252 wakeup_lateness_ms p50/p95/p99=0.084/0.504/3.208; work_duration_ms p50/p95/p99=1.479/17.167/19.712
+probe_enabled: n=273 wakeup_lateness_ms p50/p95/p99=0.084/0.469/1.516; work_duration_ms p50/p95/p99=1.468/1.996/17.104
+cpu_bound_baseline: workers=2 aggregate_python_loop_iterations_per_second=45889.543
+cpu_bound_enabled: workers=2 aggregate_python_loop_iterations_per_second=63318.090
+guard_enabled_window: wall_s=5.160 cpu_s=0.060 one_core_cpu_pct=1.16 rss_start/end_kib=18516/18596 peak_rss_kib=18596 router_process_runqueue_delay_delta_ms=20.632 cpu_counter_status=valid scheduler_counter_status=valid
+host_cpu_psi_some_avg10_pct: baseline_start/end=1.83/7.62; enabled_start/end=8.23/7.58
+transition_timing_s: both_workers_routed=1.056; first_quota_increase=1.348; idle_to_quota_decrease_and_recovery=1.611
+quota_stability: transitions=5 direction_reversals=1 values=100->150,350->300,300->250,250->200,200->150
+metrics_scope: one bounded synthetic host run; loop iterations and probe timings are workload-specific, not application SLA evidence
+controller integration: ok (burst rejected; two competing workers routed; dynamic quota applied/decreased; AIMD log-only; both recovered; external quota change reconciled; router restart with active routes recovered; cgroup recreated and routing/recovery resumed; dynamic quota disabled without changing the recorded temporary quota)
+RESULT=0 CMD=./tests/controller-integration.sh
+===== ./tests/soak-monitor.sh =====
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+RESULT=0 CMD=./tests/soak-monitor.sh
+===== ./tests/quota-benchmark-safety.sh =====
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+RESULT=0 CMD=./tests/quota-benchmark-safety.sh
+===== ./tests/routing-benchmark-safety.sh =====
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+RESULT=0 CMD=./tests/routing-benchmark-safety.sh
+===== ./tests/live-psi-observe-safety.sh =====
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interrupted run finalized INCOMPLETE)
+RESULT=0 CMD=./tests/live-psi-observe-safety.sh
+===== ./tests/performance-review.sh =====
+performance review tests: ok (PASS/FAIL/INCOMPLETE, paired ratios, no fabricated acceptance)
+RESULT=0 CMD=./tests/performance-review.sh
+===== python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/controller-replay.py benchmarks/live-psi-observe.py benchmarks/performance-review.py benchmarks/quota-pressure-replay.py benchmarks/routing-contention.py benchmarks/shadow-policy-replay.py tests/controller-hardening.py =====
+RESULT=0 CMD=python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/controller-replay.py benchmarks/live-psi-observe.py benchmarks/performance-review.py benchmarks/quota-pressure-replay.py benchmarks/routing-contention.py benchmarks/shadow-policy-replay.py tests/controller-hardening.py
+===== sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/controller-integration.sh tests/install-uninstall.sh tests/integration-routing.sh tests/live-psi-observe-safety.sh tests/performance-review.sh tests/quota-benchmark-safety.sh tests/recovery-routing.sh tests/recovery-unit.sh tests/routing-benchmark-safety.sh tests/shadow-routing.sh tests/soak-monitor.sh benchmarks/soak-monitor.sh =====
+RESULT=0 CMD=sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/controller-integration.sh tests/install-uninstall.sh tests/integration-routing.sh tests/live-psi-observe-safety.sh tests/performance-review.sh tests/quota-benchmark-safety.sh tests/recovery-routing.sh tests/recovery-unit.sh tests/routing-benchmark-safety.sh tests/shadow-routing.sh tests/soak-monitor.sh benchmarks/soak-monitor.sh
+===== bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh =====
+RESULT=0 CMD=bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
+===== systemd-analyze --no-pager verify systemd/browser-automation-budget.service systemd/workload-router.service systemd/browser-automation-budget.timer systemd/browser-automation.slice systemd/heavy-workload.slice systemd/protected-workload-recovery.slice systemd/protected-workload.slice =====
+RESULT=0 CMD=systemd-analyze --no-pager verify systemd/browser-automation-budget.service systemd/workload-router.service systemd/browser-automation-budget.timer systemd/browser-automation.slice systemd/heavy-workload.slice systemd/protected-workload-recovery.slice systemd/protected-workload.slice
+===== git diff --check =====
+RESULT=0 CMD=git diff --check
+===== ./bin/workload-guard version =====
+0.6.5-rc.1
+RESULT=0 CMD=./bin/workload-guard version

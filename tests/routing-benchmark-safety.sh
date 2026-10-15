@@ -25,4 +25,14 @@ fi
 grep -q 'refusing to overwrite existing benchmark evidence' "$TMP/existing.err"
 grep -qx 'preserve-this-result' "$TMP/existing.tsv"
 
+# The routed trial must remain inside the same aggregate 100% parent budget;
+# a sibling heavy slice would accidentally grant a second CPU's worth of quota.
+grep -q 'HEAVY_UNIT = f"{PARENT_UNIT\[:-6\]}-heavy.slice"' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'both modes share the same 100% parent aggregate ceiling' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'capacity_model=equal aggregate CPU ceiling' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'worker_iterations_per_sec' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'router_cpu_pct_one_core' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'router_peak_rss_kib' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'candidate_acceptance=5 valid pairs' "$ROOT/benchmarks/routing-contention.py"
+
 printf '%s\n' 'routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)'

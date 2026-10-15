@@ -1,0 +1,10 @@
+2026-10-15 13:33:06,509 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 13:33:16,780 INFO route decision=accepted pid=691034 cpu=89.4% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-xeu6o289/hog.py /tmp/lwg-routing-bench-xeu6o289/lwg-router-1-688968-hog0.pid /tmp/lwg-routing-bench-xeu6o289/lwg-router-1-688968-hog0.progre
+2026-10-15 13:33:43,849 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 13:33:54,174 INFO route decision=accepted pid=693977 cpu=84.9% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-xeu6o289/hog.py /tmp/lwg-routing-bench-xeu6o289/lwg-router-2-688968-hog0.pid /tmp/lwg-routing-bench-xeu6o289/lwg-router-2-688968-hog0.progre
+2026-10-15 13:35:31,451 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 13:35:41,688 INFO route decision=accepted pid=699012 cpu=91.1% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-xeu6o289/hog.py /tmp/lwg-routing-bench-xeu6o289/lwg-router-3-688968-hog0.pid /tmp/lwg-routing-bench-xeu6o289/lwg-router-3-688968-hog0.progre
+2026-10-15 13:36:08,636 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 13:36:18,839 INFO route decision=accepted pid=700122 cpu=90.8% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-xeu6o289/hog.py /tmp/lwg-routing-bench-xeu6o289/lwg-router-4-688968-hog0.pid /tmp/lwg-routing-bench-xeu6o289/lwg-router-4-688968-hog0.progre
+2026-10-15 13:37:56,036 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 13:38:06,272 INFO route decision=accepted pid=703135 cpu=91.3% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-xeu6o289/hog.py /tmp/lwg-routing-bench-xeu6o289/lwg-router-5-688968-hog0.pid /tmp/lwg-routing-bench-xeu6o289/lwg-router-5-688968-hog0.progre
