@@ -30,8 +30,13 @@ record() { printf '%s\n' "$*"; }
   record "cgroup_controllers=$(if [ -r /sys/fs/cgroup/cgroup.controllers ]; then tr '\n' ' ' < /sys/fs/cgroup/cgroup.controllers; else echo unavailable; fi)"
   record "process_cgroup=$(cat /proc/self/cgroup 2>/dev/null | tr '\n' ';' || echo unavailable)"
   record "systemd_user_manager=$(if systemctl --user show-environment >/dev/null 2>&1; then echo available; else echo unavailable; fi)"
-  record "router_system_service=$(systemctl show workload-router.service -p ActiveState -p SubState -p MainPID -p NRestarts 2>&1 | tr '\n' ';' || true)"
-  record "heavy_slice_quota_observation=$(systemctl show heavy-workload.slice -p CPUQuotaPerSecUSec 2>&1 | tr '\n' ';' || true)"
+  # This project installs a user service and user slices. Record those as the
+  # primary runtime observation; system-scope units with the same names are a
+  # different manager and must never be used to infer user-service state.
+  record "router_user_service=$(systemctl --user show workload-router.service -p ActiveState -p SubState -p MainPID -p NRestarts 2>&1 | tr '\n' ';' || true)"
+  record "heavy_user_slice_quota_observation=$(systemctl --user show heavy-workload.slice -p CPUQuotaPerSecUSec 2>&1 | tr '\n' ';' || true)"
+  record "router_system_service_separate_scope=$(systemctl show workload-router.service -p ActiveState -p SubState -p MainPID -p NRestarts 2>&1 | tr '\n' ';' || true)"
+  record "heavy_system_slice_quota_separate_scope=$(systemctl show heavy-workload.slice -p CPUQuotaPerSecUSec 2>&1 | tr '\n' ';' || true)"
   record "host_cpu_psi=$(cat /proc/pressure/cpu 2>/dev/null | tr '\n' ';' || echo unavailable)"
   record "loadavg=$(cat /proc/loadavg 2>/dev/null || echo unavailable)"
   record "quota_or_policy_mutations=NONE"

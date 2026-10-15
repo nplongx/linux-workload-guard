@@ -521,17 +521,20 @@ def git_revision():
     except (OSError, subprocess.SubprocessError):
         return "unavailable"
 
-def git_source_state():
+def git_source_state(root=ROOT):
     """Record tracked harness/controller source changes, not unrelated result artifacts."""
+    root = pathlib.Path(root)
     try:
-        status = subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
+        status = subprocess.check_output(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
                                          text=True, stderr=subprocess.DEVNULL, timeout=2)
+        untracked = subprocess.check_output(["git", "-C", str(root), "ls-files", "--others", "--exclude-standard"],
+                                            text=True, stderr=subprocess.DEVNULL, timeout=2)
         source_paths = ["bin/workload-router.py", "benchmarks/routing-contention.py",
                         "benchmarks/performance-review.py"]
-        diff = subprocess.check_output(["git", "-C", str(ROOT), "diff", "HEAD", "--binary", "--", *source_paths],
+        diff = subprocess.check_output(["git", "-C", str(root), "diff", "HEAD", "--binary", "--", *source_paths],
                                        stderr=subprocess.DEVNULL, timeout=2)
         return ("true" if status.strip() else "false", hashlib.sha256(diff).hexdigest(),
-                sum(1 for line in status.splitlines() if line.startswith("??")))
+                sum(1 for line in untracked.splitlines() if line.strip()))
     except (OSError, subprocess.SubprocessError):
         return "unavailable", "unavailable", -1
 

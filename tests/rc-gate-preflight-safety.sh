@@ -14,6 +14,10 @@ if [ -e "$OUT" ]; then echo 'unexpected output collision' >&2; exit 1; fi
 "$SCRIPT" "$OUT" > "$TMP/stdout"
 grep -q '^delegated_cpu_stat_counters=NOT PROVEN' "$OUT/gates.txt"
 grep -q '^quota_actuation_and_readback=NOT RUN' "$OUT/gates.txt"
+grep -q '^router_user_service=' "$OUT/environment.txt"
+grep -q '^heavy_user_slice_quota_observation=' "$OUT/environment.txt"
+grep -q '^router_system_service_separate_scope=' "$OUT/environment.txt"
+grep -q '^heavy_system_slice_quota_separate_scope=' "$OUT/environment.txt"
 grep -q '^throughput_acceptance=OPEN / CONFOUNDED_INCONCLUSIVE; threshold=0.90$' "$OUT/gates.txt"
 grep -q '^stable_release=NO-GO' "$OUT/gates.txt"
 (cd "$OUT" && sha256sum -c SHA256SUMS.txt >/dev/null)

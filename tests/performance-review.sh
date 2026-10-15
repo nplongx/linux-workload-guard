@@ -135,14 +135,156 @@ if python3 "$REVIEW" "$TMP/raw-nonfinite.tsv" > "$TMP/raw-nonfinite.out" 2>&1; t
 else [ "$?" -eq 2 ]; fi
 
 python3 - "$REVIEW" <<'PY'
-import importlib.util, math, sys
+import csv, importlib.util, math, pathlib, sys, tempfile
 spec=importlib.util.spec_from_file_location('performance_review',sys.argv[1])
 module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 assert module.acceptance_limits_error(max_latency=float('nan'))
 assert module.acceptance_limits_error(min_pairs=1)
 assert module.acceptance_limits_error(max_rss=0)
 assert module.acceptance_limits_error() is None
-print('performance reviewer rejects invalid acceptance limits')
+with tempfile.TemporaryDirectory() as td:
+    root=pathlib.Path(td); telemetry=root/'telemetry.tsv'
+    fields=['mode','rep','elapsed_s','cgroup_kind','host_psi_some_avg10']
+    with telemetry.open('w',newline='') as stream:
+        writer=csv.DictWriter(stream,fieldnames=fields,delimiter='\t',lineterminator='\n'); writer.writeheader()
+        for mode,psi in [('baseline','2.0'),('router','4.9')]:
+            writer.writerow({'mode':mode,'rep':1,'elapsed_s':'12.5','cgroup_kind':'parent','host_psi_some_avg10':psi})
+    status,detail=module.steady_host_psi_noise({'interval_telemetry':str(telemetry)},root/'result.environment.txt',1)
+    assert status=='WITHIN_LIMIT', (status,detail)
+    with telemetry.open('a') as stream:
+        stream.write('router\t1\t13.5\tparent\t27.0\n')
+    status,detail=module.steady_host_psi_noise({'interval_telemetry':str(telemetry)},root/'result.environment.txt',1)
+    assert status=='CONFOUNDED_INCONCLUSIVE' and 'all samples retained' in detail, (status,detail)
+    telemetry.write_text('mode\trep\telapsed_s\tcgroup_kind\thost_psi_some_avg10\nbaseline\t1\t12.5\tparent\tnan\nrouter\t1\t12.5\tparent\t1\n')
+    status,detail=module.steady_host_psi_noise({'interval_telemetry':str(telemetry)},root/'result.environment.txt',1)
+    assert status=='INVALID', (status,detail)
+    raw=root/'unordered.samples.tsv'
+    raw.write_text('mode\trep\trelative_s\twakeup_lateness_ms\twork_duration_ms\n'
+                   'baseline\t1\t12.0\t1.0\t1.0\n'
+                   'baseline\t1\t13.0\t1.0\t1.0\n'
+                   'baseline\t1\t12.5\t1.0\t1.0\n')
+    try:
+        module.read_raw_samples(raw,30.0)
+    except ValueError as exc:
+        assert 'strictly increasing' in str(exc), str(exc)
+    else:
+        raise AssertionError('unordered paired samples were accepted')
+print('performance reviewer rejects invalid limits and detects PSI confounding / unordered evidence')
 PY
 
-printf '%s\n' 'performance review tests: ok (PASS/FAIL/INCOMPLETE, paired ratios, no fabricated acceptance)'
+# End-to-end status classification with a fully shaped interval telemetry
+# fixture: a quiet run may PASS; the same metrics with PSI above the predeclared
+# 5% noise limit must remain CONFOUNDED_INCONCLUSIVE, not PASS or causal FAIL.
+python3 - "$TMP" <<'PY'
+import csv, pathlib, sys
+root=pathlib.Path(sys.argv[1])
+summary_fields=['mode','rep','samples','elapsed_s','routed_at_s','workers_in_heavy','worker_count','trial_valid','validity_reason',
+ 'all_mean_ms','all_p50_ms','all_p95_ms','all_p99_ms','all_max_ms','work_p95_ms','steady_n','steady_mean_ms',
+ 'steady_p50_ms','steady_p95_ms','steady_p99_ms','steady_max_ms','steady_work_p95_ms','worker_iterations_per_sec','worker_throughput_per_sec',
+ 'router_cpu_pct_one_core','router_peak_rss_kib','psi_some_avg10','router_enabled_during_trial']
+sample_fields=['mode','rep','relative_s','wakeup_lateness_ms','work_duration_ms']
+telemetry_fields=['mode','rep','monotonic_s','elapsed_s','cgroup_kind','unit','cgroup_path','cpu_weight','usage_usec','nr_periods','nr_throttled','throttled_usec',
+ 'host_psi_some_avg10','loadavg_1m','router_cpu_ticks','router_rss_kib','router_log_new_lines']
+for name, psi in [('quiet-telemetry',1.0),('noisy-telemetry',27.0)]:
+    result=root/f'{name}.tsv'; raw=result.with_suffix('.samples.tsv'); manifest=result.with_suffix('.environment.txt'); telemetry=result.with_suffix('.telemetry.tsv'); throughput=result.with_suffix('.throughput.tsv')
+    with result.open('w',newline='') as out, raw.open('w',newline='') as rawout, telemetry.open('w',newline='') as tout, throughput.open('w',newline='') as thout:
+        sw=csv.DictWriter(out,fieldnames=summary_fields,delimiter='\t',lineterminator='\n'); sw.writeheader()
+        rw=csv.DictWriter(rawout,fieldnames=sample_fields,delimiter='\t',lineterminator='\n'); rw.writeheader()
+        tw=csv.DictWriter(tout,fieldnames=telemetry_fields,delimiter='\t',lineterminator='\n'); tw.writeheader()
+        thw=csv.DictWriter(thout,fieldnames=['mode','rep','worker','elapsed_s','counter','metric_kind'],delimiter='\t',lineterminator='\n'); thw.writeheader()
+        for rep in range(1,6):
+            for mode in (('baseline','router') if rep%2 else ('router','baseline')):
+                router=mode=='router'
+                steady=sum(1 for i in range(1500) if i*0.02 >= 12.0)
+                sw.writerow({'mode':mode,'rep':rep,'samples':1500,'elapsed_s':30.0,'routed_at_s':1.0 if router else '',
+                    'workers_in_heavy':1 if router else 0,'worker_count':1,'trial_valid':1,'validity_reason':'',
+                    'all_mean_ms':0.1,'all_p50_ms':0.1,'all_p95_ms':1.0,'all_p99_ms':2.0,'all_max_ms':3.0,'work_p95_ms':3.0,
+                    'steady_n':steady,'steady_mean_ms':0.1,'steady_p50_ms':0.1,'steady_p95_ms':1.0,'steady_p99_ms':1.8 if router else 2.0,
+                    'steady_max_ms':3.0,'steady_work_p95_ms':3.06 if router else 3.0,'worker_iterations_per_sec':1000,
+                    'worker_throughput_per_sec':1000,'router_cpu_pct_one_core':1.0 if router else '',
+                    'router_peak_rss_kib':18000 if router else '', 'psi_some_avg10':psi,'router_enabled_during_trial':int(router)})
+                for i in range(1500):
+                    rw.writerow({'mode':mode,'rep':rep,'relative_s':f'{i*0.02:.6f}','wakeup_lateness_ms':'0.1','work_duration_ms':'0.2'})
+                for elapsed,counter in ((12,0),(13,1000),(14,2000)):
+                    thw.writerow({'mode':mode,'rep':rep,'worker':1,'elapsed_s':elapsed,'counter':counter,'metric_kind':'cumulative_counter'})
+                for kind in ('parent','heavy','probe','workload'):
+                    unit=f'lwg-{kind}-{rep}'
+                    for i in range(20):
+                        tw.writerow({'mode':mode,'rep':rep,'monotonic_s':f'{10000+rep*100+i:.3f}','elapsed_s':f'{12+i:.3f}',
+                            'cgroup_kind':kind,'unit':unit,'cgroup_path':f'/test/{mode}/{rep}/{kind}',
+                            'cpu_weight':20 if router and kind=='workload' else 100,
+                            'usage_usec':1000000+i*1000,'nr_periods':100+i,'nr_throttled':5+i,'throttled_usec':1000+i,
+                            'host_psi_some_avg10':psi,'loadavg_1m':'0.5','router_cpu_ticks':100+i if router else '',
+                            'router_rss_kib':18000 if router else '',
+                            'router_log_new_lines':'aggregate scope decision=fixture' if router and kind=='parent' and i==0 else ''})
+    manifest.write_text('\n'.join([
+        'result_status=COMPLETE','workers=1','workload_kind=synthetic','git_revision='+'a'*40,'git_dirty=false',
+        'git_diff_sha256='+'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        'host=test-host','python=python-test',
+        'cpu_model=test-cpu','logical_cpus=8','systemd=systemd-test','cgroup_mode=v2','cgroup_controllers=cpu',
+        'repetitions=5','duration_seconds=30','parent_cpu_quota=100-percent',f'interval_telemetry={telemetry}; test fixture',
+        f'throughput_raw={throughput}; test fixture',
+        'aggregate_routing=CPUWeight=20 per sample','']))
+PY
+quiet="$TMP/quiet-telemetry.tsv"
+python3 "$REVIEW" "$quiet" > "$TMP/quiet-telemetry.out"
+grep -q '^acceptance_status=PASS$' "$TMP/quiet-telemetry.out"
+cp "$TMP/quiet-telemetry.tsv" "$TMP/dirty-telemetry.tsv"
+cp "$TMP/quiet-telemetry.samples.tsv" "$TMP/dirty-telemetry.samples.tsv"
+cp "$TMP/quiet-telemetry.telemetry.tsv" "$TMP/dirty-telemetry.telemetry.tsv"
+cp "$TMP/quiet-telemetry.throughput.tsv" "$TMP/dirty-telemetry.throughput.tsv"
+cp "$TMP/quiet-telemetry.environment.txt" "$TMP/dirty-telemetry.environment.txt"
+sed -i "s|$TMP/quiet-telemetry.telemetry.tsv|$TMP/dirty-telemetry.telemetry.tsv|; s|$TMP/quiet-telemetry.throughput.tsv|$TMP/dirty-telemetry.throughput.tsv|; s/^git_dirty=false$/git_dirty=true/" "$TMP/dirty-telemetry.environment.txt"
+if python3 "$REVIEW" "$TMP/dirty-telemetry.tsv" > "$TMP/dirty-telemetry.out" 2>&1; then
+  echo 'performance reviewer accepted dirty source provenance' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/dirty-telemetry.out"
+grep -q 'source tree is dirty' "$TMP/dirty-telemetry.out"
+noisy="$TMP/noisy-telemetry.tsv"
+if python3 "$REVIEW" "$noisy" > "$TMP/noisy-telemetry.out"; then
+  echo 'performance reviewer accepted PSI-confounded telemetry as PASS' >&2; exit 1
+else [ "$?" -eq 3 ]; fi
+grep -q '^acceptance_status=CONFOUNDED_INCONCLUSIVE$' "$TMP/noisy-telemetry.out"
+grep -q '^CONFOUNDED_INCONCLUSIVE: predeclared PSI control failed' "$TMP/noisy-telemetry.out"
+cp "$TMP/quiet-telemetry.tsv" "$TMP/unordered-telemetry.tsv"
+cp "$TMP/quiet-telemetry.samples.tsv" "$TMP/unordered-telemetry.samples.tsv"
+cp "$TMP/quiet-telemetry.environment.txt" "$TMP/unordered-telemetry.environment.txt"
+cp "$TMP/quiet-telemetry.telemetry.tsv" "$TMP/unordered-telemetry.telemetry.tsv"
+cp "$TMP/quiet-telemetry.throughput.tsv" "$TMP/unordered-telemetry.throughput.tsv"
+sed -i "s|$TMP/quiet-telemetry.telemetry.tsv|$TMP/unordered-telemetry.telemetry.tsv|; s|$TMP/quiet-telemetry.throughput.tsv|$TMP/unordered-telemetry.throughput.tsv|" "$TMP/unordered-telemetry.environment.txt"
+python3 - "$TMP/unordered-telemetry.telemetry.tsv" <<'PY'
+import csv, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+with p.open(newline='') as source:
+    rows=list(csv.reader(source,delimiter='\t'))
+rows[1],rows[2]=rows[2],rows[1]
+with p.open('w',newline='') as output:
+    csv.writer(output,delimiter='\t',lineterminator='\n').writerows(rows)
+PY
+if python3 "$REVIEW" "$TMP/unordered-telemetry.tsv" > "$TMP/unordered-telemetry.out" 2>&1; then
+  echo 'performance reviewer accepted out-of-order interval telemetry' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/unordered-telemetry.out"
+grep -q 'telemetry timestamps are not strictly increasing' "$TMP/unordered-telemetry.out"
+cp "$TMP/quiet-telemetry.tsv" "$TMP/unordered-throughput.tsv"
+cp "$TMP/quiet-telemetry.samples.tsv" "$TMP/unordered-throughput.samples.tsv"
+cp "$TMP/quiet-telemetry.telemetry.tsv" "$TMP/unordered-throughput.telemetry.tsv"
+cp "$TMP/quiet-telemetry.throughput.tsv" "$TMP/unordered-throughput.throughput.tsv"
+cp "$TMP/quiet-telemetry.environment.txt" "$TMP/unordered-throughput.environment.txt"
+sed -i "s|$TMP/quiet-telemetry.telemetry.tsv|$TMP/unordered-throughput.telemetry.tsv|; s|$TMP/quiet-telemetry.throughput.tsv|$TMP/unordered-throughput.throughput.tsv|" "$TMP/unordered-throughput.environment.txt"
+python3 - "$TMP/unordered-throughput.throughput.tsv" <<'PY'
+import csv, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+with p.open(newline='') as source:
+    rows=list(csv.reader(source,delimiter='\t'))
+rows[1],rows[2]=rows[2],rows[1]
+with p.open('w',newline='') as output:
+    csv.writer(output,delimiter='\t',lineterminator='\n').writerows(rows)
+PY
+if python3 "$REVIEW" "$TMP/unordered-throughput.tsv" > "$TMP/unordered-throughput.out" 2>&1; then
+  echo 'performance reviewer accepted out-of-order throughput counters' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/unordered-throughput.out"
+grep -q 'throughput raw: throughput raw timestamps are not strictly increasing' "$TMP/unordered-throughput.out"
+
+printf '%s\n' 'performance review tests: ok (PASS/FAIL/INCOMPLETE/CONFOUNDED_INCONCLUSIVE, paired ratios, PSI noise and evidence-order guards)'

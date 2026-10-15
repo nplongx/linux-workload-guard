@@ -39,6 +39,7 @@ grep -q 'git_revision=' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'git_diff_sha256=' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'git_dirty=' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'status.*--untracked-files=no' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'ls-files.*--others.*--exclude-standard' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'loadavg_1m_start' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, terminal-build, or terminal-repo-cli' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'WORKLOAD_GUARD_AGGREGATE_ROUTING' "$ROOT/benchmarks/routing-contention.py"
@@ -58,5 +59,41 @@ if WORKLOAD_KIND=unknown RESULT="$TMP/unknown.tsv" DURATION=20 "$BENCH" >/dev/nu
 fi
 grep -q 'WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, terminal-build, or terminal-repo-cli' "$TMP/unknown.err"
 [ ! -e "$TMP/unknown.tsv" ]
+
+# Provenance must count untracked artifacts independently from tracked source
+# dirtiness; the old implementation queried status with --untracked-files=no
+# and therefore always recorded an untracked count of zero.
+mkdir -p "$TMP/provenance/bin" "$TMP/provenance/benchmarks"
+git -C "$TMP/provenance" init -q
+git -C "$TMP/provenance" config user.email test@example.invalid
+git -C "$TMP/provenance" config user.name "Evidence Test"
+printf 'router\n' > "$TMP/provenance/bin/workload-router.py"
+printf 'bench\n' > "$TMP/provenance/benchmarks/routing-contention.py"
+printf 'review\n' > "$TMP/provenance/benchmarks/performance-review.py"
+git -C "$TMP/provenance" add .
+git -C "$TMP/provenance" commit -qm baseline
+printf 'historical artifact\n' > "$TMP/provenance/benchmarks/preserved-result.tsv"
+printf 'changed source\n' >> "$TMP/provenance/bin/workload-router.py"
+python3 - "$ROOT/benchmarks/routing-contention.py" "$TMP/provenance" <<'PY'
+import importlib.util, pathlib, sys
+spec=importlib.util.spec_from_file_location('routing_contention',sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+dirty,diff_hash,untracked=module.git_source_state(pathlib.Path(sys.argv[2]))
+assert dirty=='true', dirty
+assert len(diff_hash)==64 and all(ch in '0123456789abcdef' for ch in diff_hash), diff_hash
+assert untracked==1, untracked
+print('benchmark provenance dirty/untracked accounting: ok')
+PY
+git -C "$TMP/provenance" add .
+git -C "$TMP/provenance" commit -qm final
+python3 - "$ROOT/benchmarks/routing-contention.py" "$TMP/provenance" <<'PY'
+import importlib.util, pathlib, sys
+spec=importlib.util.spec_from_file_location('routing_contention',sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+dirty,diff_hash,untracked=module.git_source_state(pathlib.Path(sys.argv[2]))
+assert dirty=='false', dirty
+assert len(diff_hash)==64 and untracked==0, (diff_hash,untracked)
+print('benchmark provenance clean revision accounting: ok')
+PY
 
 printf '%s\n' 'routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)'

@@ -52,6 +52,21 @@ check(router.route_process_matches(tracked_route, "python new-image", 4567),
       "exec-style command change must not invalidate a stable PID starttime")
 check(not router.route_process_matches(tracked_route, "python worker", 4568), "PID reuse with same command must be rejected")
 check(not router.route_process_matches(tracked_route[:5] + (None,), "python worker", 4567), "legacy identity-less route must not be trusted")
+with patch.object(router.os, "stat"), patch.object(router, "proc_cgroup", return_value=None):
+    check(router.routed_process_membership(123, "/sys/fs/cgroup/protected/heavy.slice") == "unknown",
+          "unreadable /proc cgroup membership must remain unknown, not look like an exited/moved process")
+with patch.object(router.os, "stat", side_effect=FileNotFoundError):
+    check(router.routed_process_membership(123, "/sys/fs/cgroup/protected/heavy.slice") == "gone",
+          "confirmed missing PID must be distinguished from unreadable membership")
+with patch.object(router.os, "stat"), patch.object(router, "proc_cgroup", return_value="/protected/heavy.slice/worker.scope"):
+    check(router.routed_process_membership(123, "/sys/fs/cgroup/protected/heavy.slice") == "inside",
+          "known descendant cgroup must retain route membership")
+with patch.object(router.os, "stat"), patch.object(router, "proc_cgroup", return_value="/protected/other.slice"):
+    check(router.routed_process_membership(123, "/sys/fs/cgroup/protected/heavy.slice") == "outside",
+          "known different cgroup must not retain route membership")
+with patch.object(router.os, "stat", side_effect=PermissionError):
+    check(router.routed_process_membership(123, "/sys/fs/cgroup/protected/heavy.slice") == "unknown",
+          "permission errors must not be misclassified as process exit")
 with tempfile.TemporaryDirectory() as tempdir:
     check(router.cgroup_tree_pids(os.path.join(tempdir, "removed-cgroup")) == set(),
           "a disappeared cgroup must return an empty set compatible with set union")

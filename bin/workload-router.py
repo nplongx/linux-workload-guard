@@ -189,14 +189,37 @@ def proc_cgroup(pid):
         pass
     return None
 
-def in_cgroup_tree(pid, parent_cgroup):
-    path = proc_cgroup(pid)
+def cgroup_path_in_tree(path, parent_cgroup):
+    """Check a known cgroup-v2 path against a cgroup tree boundary."""
     if not path or not parent_cgroup:
         return False
     parent = parent_cgroup.rstrip('/')
     if parent.startswith(SYSTEMD_PREFIX + '/'):
         parent = parent[len(SYSTEMD_PREFIX):]
     return path == parent or path.startswith(parent + '/')
+
+
+def routed_process_membership(pid, heavy_cgroup):
+    """Return gone/unknown/inside/outside without conflating unreadable proc data.
+
+    A transient /proc/<pid>/cgroup read failure is not proof that the process
+    left the heavy cgroup. Route state must be retained until membership is
+    known or the process is confirmed gone.
+    """
+    try:
+        os.stat(f"/proc/{pid}")
+    except FileNotFoundError:
+        return "gone"
+    except OSError:
+        return "unknown"
+    path = proc_cgroup(pid)
+    if path is None:
+        return "unknown"
+    return "inside" if cgroup_path_in_tree(path, heavy_cgroup) else "outside"
+
+
+def in_cgroup_tree(pid, parent_cgroup):
+    return cgroup_path_in_tree(proc_cgroup(pid), parent_cgroup)
 
 def cgroup_tree_pids(parent_cgroup):
     """Return PIDs under a cgroup tree without scanning unrelated /proc entries."""
@@ -1486,9 +1509,20 @@ def main():
                                              pid, cpu, reason, CPU_THRESHOLD, hot.get(pid, 0), cmd[:180])
             current_route_cpu = {}
             for pid in list(routes):
-                if not os.path.exists(f"/proc/{pid}") or not in_cgroup_tree(pid, heavy_cgroup):
+                membership = routed_process_membership(pid, heavy_cgroup)
+                if membership in ("gone", "outside"):
                     moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
                     route_prev.pop(pid, None)
+                    continue
+                if membership == "unknown":
+                    # Keep the persisted route identity while /proc cgroup
+                    # membership is unreadable. Missing membership cannot be
+                    # treated as proof of exit or recovery; reset CPU baselines
+                    # so the first valid post-gap sample only re-establishes a
+                    # baseline and cannot spuriously trigger an idle recovery.
+                    route_prev.pop(pid, None)
+                    recovery_hot[pid] = 0
+                    recovery_since.pop(pid, None)
                     continue
                 process_stat = proc_stat(pid)
                 if process_stat is None:

@@ -21,6 +21,7 @@ MAX_ROUTER_CPU_PERCENT_ONE_CORE = 5.0
 MAX_ROUTER_RSS_KIB = 32768
 BOOTSTRAP_RESAMPLES = 10000
 BOOTSTRAP_SEED = 20261015
+MAX_HOST_PSI_AVG10 = 5.0
 
 
 def finite_positive(row, key):
@@ -144,6 +145,13 @@ def validate_new_evidence(env, manifest, declared_duration, declared_repetitions
                     "router_log_new_lines"}
         groups = {}
         errors = []
+        last_elapsed_by_group = {}
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", env.get("git_revision", "")):
+            errors.append("source revision is not a full 40-hex Git commit")
+        if env.get("git_dirty", "").strip().lower() not in ("false", "0", "no"):
+            errors.append("source tree is dirty or dirty-state provenance is missing")
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", env.get("git_diff_sha256", "")):
+            errors.append("tracked-source diff SHA-256 is missing or malformed")
         if not telemetry_path.is_file():
             errors.append(f"interval telemetry file missing: {telemetry_path}")
         else:
@@ -176,6 +184,11 @@ def validate_new_evidence(env, manifest, declared_duration, declared_repetitions
                                 errors.append(f"duplicate telemetry timestamp for {mode}/{rep}/{unit} at {elapsed:.3f}s")
                                 continue
                             seen.add(key)
+                            ordered_key = (mode, rep, kind, unit)
+                            previous_elapsed = last_elapsed_by_group.get(ordered_key)
+                            if previous_elapsed is not None and elapsed <= previous_elapsed:
+                                errors.append(f"telemetry timestamps are not strictly increasing for {mode}/{rep}/{unit}: {elapsed:.3f}s after {previous_elapsed:.3f}s")
+                            last_elapsed_by_group[ordered_key] = elapsed
                             for field in ("usage_usec", "nr_periods", "nr_throttled", "throttled_usec"):
                                 if not row.get(field, "").isdigit():
                                     errors.append(f"telemetry row {line_no} missing real cpu.stat {field}")
@@ -241,6 +254,7 @@ def validate_new_evidence(env, manifest, declared_duration, declared_repetitions
             throughput_path = manifest.parent / throughput_path.name
         errors = []
         progress = {}
+        last_progress_elapsed = {}
         required = {"mode", "rep", "worker", "elapsed_s", "counter", "metric_kind"}
         if not throughput_path.is_file():
             errors.append(f"throughput raw file missing: {throughput_path}")
@@ -256,13 +270,19 @@ def validate_new_evidence(env, manifest, declared_duration, declared_repetitions
                             try:
                                 elapsed, counter = float(row["elapsed_s"]), float(row["counter"])
                                 if (key[0] not in ("baseline", "router") or not key[1].isdigit()
-                                        or not key[2].isdigit() or not math.isfinite(elapsed)
+                                        or not 1 <= int(key[1]) <= declared_repetitions
+                                        or not key[2].isdigit() or not 1 <= int(key[2]) <= expected_workers
+                                        or not math.isfinite(elapsed)
                                         or not math.isfinite(counter) or elapsed < 0 or elapsed > declared_duration + 1
                                         or counter < 0):
                                     raise ValueError
                             except (TypeError, ValueError):
                                 errors.append(f"throughput raw row {line_no} has invalid data")
                                 continue
+                            previous_elapsed = last_progress_elapsed.get(key)
+                            if previous_elapsed is not None and elapsed <= previous_elapsed:
+                                errors.append(f"throughput raw timestamps are not strictly increasing for {key}: {elapsed:.3f}s after {previous_elapsed:.3f}s")
+                            last_progress_elapsed[key] = elapsed
                             progress.setdefault(key, []).append((elapsed, counter, row.get("metric_kind", "")))
             except (OSError, csv.Error) as exc:
                 errors.append(f"could not read throughput raw: {exc}")
@@ -315,6 +335,76 @@ def ratio_variation(values):
     }
 
 
+def steady_host_psi_noise(manifest_values, manifest_path, declared_repetitions):
+    """Assess the preregistered host-PSI noise limit without excluding samples.
+
+    Returns (classification, detail). Legacy evidence without interval telemetry
+    is explicitly unassessed; malformed/missing telemetry is handled separately
+    as INCOMPLETE by validate_new_evidence().
+    """
+    telemetry_value = manifest_values.get("interval_telemetry", "").split(";", 1)[0].strip()
+    if not telemetry_value:
+        return "NOT_ASSESSED", "legacy evidence has no interval host PSI series"
+    telemetry_path = pathlib.Path(telemetry_value)
+    if not telemetry_path.is_file() and not telemetry_path.is_absolute():
+        telemetry_path = manifest_path.parent / telemetry_path.name
+    if not telemetry_path.is_file():
+        return "INVALID", f"interval telemetry missing: {telemetry_path}"
+    samples = {("baseline", rep): [] for rep in range(1, declared_repetitions + 1)}
+    samples.update({("router", rep): [] for rep in range(1, declared_repetitions + 1)})
+    try:
+        with telemetry_path.open(newline="") as source:
+            reader = csv.DictReader(source, delimiter="\t")
+            required = {"mode", "rep", "elapsed_s", "cgroup_kind", "host_psi_some_avg10"}
+            if not reader.fieldnames or not required.issubset(reader.fieldnames):
+                return "INVALID", "interval telemetry lacks columns required for PSI noise assessment"
+            for line_no, row in enumerate(reader, 2):
+                if row.get("cgroup_kind") != "parent" or row.get("mode") not in ("baseline", "router"):
+                    continue
+                try:
+                    rep = int(row["rep"])
+                    elapsed = float(row["elapsed_s"])
+                    psi = float(row["host_psi_some_avg10"])
+                except (KeyError, TypeError, ValueError):
+                    return "INVALID", f"invalid host PSI/time in telemetry row {line_no}"
+                if rep < 1 or rep > declared_repetitions or not math.isfinite(elapsed) or not math.isfinite(psi):
+                    return "INVALID", f"out-of-range host PSI/time in telemetry row {line_no}"
+                if elapsed < 12.0:
+                    continue
+                if psi < 0 or psi > 100:
+                    return "INVALID", f"host PSI outside [0,100] in telemetry row {line_no}"
+                key = (row["mode"], rep)
+                samples[key].append(psi)
+    except (OSError, csv.Error) as exc:
+        return "INVALID", f"could not read PSI telemetry: {exc}"
+    missing = [f"{mode}/{rep}" for (mode, rep), values in samples.items() if not values]
+    if missing:
+        return "INVALID", "no steady-window host PSI samples for " + ", ".join(missing)
+    high_pct = {key: 100.0 * sum(value > MAX_HOST_PSI_AVG10 for value in values) / len(values)
+                for key, values in samples.items()}
+    baseline_values = [value for (mode, _), values in samples.items() if mode == "baseline" for value in values]
+    router_values = [value for (mode, _), values in samples.items() if mode == "router" for value in values]
+    baseline_median = statistics.median(baseline_values)
+    router_median = statistics.median(router_values)
+    imbalance = abs(router_median - baseline_median)
+    details = ", ".join(
+        f"{mode}/{rep}:median={statistics.median(values):.2f}%,samples_gt5={high_pct[(mode,rep)]:.1f}%"
+        for (mode, rep), values in sorted(samples.items())
+    )
+    if any(value > 20.0 for value in high_pct.values()) or imbalance > 5.0:
+        return "CONFOUNDED_INCONCLUSIVE", (
+            f"predeclared PSI control failed: samples >{MAX_HOST_PSI_AVG10:.1f}% exceed 20% in a mode/pair "
+            f"or baseline/router condition median imbalance exceeds 5 percentage points; "
+            f"baseline_median={baseline_median:.2f}%, router_median={router_median:.2f}%, "
+            f"imbalance={imbalance:.2f} points; per-pair diagnostics: {details}; all samples retained"
+        )
+    return "WITHIN_LIMIT", (
+        f"predeclared PSI controls satisfied: no mode/pair has >20% samples above {MAX_HOST_PSI_AVG10:.1f}% "
+        f"and baseline/router median imbalance <=5 points; baseline_median={baseline_median:.2f}%, "
+        f"router_median={router_median:.2f}%; per-pair diagnostics: {details}"
+    )
+
+
 def main():
     if len(sys.argv) not in (2, 3):
         print("usage: performance-review.py RESULT.tsv [REPORT.txt]", file=sys.stderr)
@@ -340,6 +430,7 @@ def main():
             env[key] = value
     findings = []
     status = "INCOMPLETE"
+    psi_noise_status = "NOT_ASSESSED"
     manifest_required = ("git_revision", "host", "python", "cpu_model", "logical_cpus", "systemd",
                          "cgroup_mode", "cgroup_controllers", "workload_kind", "repetitions", "workers",
                          "duration_seconds", "parent_cpu_quota", "result_status")
@@ -405,6 +496,14 @@ def main():
         if expected_workers is not None:
             validate_new_evidence(env, manifest, declared_duration, declared_repetitions,
                                   expected_workers, findings)
+        psi_noise_status, psi_noise_detail = steady_host_psi_noise(env, manifest, declared_repetitions)
+        if psi_noise_status == "CONFOUNDED_INCONCLUSIVE":
+            findings.append("CONFOUNDED_INCONCLUSIVE: " + psi_noise_detail)
+        elif psi_noise_status == "WITHIN_LIMIT":
+            findings.append("NOISE_CONTROL_PASS: " + psi_noise_detail)
+        elif psi_noise_status == "INVALID":
+            findings.append("INCOMPLETE: PSI noise assessment: " + psi_noise_detail)
+            malformed = True
         if reps and reps != list(range(1, len(reps) + 1)):
             malformed = True
             findings.append("INCOMPLETE: repetition identifiers must be contiguous starting at 1")
@@ -514,7 +613,10 @@ def main():
                 median_ratio = statistics.median(pair[1][metric] for pair in pairs)
                 limit = MIN_THROUGHPUT_RATIO if metric == "worker_throughput_per_sec" else MAX_LATENCY_RATIO
                 passed = median_ratio >= limit if metric == "worker_throughput_per_sec" else median_ratio <= limit
-                findings.append(f"{'PASS' if passed else 'FAIL'}: median paired {metric} ratio={median_ratio:.3f} limit={'≥' if metric == 'worker_throughput_per_sec' else '≤'}{limit:.2f}")
+                if psi_noise_status == "CONFOUNDED_INCONCLUSIVE":
+                    findings.append(f"OBSERVED_METRIC: median paired {metric} ratio={median_ratio:.3f} limit={'≥' if metric == 'worker_throughput_per_sec' else '≤'}{limit:.2f}; causal acceptance blocked by PSI noise")
+                else:
+                    findings.append(f"{'PASS' if passed else 'FAIL'}: median paired {metric} ratio={median_ratio:.3f} limit={'≥' if metric == 'worker_throughput_per_sec' else '≤'}{limit:.2f}")
                 spread = ratio_variation([pair[1][metric] for pair in pairs])
                 findings.append(
                     f"VARIATION: {metric} ratio min={spread['minimum']:.3f} q1={spread['q1']:.3f} "
@@ -523,8 +625,12 @@ def main():
                     f"(resamples={BOOTSTRAP_RESAMPLES}, seed={BOOTSTRAP_SEED}; descriptive, not a gate override)"
                 )
         has_fail = any(line.startswith("FAIL:") for line in findings)
+        has_nonperformance_fail = any(line.startswith("FAIL:") and not line.startswith("FAIL: median paired ") for line in findings)
         has_incomplete = any(line.startswith("INCOMPLETE:") for line in findings)
-        status = "INCOMPLETE" if has_incomplete else ("FAIL" if has_fail else "PASS")
+        status = ("INCOMPLETE" if has_incomplete else
+                  "FAIL" if has_nonperformance_fail else
+                  "CONFOUNDED_INCONCLUSIVE" if psi_noise_status == "CONFOUNDED_INCONCLUSIVE" else
+                  "FAIL" if has_fail else "PASS")
     lines = [
         f"acceptance_status={status}",
         f"result_tsv={result}",
@@ -539,6 +645,10 @@ def main():
         f"minimum_steady_samples_per_mode={MIN_STEADY_SAMPLES}",
         f"max_median_paired_latency_ratio={MAX_LATENCY_RATIO:.2f}",
         f"min_median_paired_throughput_ratio={MIN_THROUGHPUT_RATIO:.2f}",
+        f"host_psi_some_avg10_sample_threshold_percent={MAX_HOST_PSI_AVG10:.1f}",
+        "max_samples_above_psi_threshold_per_mode_pair_percent=20.0",
+        "max_baseline_router_psi_median_imbalance_percentage_points=5.0",
+        f"psi_noise_status={psi_noise_status}",
         f"max_router_cpu_pct_one_core={MAX_ROUTER_CPU_PERCENT_ONE_CORE:.1f}",
         f"max_router_peak_rss_kib={MAX_ROUTER_RSS_KIB}",
         ("scope=synthetic Python integer-mixing workload and periodic probe only; PASS does not close terminal-workload release gate"
@@ -560,7 +670,7 @@ def main():
         print(f"refusing to overwrite acceptance report: {report}", file=sys.stderr)
         return 2
     print("\n".join(lines))
-    return {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2}[status]
+    return {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2, "CONFOUNDED_INCONCLUSIVE": 3}[status]
 
 
 if __name__ == "__main__":
