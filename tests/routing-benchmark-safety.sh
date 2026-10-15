@@ -40,7 +40,7 @@ grep -q 'git_diff_sha256=' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'git_dirty=' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'status.*--untracked-files=no' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'loadavg_1m_start' "$ROOT/benchmarks/routing-contention.py"
-grep -q 'WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, or terminal-build' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, terminal-build, or terminal-repo-cli' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'WORKLOAD_GUARD_AGGREGATE_ROUTING' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'lwg-workload-' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'workers_routed' "$ROOT/benchmarks/routing-contention.py"
@@ -56,7 +56,7 @@ grep -q 'worker_throughput_per_sec' "$ROOT/benchmarks/routing-contention.py"
 if WORKLOAD_KIND=unknown RESULT="$TMP/unknown.tsv" DURATION=20 "$BENCH" >/dev/null 2>"$TMP/unknown.err"; then
   echo 'routing benchmark accepted an unknown workload kind' >&2; exit 1
 fi
-grep -q 'WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, or terminal-build' "$TMP/unknown.err"
+grep -q 'WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, terminal-build, or terminal-repo-cli' "$TMP/unknown.err"
 [ ! -e "$TMP/unknown.tsv" ]
 
 printf '%s\n' 'routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)'

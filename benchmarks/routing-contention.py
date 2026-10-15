@@ -226,6 +226,8 @@ with open(progress,"a",buffering=1) as f:
             (srcdir / f"unit{index}.c").write_text(body + "\n")
         (srcdir / "main.c").write_text("int main(void) { return 0; }\n")
         hog.write_text('''import os,pathlib,subprocess,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nsrc=pathlib.Path(__file__).parent/"build-src"; out=src/"build-out"; out.mkdir(exist_ok=True)\nsources=sorted(str(p) for p in src.glob("unit*.c"))+[str(src/"main.c")]\ncompiler=os.environ.get("CC","cc"); count=0\nwith open(progress,"a",buffering=1) as f:\n while True:\n  objects=[]\n  for source in sources:\n   obj=out/(pathlib.Path(source).stem+".o")\n   subprocess.run([compiler,"-O2","-c",source,"-o",str(obj)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n   objects.append(str(obj)); count+=1; f.write(f"{time.monotonic():.6f}\\t{count}\\n")\n  subprocess.run([compiler,*objects,"-o",str(out/"build-worker")],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n  count+=1; f.write(f"{time.monotonic():.6f}\\t{count}\\n")\n''')
+    elif WORKLOAD_KIND == "terminal-repo-cli":
+        hog.write_text('''import os,subprocess,sys,time\npidfile,progress,repo_root,cache_dir=sys.argv[1:5]\nopen(pidfile,"w").write(str(os.getpid()))\nenv=os.environ.copy(); env["PYTHONPYCACHEPREFIX"]=cache_dir\nroots=[os.path.join(repo_root,x) for x in ("bin","benchmarks","tests")]\ncli=os.path.join(repo_root,"bin","workload-guard")\ncount=0\nwith open(progress,"a",buffering=1) as f:\n while True:\n  subprocess.run([sys.executable,"-m","compileall","-q","-f",*roots],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n  count+=1\n  if count%2==0:\n   subprocess.run([cli,"status"],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n  f.write(f"{time.monotonic():.6f}\\t{count}\\n")\n''')
     else:
         hog.write_text('''import os,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nx=0x123456789abcdef0; count=0; deadline=time.monotonic()+1.0\nwith open(progress,"a",buffering=1) as f:\n while True:\n  x ^= (x << 7) & ((1<<64)-1); x ^= x >> 9; x=(x*0x9e3779b97f4a7c15)&((1<<64)-1); count += 1\n  now=time.monotonic()\n  if now >= deadline:\n   f.write(f"{now:.6f}\\t{count}\\n"); deadline += 1.0\n''')
     probe = directory / "probe.py"
@@ -299,6 +301,9 @@ def run_trial(mode, rep, directory, hog, probe):
             if WORKLOAD_KIND == "terminal-openssl":
                 outputfile=directory / f"{tag}-hog{i}.openssl.log"
                 worker_command=[sys.executable, str(hog), str(pidfile), str(progressfile), str(outputfile), str(DURATION)]
+            elif WORKLOAD_KIND == "terminal-repo-cli":
+                cache_dir=directory / f"repo-pycache-{tag}-worker{i}"
+                worker_command=[sys.executable, str(hog), str(pidfile), str(progressfile), str(ROOT), str(cache_dir)]
             else:
                 worker_command=[sys.executable, str(hog), str(pidfile), str(progressfile)]
             worker_scope=f"lwg-workload-{tag}-hog{i}.scope"
@@ -492,8 +497,8 @@ def main():
     global CREATED_UNIT_FILES
     if REPS < 1 or WORKERS < 1 or DURATION < 20:
         raise SystemExit("REPS and WORKERS must be positive; DURATION must be >=20s for comparable steady windows")
-    if WORKLOAD_KIND not in ("synthetic", "terminal-openssl", "terminal-gzip", "terminal-build"):
-        raise SystemExit("WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, or terminal-build")
+    if WORKLOAD_KIND not in ("synthetic", "terminal-openssl", "terminal-gzip", "terminal-build", "terminal-repo-cli"):
+        raise SystemExit("WORKLOAD_KIND must be synthetic, terminal-openssl, terminal-gzip, terminal-build, or terminal-repo-cli")
     if WORKLOAD_KIND == "terminal-openssl" and not shutil.which("openssl"):
         raise SystemExit("WORKLOAD_KIND=terminal-openssl requires the openssl CLI")
     if WORKLOAD_KIND == "terminal-gzip" and not shutil.which("gzip"):
@@ -571,7 +576,7 @@ def main():
             f.write(f"router_sustained_samples={os.getenv('BENCH_ROUTER_SUSTAINED_SAMPLES', '4')}\n")
             f.write(f"router_cpu_threshold_percent={os.getenv('BENCH_ROUTER_CPU_THRESHOLD', '70')}\n")
             f.write("percentile_method=nearest-rank ceil(p*n)-1\n")
-            f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block); terminal-gzip mode is compressed output bytes/s; terminal-build mode is completed generated C translation-unit compile/link steps per second\n")
+            f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block); terminal-gzip mode is compressed output bytes/s; terminal-build mode is completed generated C translation-unit compile/link steps per second; terminal-repo-cli mode is completed real-repository Python compileall passes/s with read-only workload-guard status calls every two passes\n")
             f.write("steady_state_window=common elapsed time >=12s after probe start in both modes; routing must have converged before window for a valid router trial\n")
             f.write("raw_summary_validation=true; evaluator independently recomputes probe summary statistics and per-worker throughput from the raw files\n")
             f.write("noise_diagnostics=host CPU PSI some avg10 and /proc/loadavg 1m sampled at each trial start/end; diagnostic only, no post-hoc exclusion\n")

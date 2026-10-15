@@ -347,7 +347,7 @@ def main():
     if missing_manifest:
         print("INCOMPLETE: manifest missing required metadata: " + ", ".join(missing_manifest), file=sys.stderr)
         return 2
-    if env.get("workload_kind") not in ("synthetic", "terminal-openssl", "terminal-gzip", "terminal-build"):
+    if env.get("workload_kind") not in ("synthetic", "terminal-openssl", "terminal-gzip", "terminal-build", "terminal-repo-cli"):
         print("INCOMPLETE: manifest workload_kind is missing or unsupported", file=sys.stderr)
         return 2
     try:
@@ -547,6 +547,8 @@ def main():
          if env.get("workload_kind") == "terminal-openssl" else
          "scope=GNU gzip -1 compression of /dev/zero and periodic probe only; PASS does not generalize to other CLI workloads"
          if env.get("workload_kind") == "terminal-gzip" else
+         "scope=actual repository Python compileall passes interleaved with read-only workload-guard status CLI calls and periodic probe; single-host result does not generalize to all repository builds or terminal workloads"
+         if env.get("workload_kind") == "terminal-repo-cli" else
          "scope=bounded repeated GCC/CC multi-translation-unit compile-and-link workload and periodic probe only; generated source is a reproducible compiler stress workload, not a production repository build"),
         f"variation_method=paired-ratio range/IQR plus deterministic bootstrap percentile interval; resamples={BOOTSTRAP_RESAMPLES}; seed={BOOTSTRAP_SEED}; descriptive only",
         *findings,
