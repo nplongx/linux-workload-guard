@@ -65,6 +65,11 @@ SHADOW_RECOVERY_SAMPLES = shadow_int_env("WORKLOAD_GUARD_SHADOW_RECOVERY_SAMPLES
 SHADOW_RECOVERY_DWELL_SEC = shadow_float_env("WORKLOAD_GUARD_SHADOW_RECOVERY_DWELL_SEC", RECOVERY_DWELL_SEC)
 QUOTA_DYNAMIC = os.getenv("WORKLOAD_GUARD_DYNAMIC_QUOTA", "false").lower() in ("1", "true", "yes", "on")
 QUOTA_AIMD_SHADOW = os.getenv("WORKLOAD_GUARD_AIMD_SHADOW", "false").lower() in ("1", "true", "yes", "on")
+AGGREGATE_ROUTING = os.getenv("WORKLOAD_GUARD_AGGREGATE_ROUTING", "false").lower() in ("1", "true", "yes", "on")
+AGGREGATE_ROUTE_RATIO = core_float_env("WORKLOAD_GUARD_AGGREGATE_ROUTE_RATIO", 0.85)
+AGGREGATE_CLEAR_RATIO = core_float_env("WORKLOAD_GUARD_AGGREGATE_CLEAR_RATIO", 0.65)
+AGGREGATE_MIN_WORKER_CPU = core_float_env("WORKLOAD_GUARD_AGGREGATE_MIN_WORKER_CPU", 20.0)
+AGGREGATE_SUSTAINED_SAMPLES = core_int_env("WORKLOAD_GUARD_AGGREGATE_SUSTAINED_SAMPLES", 3)
 QUOTA_AIMD_DECREASE = numeric_env("WORKLOAD_GUARD_AIMD_DECREASE", "0.80")
 QUOTA_AIMD_ADD = numeric_env("WORKLOAD_GUARD_AIMD_ADD", "10")
 QUOTA_INTERVAL_SEC = numeric_env("WORKLOAD_GUARD_QUOTA_INTERVAL_SEC", "5")
@@ -365,6 +370,62 @@ def update_shadow_policy(state, cpu, now, alpha=SHADOW_EWMA_ALPHA,
         state["low_since"] = None
     return None
 
+
+def update_aggregate_route_policy(state, cpu_by_pid, routable_pids, parent_quota,
+                                  route_ratio=AGGREGATE_ROUTE_RATIO,
+                                  clear_ratio=AGGREGATE_CLEAR_RATIO,
+                                  min_worker_cpu=AGGREGATE_MIN_WORKER_CPU,
+                                  sustained_samples=AGGREGATE_SUSTAINED_SAMPLES):
+    """Propose one fair route only after sustained aggregate CPU saturation.
+
+    cpu_by_pid includes protected and already-routed workers, so routing the
+    first process does not erase aggregate demand. Invalid telemetry fails
+    closed; the caller performs final PID identity and cgroup checks.
+    """
+    try:
+        quota = float(parent_quota)
+        route_ratio, clear_ratio, min_worker_cpu = map(float, (route_ratio, clear_ratio, min_worker_cpu))
+        if (not math.isfinite(quota) or quota <= 0 or
+                not all(math.isfinite(x) for x in (route_ratio, clear_ratio, min_worker_cpu)) or
+                not 0 < route_ratio <= 1 or not 0 <= clear_ratio < route_ratio or
+                min_worker_cpu <= 0 or not isinstance(sustained_samples, int) or sustained_samples < 1):
+            raise ValueError
+        valid = {}
+        for pid, value in cpu_by_pid.items():
+            number = float(value)
+            if math.isfinite(number) and number >= min_worker_cpu:
+                valid[int(pid)] = number
+    except (TypeError, ValueError, OverflowError):
+        state.update(high_samples=0, low_samples=0, active=False)
+        return None, "aggregate-telemetry-unavailable"
+
+    ratio = sum(valid.values()) / quota
+    if not state.get("active", False):
+        state["high_samples"] = state.get("high_samples", 0) + 1 if len(valid) >= 2 and ratio >= route_ratio else 0
+        state["low_samples"] = 0
+        if state["high_samples"] < sustained_samples:
+            return None, "aggregate-saturation-pending"
+        state.update(active=True, low_samples=0, cursor=-1)
+    elif ratio <= clear_ratio or len(valid) < 2:
+        state["low_samples"] = state.get("low_samples", 0) + 1
+        if state["low_samples"] >= sustained_samples:
+            state.update(active=False, high_samples=0, low_samples=0)
+            return None, "aggregate-saturation-cleared"
+    else:
+        state["low_samples"] = 0
+
+    eligible = sorted(pid for pid in routable_pids if pid in valid)
+    if not state.get("active", False) or not eligible:
+        return None, "aggregate-no-routable-worker"
+    # One route per controller sample, round-robin by PID to bound actuation.
+    cursor = state.get("cursor", -1)
+    for pid in eligible:
+        if pid > cursor:
+            state["cursor"] = pid
+            return pid, "aggregate-saturation"
+    state["cursor"] = eligible[0]
+    return eligible[0], "aggregate-saturation"
+
 def shadow_config_error(alpha=SHADOW_EWMA_ALPHA, route_threshold=SHADOW_ROUTE_THRESHOLD,
                         clear_threshold=SHADOW_CLEAR_THRESHOLD,
                         sustained_samples=SHADOW_SUSTAINED_SAMPLES,
@@ -412,6 +473,10 @@ def routing_config_error():
         return "adaptive minimum sample count must be a positive integer"
     if not isinstance(RECOVERY_SAMPLES, int) or RECOVERY_SAMPLES < 1:
         return "recovery sample count must be a positive integer"
+    if AGGREGATE_ROUTING and (not all(math.isfinite(value) for value in (AGGREGATE_ROUTE_RATIO, AGGREGATE_CLEAR_RATIO, AGGREGATE_MIN_WORKER_CPU)) or
+            not 0 < AGGREGATE_ROUTE_RATIO <= 1 or not 0 <= AGGREGATE_CLEAR_RATIO < AGGREGATE_ROUTE_RATIO or
+            AGGREGATE_MIN_WORKER_CPU <= 0 or not isinstance(AGGREGATE_SUSTAINED_SAMPLES, int) or AGGREGATE_SUSTAINED_SAMPLES < 1):
+        return "aggregate routing thresholds and sustained sample count are invalid"
     return None
 
 def parse_cpu_pressure(text):
@@ -844,6 +909,9 @@ def main():
     prev={}
     hot={}
     shadow_policy={}
+    aggregate_policy = {"active": False, "high_samples": 0, "low_samples": 0, "cursor": -1}
+    aggregate_parent_quota = None
+    aggregate_quota_checked_at = 0.0
     moved=set()
     routes=load_state()
     recovery_hot={}
@@ -878,6 +946,10 @@ def main():
     quota_sched_sample_time = time.monotonic()
     quota_sched_observation = None
     logging.info('started threshold=%.0f%% sustained=%ss recovery<%.0f%% adaptive=%s shadow=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, RECOVERY_CPU_THRESHOLD, ADAPTIVE, SHADOW_ENABLED)
+    if AGGREGATE_ROUTING:
+        logging.warning('aggregate routing OPT-IN enabled: aggregate>=%.0f%% for %s samples, per-worker>=%.0f%%, clear<=%.0f%%; one route per sample; quota/cgroup telemetry required',
+                        AGGREGATE_ROUTE_RATIO * 100, AGGREGATE_SUSTAINED_SAMPLES,
+                        AGGREGATE_MIN_WORKER_CPU, AGGREGATE_CLEAR_RATIO * 100)
     if SHADOW_ENABLED:
         shadow_error = shadow_config_error()
         if shadow_error:
@@ -963,9 +1035,17 @@ def main():
             history_proc_prev, _, _, _ = history_cpu_attribution({}, 1.0, gateway_cgroup, heavy_cgroup)
             history_proc_time = time.monotonic()
         now={}
+        aggregate_cpu = {}
+        if AGGREGATE_ROUTING and time.monotonic() - aggregate_quota_checked_at >= 5.0:
+            aggregate_parent_quota = unit_quota(PARENT_UNIT)
+            aggregate_quota_checked_at = time.monotonic()
         if gateway_cgroup and heavy_cgroup:
             protected_pids = cgroup_tree_pids(gateway_cgroup)
-            heavy_pids = cgroup_tree_pids(heavy_cgroup) if SHADOW_ENABLED else set()
+            heavy_pids = cgroup_tree_pids(heavy_cgroup) if (SHADOW_ENABLED or AGGREGATE_ROUTING) else set()
+            if AGGREGATE_ROUTING:
+                # The benchmark/production hierarchy may nest heavy under the
+                # parent; don't classify already-routed descendants as routable.
+                protected_pids -= heavy_pids
             for pid in protected_pids | heavy_pids:
                 cmd=cmdline(pid)
                 if not cmd or is_excluded(cmd): continue
@@ -992,6 +1072,8 @@ def main():
                         continue
                     # Linux USER_HZ is normally 100. Normalize to % of one CPU.
                     cpu=(dticks / max(1, os.sysconf(os.sysconf_names['SC_CLK_TCK'])) / elapsed_cpu)*100
+                    if pid in protected_pids or pid in routes:
+                        aggregate_cpu[pid] = cpu
                     cls = command_class(cmd)
                     stat = update_stat(stats, cls, cpu) if ADAPTIVE else None
                     score = adaptive_score(cpu, stat) if ADAPTIVE else None
@@ -1073,6 +1155,7 @@ def main():
                         current_route_cpu.pop(pid, None)
                         continue
                     cpu = (dticks / max(1, os.sysconf(os.sysconf_names['SC_CLK_TCK'])) / elapsed_cpu) * 100
+                    aggregate_cpu[pid] = cpu
                     current_route_cpu[pid] = max(0.0, cpu)
                     if cpu < RECOVERY_CPU_THRESHOLD:
                         recovery_hot[pid] = recovery_hot.get(pid, 0) + 1
@@ -1092,6 +1175,41 @@ def main():
                             recovery_events += 1
                             moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
                             route_prev.pop(pid, None)
+            if AGGREGATE_ROUTING:
+                aggregate_pid, aggregate_reason = update_aggregate_route_policy(
+                    aggregate_policy, aggregate_cpu, protected_pids, aggregate_parent_quota)
+                if aggregate_policy.get("high_samples", 0) in (1, AGGREGATE_SUSTAINED_SAMPLES) or aggregate_reason in ("aggregate-telemetry-unavailable", "aggregate-saturation-cleared"):
+                    logging.info('aggregate routing observation status=%s active=%s eligible_workers=%s observed_workers=%s demand_cpu=%.1f%% parent_quota=%s high_samples=%s low_samples=%s',
+                                 aggregate_reason, aggregate_policy.get("active"),
+                                 sum(1 for pid in protected_pids if aggregate_cpu.get(pid, 0.0) >= AGGREGATE_MIN_WORKER_CPU),
+                                 sum(1 for value in aggregate_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
+                                 sum(value for value in aggregate_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
+                                 aggregate_parent_quota, aggregate_policy.get("high_samples"), aggregate_policy.get("low_samples"))
+                if aggregate_pid is not None and aggregate_pid in now and aggregate_pid not in moved:
+                    _, aggregate_cmd, aggregate_starttime, _ = now[aggregate_pid]
+                    if (aggregate_pid not in last_move or time.monotonic() - last_move[aggregate_pid] >= COOLDOWN_SEC):
+                        source_path = proc_cgroup(aggregate_pid)
+                        source_cgroup = SYSTEMD_PREFIX + source_path if source_path else gateway_cgroup
+                        before_move = proc_stat(aggregate_pid)
+                        if (before_move is not None and before_move[3] == aggregate_starttime and
+                                in_cgroup_tree(aggregate_pid, gateway_cgroup) and
+                                move(aggregate_pid, heavy_cgroup, aggregate_reason)):
+                            after_move = proc_stat(aggregate_pid)
+                            if after_move is not None and after_move[3] == aggregate_starttime:
+                                moved.add(aggregate_pid)
+                                routes[aggregate_pid] = (aggregate_cpu.get(aggregate_pid, 0.0), aggregate_reason,
+                                                         source_cgroup, heavy_cgroup, aggregate_cmd, aggregate_starttime)
+                                last_move[aggregate_pid] = time.monotonic()
+                                route_events += 1
+                                state_dirty = True
+                                logging.info('route decision=accepted pid=%s cpu=%.1f%% reason=%s aggregate_workers=%s aggregate_quota=%.1f%% cmd=%s',
+                                             aggregate_pid, aggregate_cpu[aggregate_pid], aggregate_reason,
+                                             sum(1 for value in aggregate_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
+                                             aggregate_parent_quota, aggregate_cmd[:180])
+                elif aggregate_reason not in ("aggregate-saturation-pending", "aggregate-no-routable-worker"):
+                    logging.info('aggregate routing state=%s active=%s high_samples=%s low_samples=%s quota=%s',
+                                 aggregate_reason, aggregate_policy.get("active"), aggregate_policy.get("high_samples"),
+                                 aggregate_policy.get("low_samples"), aggregate_parent_quota)
         # Average routed CPU across the entire interval between quota samples.
         # One stale hot process sample must not dominate the controller after
         # the workload has already gone idle.

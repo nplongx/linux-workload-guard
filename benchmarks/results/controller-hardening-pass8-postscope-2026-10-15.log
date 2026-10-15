@@ -1,0 +1,17 @@
+2026-10-15 16:02:18,771 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-15 16:02:18,772 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-15 16:02:18,777 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 16:02:18,779 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 16:02:18,780 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 16:02:18,782 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 16:02:18,783 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 16:02:18,784 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 16:02:18,786 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 16:02:18,787 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-15 16:02:18,788 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 16:02:18,789 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-15 16:02:18,790 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-15 16:02:18,794 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 16:02:18,795 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-15 16:02:18,796 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)

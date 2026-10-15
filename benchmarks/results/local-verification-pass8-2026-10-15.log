@@ -1,0 +1,74 @@
+PASS8 local verification started
+2026-10-15T15:52:44+07:00
+f84f5fd5f9e4285915b289fa1e74fa596492edae
+2026-10-15 15:52:45,408 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-15 15:52:45,408 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-15 15:52:45,412 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 15:52:45,413 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 15:52:45,414 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 15:52:45,415 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 15:52:45,416 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 15:52:45,417 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 15:52:45,418 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 15:52:45,419 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-15 15:52:45,420 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 15:52:45,421 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-15 15:52:45,422 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-15 15:52:45,423 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 15:52:45,424 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-15 15:52:45,426 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interrupted run finalized INCOMPLETE)
+performance reviewer rejects invalid acceptance limits
+performance review tests: ok (PASS/FAIL/INCOMPLETE, paired ratios, no fabricated acceptance)
+unit checks: ok
+invalid shadow configuration: safely rejected
+invalid quota configuration: safely rejected
+custom parent recovery leaf: safely derived
+tests: ok
+===== ./tests/install-uninstall.sh =====
+Linux Workload Guard installed.
+Linux Workload Guard removed.
+install/uninstall smoke: ok (systemctl mocked; user config preserved)
+===== ./tests/integration-routing.sh =====
+integration routing: ok (120ms burst not routed; sustained detection 0.81s)
+===== ./tests/recovery-routing.sh =====
+recovery routing: ok (idle-to-recovery 1.83s)
+===== ./tests/shadow-routing.sh =====
+shadow routing: ok (120ms burst rejected; sustained route observed in 1.06s; recovery completed in 3.33s including idle phase)
+===== ./tests/controller-integration.sh =====
+production PSI boundary: below/equal/above 0.40; missing/stale hold; bounded quota readback passed in temporary slice
+probe_baseline: n=252 wakeup_lateness_ms p50/p95/p99=0.083/0.516/2.096; work_duration_ms p50/p95/p99=1.289/2.334/16.430
+probe_enabled: n=268 wakeup_lateness_ms p50/p95/p99=0.083/0.519/1.545; work_duration_ms p50/p95/p99=1.602/1.966/15.953
+cpu_bound_baseline: workers=2 aggregate_python_loop_iterations_per_second=56327.563
+cpu_bound_enabled: workers=2 aggregate_python_loop_iterations_per_second=61032.537
+guard_enabled_window: wall_s=5.081 cpu_s=0.060 one_core_cpu_pct=1.18 rss_start/end_kib=18992/19068 peak_rss_kib=19068 router_process_runqueue_delay_delta_ms=22.984 cpu_counter_status=valid scheduler_counter_status=valid
+host_cpu_psi_some_avg10_pct: baseline_start/end=3.18/6.42; enabled_start/end=6.42/7.13
+transition_timing_s: both_workers_routed=0.799; first_quota_increase=1.338; idle_to_quota_decrease_and_recovery=1.600
+quota_stability: transitions=5 direction_reversals=1 values=100->150,350->300,300->250,250->200,200->150
+metrics_scope: one bounded synthetic host run; loop iterations and probe timings are workload-specific, not application SLA evidence
+controller integration: ok (burst rejected; two competing workers routed; dynamic quota applied/decreased; AIMD log-only; both recovered; external quota change reconciled; router restart with active routes recovered; cgroup recreated and routing/recovery resumed; dynamic quota disabled without changing the recorded temporary quota)
+===== ./tests/quota-benchmark-safety.sh =====
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+===== ./tests/routing-benchmark-safety.sh =====
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+===== ./tests/live-psi-observe-safety.sh =====
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interrupted run finalized INCOMPLETE)
+===== ./tests/performance-review.sh =====
+performance reviewer rejects invalid acceptance limits
+performance review tests: ok (PASS/FAIL/INCOMPLETE, paired ratios, no fabricated acceptance)
+===== ./tests/soak-monitor.sh =====
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+===== bash tests/recovery-unit.sh =====
+===== Python syntax =====
+===== POSIX shell syntax =====
+===== Bash syntax =====
+===== systemd unit verification =====
+===== diff whitespace =====
+===== version =====
+0.6.5-rc.1
+PASS8 local verification completed
+2026-10-15T15:54:37+07:00

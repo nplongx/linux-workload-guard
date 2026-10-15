@@ -1,0 +1,26 @@
+acceptance_status=INCOMPLETE
+result_tsv=benchmarks/results/routing-contention-aggregate-synthetic-smoke2-2026-10-15.tsv
+raw_samples_tsv=benchmarks/results/routing-contention-aggregate-synthetic-smoke2-2026-10-15.samples.tsv
+manifest=benchmarks/results/routing-contention-aggregate-synthetic-smoke2-2026-10-15.environment.txt
+git_revision=f84f5fd5f9e4285915b289fa1e74fa596492edae
+workload_kind=synthetic
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+duration_seconds=25.0
+workers=2
+minimum_pairs=5
+minimum_steady_samples_per_mode=500
+max_median_paired_latency_ratio=1.10
+min_median_paired_throughput_ratio=0.90
+max_router_cpu_pct_one_core=5.0
+max_router_peak_rss_kib=32768
+scope=synthetic Python integer-mixing workload and periodic probe only; PASS does not close terminal-workload release gate
+variation_method=paired-ratio range/IQR plus deterministic bootstrap percentile interval; resamples=10000; seed=20261015; descriptive only
+PASS: repetition 1 routed all 2 intended worker(s)
+FAIL: repetition 1 has fewer than 500 steady samples
+PASS: repetition 1 router CPU=0.241% of one logical CPU
+PASS: repetition 1 router peak RSS=18836 KiB
+PAIR: repetition 1 steady_p95_ms ratio=0.990
+PAIR: repetition 1 steady_p99_ms ratio=0.987
+PAIR: repetition 1 steady_work_p95_ms ratio=1.002
+PAIR: repetition 1 worker_throughput_per_sec ratio=1.114
+INCOMPLETE: only 1 paired repetitions; need 5

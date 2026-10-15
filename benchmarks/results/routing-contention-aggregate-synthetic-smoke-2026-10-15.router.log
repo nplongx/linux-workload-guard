@@ -1,0 +1,4 @@
+2026-10-15 15:41:42,793 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:41:42,793 WARNING aggregate routing OPT-IN enabled: aggregate>=85% for 3 samples, per-worker>=20%, clear<=65%; one route per sample; quota/cgroup telemetry required
+2026-10-15 15:41:51,045 INFO route decision=accepted pid=996900 cpu=46.0% reason=aggregate-saturation aggregate_workers=2 aggregate_quota=100.0% cmd=/usr/bin/python3 /tmp/lwg-routing-bench-68kzs_0q/hog.py /tmp/lwg-routing-bench-68kzs_0q/lwg-router-1-995257-hog0.pid /tmp/lwg-routing-bench-68kzs_0q/lwg-router-1-995257-hog0.progre
+2026-10-15 15:41:53,086 INFO route decision=accepted pid=996901 cpu=45.6% reason=aggregate-saturation aggregate_workers=2 aggregate_quota=100.0% cmd=/usr/bin/python3 /tmp/lwg-routing-bench-68kzs_0q/hog.py /tmp/lwg-routing-bench-68kzs_0q/lwg-router-1-995257-hog1.pid /tmp/lwg-routing-bench-68kzs_0q/lwg-router-1-995257-hog1.progre

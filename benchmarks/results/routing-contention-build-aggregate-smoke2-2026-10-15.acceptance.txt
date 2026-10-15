@@ -1,0 +1,18 @@
+acceptance_status=INCOMPLETE
+result_tsv=benchmarks/results/routing-contention-build-aggregate-smoke2-2026-10-15.tsv
+raw_samples_tsv=benchmarks/results/routing-contention-build-aggregate-smoke2-2026-10-15.samples.tsv
+manifest=benchmarks/results/routing-contention-build-aggregate-smoke2-2026-10-15.environment.txt
+git_revision=f84f5fd5f9e4285915b289fa1e74fa596492edae
+workload_kind=terminal-build
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+duration_seconds=25.0
+workers=2
+minimum_pairs=5
+minimum_steady_samples_per_mode=500
+max_median_paired_latency_ratio=1.10
+min_median_paired_throughput_ratio=0.90
+max_router_cpu_pct_one_core=5.0
+max_router_peak_rss_kib=32768
+scope=bounded repeated GCC/CC multi-translation-unit compile-and-link workload and periodic probe only; generated source is a reproducible compiler stress workload, not a production repository build
+variation_method=paired-ratio range/IQR plus deterministic bootstrap percentile interval; resamples=10000; seed=20261015; descriptive only
+INCOMPLETE: benchmark manifest result_status is not COMPLETE

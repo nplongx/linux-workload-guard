@@ -6,6 +6,7 @@ The installed workload-router.service, production configuration, and production
 slice quotas are never stopped, rewritten, or changed.
 """
 import csv
+import hashlib
 import math
 import os
 import pathlib
@@ -63,6 +64,14 @@ def write_worker_files(directory):
     hog = directory / "hog.py"
     if WORKLOAD_KIND == "terminal-openssl":
         hog.write_text('''import os, re, subprocess, sys, time\npidfile, progress, output, duration = sys.argv[1:5]\nseconds=max(10, int(float(duration)-3))\nwith open(output, "w") as log:\n p=subprocess.Popen(["openssl", "speed", "-seconds", str(seconds), "-bytes", "16384", "sha256"], stdout=log, stderr=subprocess.STDOUT)\n open(pidfile,"w").write(str(p.pid))\n rc=p.wait()\nrate=float("nan")\nfor line in open(output, errors="replace"):\n if line.lstrip().startswith("sha256"):\n  values=re.findall(r"([0-9]+(?:\\.[0-9]+)?)(?:k)?", line)\n  if values:\n   try: rate=float(values[-1])\n   except ValueError: pass\nwith open(progress,"a",buffering=1) as f: f.write(f"{time.monotonic():.6f}\\t{int(rate) if rate==rate and rate>0 else 0}\\n")\nraise SystemExit(rc)\n''')
+    elif WORKLOAD_KIND == "terminal-build":
+        srcdir = directory / "build-src"
+        srcdir.mkdir(exist_ok=True)
+        for index in range(12):
+            body = "\\n".join(f"long f{index}_{n}(long x) {{ return (x * {n + 3}L + {n * 17 + 1}L) ^ (x >> {(n % 7) + 1}); }}" for n in range(240))
+            (srcdir / f"unit{index}.c").write_text(body + "\\n")
+        (srcdir / "main.c").write_text("int main(void) { return 0; }\\n")
+        hog.write_text('''import os,pathlib,subprocess,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nsrc=pathlib.Path(__file__).parent/"build-src"; out=src/"build-out"; out.mkdir(exist_ok=True)\nsources=sorted(str(p) for p in src.glob("unit*.c"))+[str(src/"main.c")]\ncompiler=os.environ.get("CC","cc"); count=0; deadline=time.monotonic()+1\nwith open(progress,"a",buffering=1) as f:\n while True:\n  objects=[]\n  for source in sources:\n   obj=out/(pathlib.Path(source).stem+".o")\n   subprocess.run([compiler,"-O2","-c",source,"-o",str(obj)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n   objects.append(str(obj))\n  subprocess.run([compiler,*objects,"-o",str(out/"build-worker")],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n  count+=1; now=time.monotonic()\n  if now>=deadline: f.write(f"{now:.6f}\\t{count}\\n"); deadline=now+1\n''')
     else:
         hog.write_text('''import os,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nx=0x123456789abcdef0; count=0; deadline=time.monotonic()+1.0\nwith open(progress,"a",buffering=1) as f:\n while True:\n  x ^= (x << 7) & ((1<<64)-1); x ^= x >> 9; x=(x*0x9e3779b97f4a7c15)&((1<<64)-1); count += 1\n  now=time.monotonic()\n  if now >= deadline:\n   f.write(f"{now:.6f}\\t{count}\\n"); deadline += 1.0\n''')
     probe = directory / "probe.py"
@@ -271,15 +280,31 @@ def git_revision():
     except (OSError, subprocess.SubprocessError):
         return "unavailable"
 
+def git_source_state():
+    """Record tracked harness/controller source changes, not unrelated result artifacts."""
+    try:
+        status = subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain"],
+                                         text=True, stderr=subprocess.DEVNULL, timeout=2)
+        source_paths = ["bin/workload-router.py", "benchmarks/routing-contention.py",
+                        "benchmarks/performance-review.py"]
+        diff = subprocess.check_output(["git", "-C", str(ROOT), "diff", "HEAD", "--binary", "--", *source_paths],
+                                       stderr=subprocess.DEVNULL, timeout=2)
+        return ("true" if diff else "false", hashlib.sha256(diff).hexdigest(),
+                sum(1 for line in status.splitlines() if line.startswith("??")))
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable", "unavailable", -1
+
 def main():
     global ROUTER_LOG_PATH, ROUTER_STATE_PATH, ROUTER_ENV
     global CREATED_UNIT_FILES
     if REPS < 1 or WORKERS < 1 or DURATION < 20:
         raise SystemExit("REPS and WORKERS must be positive; DURATION must be >=20s for comparable steady windows")
-    if WORKLOAD_KIND not in ("synthetic", "terminal-openssl"):
-        raise SystemExit("WORKLOAD_KIND must be synthetic or terminal-openssl")
+    if WORKLOAD_KIND not in ("synthetic", "terminal-openssl", "terminal-build"):
+        raise SystemExit("WORKLOAD_KIND must be synthetic, terminal-openssl, or terminal-build")
     if WORKLOAD_KIND == "terminal-openssl" and not shutil.which("openssl"):
         raise SystemExit("WORKLOAD_KIND=terminal-openssl requires the openssl CLI")
+    if WORKLOAD_KIND == "terminal-build" and not shutil.which(os.getenv("CC", "cc")):
+        raise SystemExit("WORKLOAD_KIND=terminal-build requires a C compiler (CC or cc)")
     if not pathlib.Path("/sys/fs/cgroup/cgroup.controllers").exists():
         raise SystemExit("cgroup v2 required")
     sample_path = RESULT.with_suffix(".samples.tsv")
@@ -315,7 +340,8 @@ def main():
         with environment_path.open("x") as f:
             f.write(f"started_at={time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n")
             f.write(f"host={os.uname()}\npython={sys.version.replace(chr(10), ' ')}\nlogical_cpus={os.cpu_count()}\n")
-            f.write(f"git_revision={git_revision()}\ncpu_model={cpu_model()}\n")
+            dirty, diff_hash, untracked_count = git_source_state()
+            f.write(f"git_revision={git_revision()}\ngit_dirty={dirty}\ngit_diff_sha256={diff_hash}\ngit_untracked_path_count={untracked_count}\ncpu_model={cpu_model()}\n")
             f.write(f"cpu_pressure_initial_some_avg10={read_psi()}\nloadavg_initial_1m={read_loadavg()}\n")
             try:
                 f.write(f"cgroup_controllers={pathlib.Path('/sys/fs/cgroup/cgroup.controllers').read_text().strip()}\n")
@@ -326,13 +352,15 @@ def main():
             f.write(f"workload_kind={WORKLOAD_KIND}\n")
             f.write(f"parent_unit={PARENT_UNIT}\nheavy_unit={HEAVY_UNIT}\nrecovery_unit={RECOVERY_UNIT}\n")
             f.write("parent_cpu_quota=100%; heavy_child_cpu_quota=100%; both modes share the same 100% parent aggregate ceiling\n")
+            aggregate_setting = os.getenv("BENCH_AGGREGATE_ROUTING", "true" if WORKERS > 1 else "false").lower()
+            f.write(f"aggregate_routing={'enabled' if aggregate_setting in ('1','true','yes','on') else 'disabled'}; policy requires >=2 workers at >=20% CPU each, >=85% aggregate quota for 3 samples, clears <=65% for 3 samples, one route per sample\n")
             f.write("capacity_model=equal aggregate CPU ceiling; heavy slice is nested beneath parent\n")
             f.write("dynamic_quota=false; production user service/configuration/quotas untouched\n")
             f.write(f"router_sample_seconds={os.getenv('BENCH_ROUTER_SAMPLE_SEC', '2')}\n")
             f.write(f"router_sustained_samples={os.getenv('BENCH_ROUTER_SUSTAINED_SAMPLES', '4')}\n")
             f.write(f"router_cpu_threshold_percent={os.getenv('BENCH_ROUTER_CPU_THRESHOLD', '70')}\n")
             f.write("percentile_method=nearest-rank ceil(p*n)-1\n")
-            f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block)\n")
+            f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block); terminal-build mode is completed generated C compile-and-link cycles/s\n")
             f.write("steady_state_window=common elapsed time >=12s after probe start in both modes; routing must have converged before window for a valid router trial\n")
             f.write("noise_diagnostics=host CPU PSI some avg10 and /proc/loadavg 1m sampled at each trial start/end; diagnostic only, no post-hoc exclusion\n")
             f.write("router_overhead=isolated router process CPU percentage of one logical CPU and VmHWM peak RSS\n")
@@ -372,6 +400,7 @@ def main():
                 "WORKLOAD_GUARD_AIMD_SHADOW": "false",
                 "WORKLOAD_GUARD_SHADOW": "false",
                 "WORKLOAD_GUARD_SAMPLE_SEC": os.getenv("BENCH_ROUTER_SAMPLE_SEC", "2"),
+                "WORKLOAD_GUARD_AGGREGATE_ROUTING": os.getenv("BENCH_AGGREGATE_ROUTING", "true" if WORKERS > 1 else "false"),
                 "WORKLOAD_GUARD_SUSTAINED_SAMPLES": os.getenv("BENCH_ROUTER_SUSTAINED_SAMPLES", "4"),
                 "WORKLOAD_GUARD_CPU_THRESHOLD": os.getenv("BENCH_ROUTER_CPU_THRESHOLD", "70"),
                 "WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD": "35",

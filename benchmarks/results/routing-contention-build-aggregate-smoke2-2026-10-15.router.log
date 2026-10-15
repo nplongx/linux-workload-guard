@@ -1,0 +1,2 @@
+2026-10-15 15:40:03,815 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:40:03,815 WARNING aggregate routing OPT-IN enabled: aggregate>=85% for 3 samples, per-worker>=20%, clear<=65%; one route per sample; quota/cgroup telemetry required

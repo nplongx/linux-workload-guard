@@ -73,6 +73,50 @@ with tempfile.TemporaryDirectory() as tempdir:
 router.STATE_FILE = original_state_file
 
 
+# Aggregate routing is opt-in and requires multiple independently active
+# workers plus sustained use of the observed parent CPU quota. It routes one
+# process per sample, rotates fairly, applies hysteresis, and fails closed on
+# missing quota telemetry.
+check(router.AGGREGATE_ROUTING is False, "aggregate routing must remain opt-in by default")
+aggregate = {"active": False, "high_samples": 0, "low_samples": 0, "cursor": -1}
+for _ in range(2):
+    pid, status = router.update_aggregate_route_policy(aggregate, {101: 45, 202: 45}, {101, 202}, 100)
+    check(pid is None and status == "aggregate-saturation-pending", "aggregate policy triggered before sustained threshold")
+pid, status = router.update_aggregate_route_policy(aggregate, {101: 45, 202: 45}, {101, 202}, 100)
+check(pid == 101 and status == "aggregate-saturation", "two workers below individual trigger failed aggregate detection")
+pid, status = router.update_aggregate_route_policy(aggregate, {101: 45, 202: 45}, {101, 202}, 100)
+check(pid == 202, "aggregate routing did not rotate fairly across workers")
+pid, status = router.update_aggregate_route_policy(aggregate, {101: 45}, {101}, 100)
+check(pid == 101, "remaining active worker should remain routable while aggregate saturation persists")
+for _ in range(1):
+    pid, status = router.update_aggregate_route_policy(aggregate, {101: 10, 202: 10}, {101, 202}, 100)
+    check(status != "aggregate-saturation-cleared", "aggregate hysteresis cleared too early")
+pid, status = router.update_aggregate_route_policy(aggregate, {101: 10, 202: 10}, {101, 202}, 100)
+check(pid is None and status == "aggregate-saturation-cleared" and not aggregate["active"],
+      "aggregate saturation did not clear after sustained low demand")
+for _ in range(5):
+    pid, status = router.update_aggregate_route_policy(aggregate, {101: 45}, {101}, 100)
+    check(pid is None, "single worker or short-lived burst caused aggregate route")
+pid, status = router.update_aggregate_route_policy(aggregate, {101: 45, 202: 45}, {101, 202}, None)
+check(pid is None and status == "aggregate-telemetry-unavailable" and not aggregate["active"],
+      "missing aggregate quota telemetry must fail closed")
+aggregate = {"active": False, "high_samples": 0, "low_samples": 0, "cursor": -1}
+for _ in range(4):
+    pid, status = router.update_aggregate_route_policy(aggregate, {101: 45, 202: 45}, {101, 202}, 200)
+    check(pid is None and status == "aggregate-saturation-pending",
+          "aggregate quota drift to 200% must re-normalize demand instead of routing on stale 100% quota")
+aggregate = {"active": False, "high_samples": 0, "low_samples": 0, "cursor": -1}
+for sample in ({101: 50, 202: 20}, {101: 50, 202: 0}, {101: 50, 202: 20}):
+    pid, _ = router.update_aggregate_route_policy(aggregate, sample, {101, 202}, 100)
+    check(pid is None, "flapping aggregate demand should reset sustained-entry hysteresis")
+aggregate = {"active": True, "high_samples": 3, "low_samples": 0, "cursor": -1}
+seen = []
+for _ in range(6):
+    pid, _ = router.update_aggregate_route_policy(aggregate, {101: 30, 202: 30, 303: 30}, {101, 202, 303}, 100)
+    seen.append(pid)
+check(seen == [101, 202, 303, 101, 202, 303], "aggregate routing fairness rotation/starvation invariant failed")
+
+
 # Production PSI default threshold behavior: >=0.40 reduces quota; just below
 # it cannot masquerade as either high or low pressure. Missing PSI cannot grant
 # a quota increase even when scheduler-delay measurement looks low.
@@ -255,5 +299,18 @@ for env, expected in (
         with patch.object(candidate, "ensure_workload_units") as ensure:
             candidate.main()
             ensure.assert_not_called()
+
+with patch.dict(os.environ, {"WORKLOAD_GUARD_AGGREGATE_ROUTING": "false",
+                             "WORKLOAD_GUARD_AGGREGATE_ROUTE_RATIO": "nan"}, clear=False):
+    spec = importlib.util.spec_from_file_location("router_aggregate_disabled_bad_env", os.path.join(ROOT, "bin", "workload-router.py"))
+    candidate = importlib.util.module_from_spec(spec); spec.loader.exec_module(candidate)
+    check(candidate.routing_config_error() is None,
+          "invalid unused aggregate settings must not disable the existing default routing policy")
+with patch.dict(os.environ, {"WORKLOAD_GUARD_AGGREGATE_ROUTING": "true",
+                             "WORKLOAD_GUARD_AGGREGATE_ROUTE_RATIO": "nan"}, clear=False):
+    spec = importlib.util.spec_from_file_location("router_aggregate_enabled_bad_env", os.path.join(ROOT, "bin", "workload-router.py"))
+    candidate = importlib.util.module_from_spec(spec); spec.loader.exec_module(candidate)
+    check("aggregate routing thresholds" in candidate.routing_config_error(),
+          "invalid enabled aggregate policy must fail closed")
 
 print("controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)")
