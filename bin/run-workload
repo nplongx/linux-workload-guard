@@ -1,11 +1,22 @@
 #!/bin/sh
 set -eu
 SLICE=heavy-workload.slice
+CONFIG_FILE="$HOME/.config/linux-workload-guard/workload-guard.env"
+AGGREGATE_SCOPE=false
+if [ -r "$CONFIG_FILE" ] && grep -Eiq '^[[:space:]]*WORKLOAD_GUARD_AGGREGATE_ROUTING[[:space:]]*=[[:space:]]*(1|true|yes|on)[[:space:]]*$' "$CONFIG_FILE"; then
+  AGGREGATE_SCOPE=true
+fi
 if [ "$#" -eq 0 ]; then
+  if [ "$AGGREGATE_SCOPE" = true ]; then
+    exec systemd-run --user --scope --slice=protected-workload.slice --unit="lwg-workload-$$-$(date +%s).scope" --description="Linux Workload Guard aggregate candidate" "$SHELL"
+  fi
   exec systemd-run --user --scope --slice="$SLICE" "$SHELL"
 fi
 case "$(printf '%s ' "$@" | tr '[:upper:]' '[:lower:]')" in
-  *build*|*compile*|*test*|*pytest*|*cargo*|*rustc*|*tsc*|*webpack*|*vite*|*esbuild*|*rollup*|*parcel*|*gradle*|*mvn*|*cmake*|*make*|*ffmpeg*|*docker\ build*|*podman\ build*|*inference*)
+  *build*|*compile*|*test*|*pytest*|*cargo*|*rustc*|*gcc*|*g++*|*clang*|*ninja*|*go\ build*|*tsc*|*webpack*|*vite*|*esbuild*|*rollup*|*parcel*|*gradle*|*mvn*|*cmake*|*make*|*ffmpeg*|*docker\ build*|*podman\ build*|*inference*)
+    if [ "$AGGREGATE_SCOPE" = true ]; then
+      exec systemd-run --user --scope --slice=protected-workload.slice --unit="lwg-workload-$$-$(date +%s).scope" --description="Linux Workload Guard aggregate candidate" -- "$@"
+    fi
     exec systemd-run --user --scope --slice="$SLICE" -- "$@"
     ;;
   *)

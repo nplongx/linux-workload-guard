@@ -35,6 +35,7 @@ ROUTER_LOG_PATH = None
 ROUTER_STATE_PATH = None
 ROUTER_ENV = None
 CREATED_UNIT_FILES = []
+SCOPE_CGROUP_CACHE = {}
 
 def ctl(*args, check=True):
     return subprocess.run(["systemctl", "--user", *args], stdout=subprocess.PIPE,
@@ -56,6 +57,16 @@ def pid_in(unit, pid):
     except OSError: pass
     return False
 
+def scope_weight(unit):
+    try:
+        path = SCOPE_CGROUP_CACHE.get(unit)
+        if path is None:
+            path = cgroup_path(PARENT_UNIT) / unit
+            SCOPE_CGROUP_CACHE[unit] = path
+        return int((path / "cpu.weight").read_text().strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
 def pct(xs, p):
     if not xs: return float("nan")
     ys = sorted(xs)
@@ -68,9 +79,9 @@ def write_worker_files(directory):
         srcdir = directory / "build-src"
         srcdir.mkdir(exist_ok=True)
         for index in range(12):
-            body = "\\n".join(f"long f{index}_{n}(long x) {{ return (x * {n + 3}L + {n * 17 + 1}L) ^ (x >> {(n % 7) + 1}); }}" for n in range(240))
-            (srcdir / f"unit{index}.c").write_text(body + "\\n")
-        (srcdir / "main.c").write_text("int main(void) { return 0; }\\n")
+            body = "\n".join(f"long f{index}_{n}(long x) {{ return (x * {n + 3}L + {n * 17 + 1}L) ^ (x >> {(n % 7) + 1}); }}" for n in range(240))
+            (srcdir / f"unit{index}.c").write_text(body + "\n")
+        (srcdir / "main.c").write_text("int main(void) { return 0; }\n")
         hog.write_text('''import os,pathlib,subprocess,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nsrc=pathlib.Path(__file__).parent/"build-src"; out=src/"build-out"; out.mkdir(exist_ok=True)\nsources=sorted(str(p) for p in src.glob("unit*.c"))+[str(src/"main.c")]\ncompiler=os.environ.get("CC","cc"); count=0; deadline=time.monotonic()+1\nwith open(progress,"a",buffering=1) as f:\n while True:\n  objects=[]\n  for source in sources:\n   obj=out/(pathlib.Path(source).stem+".o")\n   subprocess.run([compiler,"-O2","-c",source,"-o",str(obj)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n   objects.append(str(obj))\n  subprocess.run([compiler,*objects,"-o",str(out/"build-worker")],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)\n  count+=1; now=time.monotonic()\n  if now>=deadline: f.write(f"{now:.6f}\\t{count}\\n"); deadline=now+1\n''')
     else:
         hog.write_text('''import os,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nx=0x123456789abcdef0; count=0; deadline=time.monotonic()+1.0\nwith open(progress,"a",buffering=1) as f:\n while True:\n  x ^= (x << 7) & ((1<<64)-1); x ^= x >> 9; x=(x*0x9e3779b97f4a7c15)&((1<<64)-1); count += 1\n  now=time.monotonic()\n  if now >= deadline:\n   f.write(f"{now:.6f}\\t{count}\\n"); deadline += 1.0\n''')
@@ -79,8 +90,10 @@ def write_worker_files(directory):
     return hog, probe
 
 def launch_scope(unit, command):
-    return subprocess.Popen(["systemd-run", "--user", "--scope", "--quiet", f"--unit={unit}",
-                             f"--slice={PARENT_UNIT}", "--", *command],
+    args = ["systemd-run", "--user", "--scope", "--quiet", f"--unit={unit}", f"--slice={PARENT_UNIT}"]
+    if unit.startswith("lwg-workload-"):
+        args.append("--description=Linux Workload Guard aggregate candidate")
+    return subprocess.Popen([*args, "--", *command],
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
 def stop_scope(unit):
     ctl("stop", unit, check=False)
@@ -127,8 +140,9 @@ def run_trial(mode, rep, directory, hog, probe):
     tag=f"lwg-{mode}-{rep}-{os.getpid()}"
     stop_router()
     # Both modes share the same 100% parent budget. In router mode the worker
-    # moves into a 100% child slice; the parent's 100% ceiling still caps the
-    # aggregate, avoiding the historical 100% baseline vs 200% routed budget.
+    # either moves the one-worker target PID into the 100% child slice or, for
+    # multi-worker aggregate mode, lowers the verified workload scope's CPUWeight.
+    # The parent's 100% ceiling caps aggregate CPU in both cases.
     if mode == "router":
         start_router()
     time.sleep(2)
@@ -142,8 +156,9 @@ def run_trial(mode, rep, directory, hog, probe):
                 worker_command=[sys.executable, str(hog), str(pidfile), str(progressfile), str(outputfile), str(DURATION)]
             else:
                 worker_command=[sys.executable, str(hog), str(pidfile), str(progressfile)]
-            p=launch_scope(f"{tag}-hog{i}.scope", worker_command)
-            scopes.append(f"{tag}-hog{i}.scope"); pids.append((pidfile,p)); progress_files.append(progressfile)
+            worker_scope=f"lwg-workload-{tag}-hog{i}.scope"
+            p=launch_scope(worker_scope, worker_command)
+            scopes.append(worker_scope); pids.append((pidfile,p)); progress_files.append(progressfile)
         probe_file=directory / f"{tag}-probe.tsv"
         pp=launch_scope(f"{tag}-probe.scope", [sys.executable, str(probe), str(probe_file), str(DURATION)])
         scopes.append(f"{tag}-probe.scope")
@@ -158,10 +173,15 @@ def run_trial(mode, rep, directory, hog, probe):
         start=time.monotonic()
         routed_at=None
         peak_workers_in_heavy=0
+        peak_workers_routed=0
+        aggregate_scope_mode = WORKERS > 1 and os.getenv("BENCH_AGGREGATE_ROUTING", "true").lower() in ("1", "true", "yes", "on")
         while pp.poll() is None and time.monotonic()-start < DURATION+20:
             in_heavy=sum(pid_in(HEAVY_UNIT, pid) for pid in worker_pids)
             peak_workers_in_heavy=max(peak_workers_in_heavy,in_heavy)
-            if mode == "router" and routed_at is None and in_heavy == WORKERS:
+            routed = (sum(scope_weight(f"lwg-workload-{tag}-hog{i}.scope") == int(os.getenv("BENCH_AGGREGATE_SCOPE_WEIGHT", "20")) for i in range(WORKERS))
+                      if aggregate_scope_mode else in_heavy)
+            peak_workers_routed=max(peak_workers_routed,routed)
+            if mode == "router" and routed_at is None and routed == WORKERS:
                 routed_at=time.monotonic()-start
             time.sleep(.25)
         if pp.poll() is None:
@@ -218,17 +238,17 @@ def run_trial(mode, rep, directory, hog, probe):
             for t,wake,work in rows:
                 raw.write(f"{mode}\t{rep}\t{t-trial_start:.6f}\t{wake:.6f}\t{work:.6f}\n")
         route_complete = mode != "router" or (
-            peak_workers_in_heavy == WORKERS and routed_at is not None and routed_at + 2.0 <= 12.0
+            peak_workers_routed == WORKERS and routed_at is not None and routed_at + 2.0 <= 12.0
         )
         if route_complete:
             validity_reason = ""
-        elif peak_workers_in_heavy != WORKERS:
-            validity_reason = f"routing-incomplete:{peak_workers_in_heavy}/{WORKERS}"
+        elif peak_workers_routed != WORKERS:
+            validity_reason = f"routing-incomplete:{peak_workers_routed}/{WORKERS}"
         else:
             validity_reason = "routing-converged-too-late-for-common-steady-window"
         return {"mode":mode,"rep":rep,"samples":len(all_ms),"elapsed_s":round(now-start,3),
                 "routed_at_s":"" if routed_at is None else round(routed_at,3),
-                "workers_in_heavy":peak_workers_in_heavy,"worker_count":WORKERS,
+                "workers_in_heavy":peak_workers_in_heavy,"workers_routed":peak_workers_routed,"worker_count":WORKERS,
                 "trial_valid":int(route_complete),"validity_reason":validity_reason,
                 "all_mean_ms":statistics.mean(all_ms),"all_p50_ms":pct(all_ms,.50),
                 "all_p95_ms":pct(all_ms,.95),"all_p99_ms":pct(all_ms,.99),"all_max_ms":max(all_ms),
@@ -283,13 +303,13 @@ def git_revision():
 def git_source_state():
     """Record tracked harness/controller source changes, not unrelated result artifacts."""
     try:
-        status = subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain"],
+        status = subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
                                          text=True, stderr=subprocess.DEVNULL, timeout=2)
         source_paths = ["bin/workload-router.py", "benchmarks/routing-contention.py",
                         "benchmarks/performance-review.py"]
         diff = subprocess.check_output(["git", "-C", str(ROOT), "diff", "HEAD", "--binary", "--", *source_paths],
                                        stderr=subprocess.DEVNULL, timeout=2)
-        return ("true" if diff else "false", hashlib.sha256(diff).hexdigest(),
+        return ("true" if status.strip() else "false", hashlib.sha256(diff).hexdigest(),
                 sum(1 for line in status.splitlines() if line.startswith("??")))
     except (OSError, subprocess.SubprocessError):
         return "unavailable", "unavailable", -1
@@ -333,7 +353,7 @@ def main():
                 f.write(contents)
             CREATED_UNIT_FILES.append(path)
         with RESULT.open("x", newline="") as f:
-            fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","worker_count","trial_valid","validity_reason","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","worker_iterations_per_sec","worker_throughput_per_sec","router_cpu_pct_one_core","router_peak_rss_kib","psi_some_avg10_start","psi_some_avg10","loadavg_1m_start","loadavg_1m_end","router_enabled_during_trial"]
+            fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","workers_routed","worker_count","trial_valid","validity_reason","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","worker_iterations_per_sec","worker_throughput_per_sec","router_cpu_pct_one_core","router_peak_rss_kib","psi_some_avg10_start","psi_some_avg10","loadavg_1m_start","loadavg_1m_end","router_enabled_during_trial"]
             writer=csv.DictWriter(f,fieldnames=fields,delimiter="\t",lineterminator="\n"); writer.writeheader(); f.flush()
         with sample_path.open("x") as f:
             f.write("mode\trep\trelative_s\twakeup_lateness_ms\twork_duration_ms\n")
@@ -353,7 +373,7 @@ def main():
             f.write(f"parent_unit={PARENT_UNIT}\nheavy_unit={HEAVY_UNIT}\nrecovery_unit={RECOVERY_UNIT}\n")
             f.write("parent_cpu_quota=100%; heavy_child_cpu_quota=100%; both modes share the same 100% parent aggregate ceiling\n")
             aggregate_setting = os.getenv("BENCH_AGGREGATE_ROUTING", "true" if WORKERS > 1 else "false").lower()
-            f.write(f"aggregate_routing={'enabled' if aggregate_setting in ('1','true','yes','on') else 'disabled'}; policy requires >=2 workers at >=20% CPU each, >=85% aggregate quota for 3 samples, clears <=65% for 3 samples, one route per sample\n")
+            f.write(f"aggregate_routing={'enabled' if aggregate_setting in ('1','true','yes','on') else 'disabled'}; policy observes opt-in scope cpu.stat usage_usec; requires >=2 scopes at >=20% CPU each and >=85% aggregate quota for 3 samples; clears <=65% for 3 samples; one scope CPUWeight={os.getenv('BENCH_AGGREGATE_SCOPE_WEIGHT','20')} per sample\n")
             f.write("capacity_model=equal aggregate CPU ceiling; heavy slice is nested beneath parent\n")
             f.write("dynamic_quota=false; production user service/configuration/quotas untouched\n")
             f.write(f"router_sample_seconds={os.getenv('BENCH_ROUTER_SAMPLE_SEC', '2')}\n")
@@ -401,6 +421,7 @@ def main():
                 "WORKLOAD_GUARD_SHADOW": "false",
                 "WORKLOAD_GUARD_SAMPLE_SEC": os.getenv("BENCH_ROUTER_SAMPLE_SEC", "2"),
                 "WORKLOAD_GUARD_AGGREGATE_ROUTING": os.getenv("BENCH_AGGREGATE_ROUTING", "true" if WORKERS > 1 else "false"),
+                "WORKLOAD_GUARD_AGGREGATE_SCOPE_WEIGHT": os.getenv("BENCH_AGGREGATE_SCOPE_WEIGHT", "20"),
                 "WORKLOAD_GUARD_SUSTAINED_SAMPLES": os.getenv("BENCH_ROUTER_SUSTAINED_SAMPLES", "4"),
                 "WORKLOAD_GUARD_CPU_THRESHOLD": os.getenv("BENCH_ROUTER_CPU_THRESHOLD", "70"),
                 "WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD": "35",
@@ -416,7 +437,7 @@ def main():
                         row=run_trial(mode,rep,directory,hog,probe)
                         writer.writerow(row); f.flush(); results.append(row)
                         validity = "valid" if row["trial_valid"] else row["validity_reason"]
-                        print("  samples={samples}, wakeup p95={all_p95_ms:.2f} ms, p99={all_p99_ms:.2f} ms, work p95={work_p95_ms:.2f} ms, routed={workers_in_heavy}/{worker_count}, route_at={routed_at_s}s, {validity}".format(**row, validity=validity),flush=True)
+                        print("  samples={samples}, wakeup p95={all_p95_ms:.2f} ms, p99={all_p99_ms:.2f} ms, work p95={work_p95_ms:.2f} ms, routed={workers_routed}/{worker_count}, route_at={routed_at_s}s, {validity}".format(**row, validity=validity),flush=True)
                         time.sleep(3)
             print(f"raw results: {RESULT}")
             print("\nSummary by mode (mean of per-trial percentiles; ms):")

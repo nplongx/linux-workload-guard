@@ -207,16 +207,18 @@ def main():
                 continue
             b, e = baseline[0], enabled[0]
             try:
+                routed_field = "workers_routed" if "workers_routed" in e else "workers_in_heavy"
                 if expected_workers is not None and (
                     int(b["worker_count"]) != expected_workers
                     or int(e["worker_count"]) != expected_workers
                 ):
                     findings.append(f"FAIL: repetition {rep} worker count does not match manifest")
-                if int(e["trial_valid"]) != 1 or int(e["workers_in_heavy"]) != int(e["worker_count"]):
+                if int(e["trial_valid"]) != 1 or int(e[routed_field]) != int(e["worker_count"]):
                     findings.append(f"FAIL: repetition {rep} did not route every intended worker")
                 else:
                     findings.append(f"PASS: repetition {rep} routed all {e['worker_count']} intended worker(s)")
-                if int(b["trial_valid"]) != 1 or int(b["workers_in_heavy"]) != 0:
+                baseline_routed_field = "workers_routed" if "workers_routed" in b else "workers_in_heavy"
+                if int(b["trial_valid"]) != 1 or int(b[baseline_routed_field]) != 0:
                     findings.append(f"FAIL: repetition {rep} baseline routing state is inconsistent")
                 if int(b["steady_n"]) < MIN_STEADY_SAMPLES or int(e["steady_n"]) < MIN_STEADY_SAMPLES:
                     findings.append(f"FAIL: repetition {rep} has fewer than {MIN_STEADY_SAMPLES} steady samples")

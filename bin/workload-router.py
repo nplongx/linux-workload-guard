@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, math, os, time, logging, subprocess
+import json, math, os, time, logging, subprocess, signal
 
 SYSTEMD_PREFIX = "/sys/fs/cgroup"
 
@@ -96,8 +96,20 @@ STATE_FILE = os.getenv(
     "WORKLOAD_GUARD_STATE_FILE",
     os.path.join(os.getenv("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "linux-workload-guard", "routes.tsv"),
 )
+SCOPE_STATE_FILE = os.getenv("WORKLOAD_GUARD_SCOPE_STATE_FILE", STATE_FILE + ".scopes.tsv")
+AGGREGATE_SCOPE_WEIGHT = core_int_env("WORKLOAD_GUARD_AGGREGATE_SCOPE_WEIGHT", 20)
+AGGREGATE_SCOPE_DESCRIPTION = "Linux Workload Guard aggregate candidate"
+AGGREGATE_MAX_SCOPES = 64
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+STOP_REQUESTED = False
+SCOPE_IDENTITY_CACHE = {}
+SCOPE_DISCOVERY_OVERFLOW = False
+SCOPE_DISCOVERY_ERROR = False
+
+def request_shutdown(_signum, _frame):
+    global STOP_REQUESTED
+    STOP_REQUESTED = True
 
 
 def user_cgroup(unit):
@@ -210,6 +222,268 @@ def cgroup_tree_pids(parent_cgroup):
     except OSError:
         return set()
     return pids
+
+def read_cgroup_usage_usec(cgroup):
+    """Read only real usage_usec; scope routing does not require quota counters."""
+    try:
+        found = None
+        with open(os.path.join(cgroup, "cpu.stat")) as stream:
+            for line in stream:
+                fields = line.split()
+                if len(fields) != 2:
+                    return None
+                if fields[0] == "usage_usec":
+                    if found is not None or not fields[1].isdigit():
+                        return None
+                    found = int(fields[1])
+        return found
+    except (OSError, ValueError, TypeError):
+        return None
+
+def workload_scope_candidates(parent_cgroup, tracked_units=()):
+    """Return direct, explicitly opted-in workload scopes under the protected slice."""
+    global SCOPE_DISCOVERY_OVERFLOW, SCOPE_DISCOVERY_ERROR
+    candidates = {}
+    seen_units = set()
+    SCOPE_DISCOVERY_OVERFLOW = False
+    SCOPE_DISCOVERY_ERROR = False
+    if not parent_cgroup:
+        return candidates
+    if not os.path.isdir(parent_cgroup):
+        return candidates
+    try:
+        with os.scandir(parent_cgroup) as stream:
+            entries = list(stream)
+        eligible_entries = []
+        for entry in entries:
+            if not (entry.name.startswith("lwg-workload-") and entry.name.endswith(".scope")):
+                continue
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    eligible_entries.append(entry)
+            except OSError:
+                continue
+        entries = sorted(eligible_entries, key=lambda entry: entry.name)
+        if len(entries) > AGGREGATE_MAX_SCOPES:
+            # Overflow disables new routing. Continue inspecting only already
+            # tracked scopes so controller-owned weights can still be restored.
+            SCOPE_DISCOVERY_OVERFLOW = True
+            tracked = set(tracked_units)
+            entries = [entry for entry in entries if entry.name in tracked]
+        for entry in entries:
+            seen_units.add(entry.name)
+            path = entry.path
+            try:
+                info = entry.stat(follow_symlinks=False)
+                if not os.path.isfile(os.path.join(path, "cgroup.procs")):
+                    continue
+            except OSError:
+                continue
+            identity = (info.st_ino, path)
+            cached_identity = SCOPE_IDENTITY_CACHE.get(entry.name)
+            if cached_identity == (info.st_ino, path, "rejected"):
+                continue
+            if cached_identity != identity:
+                expected_control_group = path[len(SYSTEMD_PREFIX):] if path.startswith(SYSTEMD_PREFIX) else path
+                if (unit_property(entry.name, "Description") != AGGREGATE_SCOPE_DESCRIPTION or
+                        unit_property(entry.name, "ActiveState") != "active" or
+                        (unit_property(entry.name, "ControlGroup") or "").rstrip("/") != expected_control_group.rstrip("/")):
+                    SCOPE_IDENTITY_CACHE[entry.name] = (info.st_ino, path, "rejected")
+                    continue
+                SCOPE_IDENTITY_CACHE[entry.name] = identity
+            candidates[entry.name] = {"path": path, "inode": info.st_ino,
+                                      "usage_usec": read_cgroup_usage_usec(path)}
+    except OSError:
+        SCOPE_DISCOVERY_ERROR = True
+        return {}
+    for unit in set(SCOPE_IDENTITY_CACHE) - seen_units:
+        SCOPE_IDENTITY_CACHE.pop(unit, None)
+    return candidates
+
+def unit_property(unit, prop):
+    try:
+        value = subprocess.check_output(
+            ["systemctl", "--user", "show", unit, f"--property={prop}", "--value"],
+            text=True, stderr=subprocess.DEVNULL, timeout=2,
+        ).strip()
+        return value if value and value != "-" else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+def unit_cpu_weight(unit):
+    value = unit_property(unit, "CPUWeight")
+    try:
+        weight = int(value)
+        return weight if 1 <= weight <= 10000 else None
+    except (TypeError, ValueError):
+        control_group = unit_property(unit, "ControlGroup")
+        if not control_group:
+            return None
+        try:
+            with open(os.path.join(SYSTEMD_PREFIX, control_group.lstrip("/"), "cpu.weight")) as stream:
+                weight = int(stream.read().strip())
+            return weight if 1 <= weight <= 10000 else None
+        except (OSError, ValueError):
+            return None
+
+def set_unit_cpu_weight(unit, weight, expected_cgroup=None, expected_inode=None):
+    """Set/read back a scope weight only while its systemd identity still matches."""
+    if not isinstance(weight, int) or not 1 <= weight <= 10000:
+        return False
+    control_group = unit_property(unit, "ControlGroup")
+    if not control_group or not unit.endswith(".scope") or not unit.startswith("lwg-workload-"):
+        return False
+    if unit_property(unit, "Description") != AGGREGATE_SCOPE_DESCRIPTION:
+        return False
+    if expected_cgroup is not None:
+        expected = expected_cgroup
+        if expected.startswith(SYSTEMD_PREFIX):
+            expected = expected[len(SYSTEMD_PREFIX):]
+        if control_group.rstrip("/") != expected.rstrip("/"):
+            return False
+        try:
+            if expected_inode is not None and os.stat(expected_cgroup).st_ino != expected_inode:
+                return False
+        except OSError:
+            return False
+    if unit_property(unit, "ActiveState") != "active":
+        return False
+    try:
+        subprocess.run(["systemctl", "--user", "set-property", unit, f"CPUWeight={weight}"],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    observed = unit_cpu_weight(unit)
+    if observed != weight or unit_property(unit, "ControlGroup") != control_group:
+        return False
+    try:
+        return expected_inode is None or os.stat(expected_cgroup).st_ino == expected_inode
+    except OSError:
+        return False
+
+def load_scope_state(path=SCOPE_STATE_FILE):
+    state = {}
+    try:
+        with open(path) as stream:
+            for line in stream:
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) not in (4, 5, 6):
+                    continue
+                unit, cgroup, inode_text, weight_text = fields[:4]
+                try:
+                    inode, weight = int(inode_text), int(weight_text)
+                    route_weight = int(fields[4]) if len(fields) >= 5 else AGGREGATE_SCOPE_WEIGHT
+                except ValueError:
+                    continue
+                if (unit.startswith("lwg-workload-") and unit.endswith(".scope") and inode > 0
+                        and 1 <= weight <= 10000 and 1 <= route_weight <= 10000 and cgroup.startswith("/")):
+                    state[unit] = {"cgroup": cgroup, "inode": inode, "original_weight": weight}
+                    state[unit]["route_weight"] = route_weight
+                    state[unit]["suppressed"] = len(fields) == 6 and fields[5] == "1"
+    except OSError:
+        pass
+    return state
+
+def write_scope_state(state, path=SCOPE_STATE_FILE):
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as stream:
+            for unit, data in sorted(state.items()):
+                stream.write("\t".join((unit, data["cgroup"], str(data["inode"]),
+                                         str(data["original_weight"]), str(data.get("route_weight", AGGREGATE_SCOPE_WEIGHT)),
+                                         "1" if data.get("suppressed", False) else "0")) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except OSError as exc:
+        logging.warning("scope route state persistence failed: %s", exc)
+
+def scope_cpu_samples(candidates, previous, sampled_at, max_interval):
+    """Convert per-scope usage counters to CPU%, rejecting stale/reset snapshots."""
+    cpu_by_scope = {}
+    next_previous = {}
+    valid = True
+    for unit, candidate in candidates.items():
+        usage = candidate.get("usage_usec")
+        old = previous.get(unit)
+        next_previous[unit] = (candidate["inode"], usage, sampled_at)
+        if usage is None or old is None or old[0] != candidate["inode"] or old[1] is None:
+            valid = False
+            continue
+        elapsed = sampled_at - old[2]
+        delta = usage - old[1]
+        if delta < 0 or elapsed <= 0 or elapsed > max_interval:
+            valid = False
+            continue
+        cpu_by_scope[unit] = (delta / elapsed) / 10000.0
+    return cpu_by_scope, next_previous, valid
+
+def apply_scope_route(state, unit, candidate, route_weight=AGGREGATE_SCOPE_WEIGHT):
+    """Lower one verified workload scope's weight without moving its processes."""
+    created = False
+    if unit not in state:
+        original = unit_cpu_weight(unit)
+        if original is None:
+            return False, "scope-weight-unavailable"
+        if original == route_weight:
+            return False, "scope-already-at-route-weight"
+        state[unit] = {"cgroup": candidate["path"], "inode": candidate["inode"],
+                       "original_weight": original, "route_weight": route_weight, "suppressed": False}
+        created = True
+    record = state[unit]
+    if record.get("suppressed"):
+        return False, "scope-weight-external-override"
+    if record["inode"] != candidate["inode"] or record["cgroup"] != candidate["path"]:
+        state.pop(unit, None)
+        return False, "scope-recreated"
+    if not created and unit_cpu_weight(unit) == route_weight:
+        return False, "scope-already-routed"
+    if not set_unit_cpu_weight(unit, route_weight, candidate["path"], candidate["inode"]):
+        return False, "scope-weight-actuation-failed"
+    return True, "aggregate-scope-weight"
+
+def reconcile_scope_routes(state, candidates, should_remain_routed,
+                           route_weight=AGGREGATE_SCOPE_WEIGHT):
+    """Restore only our own unchanged scope weights; never overwrite external edits."""
+    changed = False
+    candidate_names = set(candidates)
+    for unit, record in list(state.items()):
+        candidate = candidates.get(unit)
+        if candidate is None:
+            # Scope exited or its cgroup was recreated. Never apply a stale
+            # restoration to a different unit instance with the same name.
+            state.pop(unit, None)
+            changed = True
+            continue
+        if candidate["inode"] != record["inode"] or candidate["path"] != record["cgroup"]:
+            state.pop(unit, None)
+            changed = True
+            continue
+        current = unit_cpu_weight(unit)
+        if current is None:
+            continue
+        if record.get("suppressed"):
+            continue
+        if should_remain_routed and unit in candidate_names:
+            if current == record.get("route_weight", route_weight):
+                continue
+            record["suppressed"] = True
+            logging.info("aggregate scope restore skipped unit=%s reason=external-weight-change current=%s", unit, current)
+            changed = True
+            continue
+        if current == record.get("route_weight", route_weight):
+            if set_unit_cpu_weight(unit, record["original_weight"], candidate["path"], candidate["inode"]):
+                logging.info("aggregate scope restored unit=%s weight=%s", unit, record["original_weight"])
+                state.pop(unit, None)
+                changed = True
+            else:
+                # Keep the record so a later cycle can retry a failed restore.
+                continue
+        else:
+            logging.info("aggregate scope restore skipped unit=%s reason=external-weight-change current=%s", unit, current)
+            record["suppressed"] = True
+            changed = True
+    return changed
 
 HEAVY = (
     'npm run build','npm run test','npm run lint','pnpm build','pnpm test','pnpm lint',
@@ -376,11 +650,11 @@ def update_aggregate_route_policy(state, cpu_by_pid, routable_pids, parent_quota
                                   clear_ratio=AGGREGATE_CLEAR_RATIO,
                                   min_worker_cpu=AGGREGATE_MIN_WORKER_CPU,
                                   sustained_samples=AGGREGATE_SUSTAINED_SAMPLES):
-    """Propose one fair route only after sustained aggregate CPU saturation.
+    """Propose one fair scope action only after sustained aggregate saturation.
 
-    cpu_by_pid includes protected and already-routed workers, so routing the
-    first process does not erase aggregate demand. Invalid telemetry fails
-    closed; the caller performs final PID identity and cgroup checks.
+    Keys may be stable scope names rather than PIDs. Scope accounting keeps
+    descendant churn inside one cgroup identity. Invalid telemetry fails closed;
+    the caller verifies the systemd unit and cgroup inode before actuation.
     """
     try:
         quota = float(parent_quota)
@@ -394,7 +668,7 @@ def update_aggregate_route_policy(state, cpu_by_pid, routable_pids, parent_quota
         for pid, value in cpu_by_pid.items():
             number = float(value)
             if math.isfinite(number) and number >= min_worker_cpu:
-                valid[int(pid)] = number
+                valid[pid] = number
     except (TypeError, ValueError, OverflowError):
         state.update(high_samples=0, low_samples=0, active=False)
         return None, "aggregate-telemetry-unavailable"
@@ -417,14 +691,34 @@ def update_aggregate_route_policy(state, cpu_by_pid, routable_pids, parent_quota
     eligible = sorted(pid for pid in routable_pids if pid in valid)
     if not state.get("active", False) or not eligible:
         return None, "aggregate-no-routable-worker"
-    # One route per controller sample, round-robin by PID to bound actuation.
-    cursor = state.get("cursor", -1)
-    for pid in eligible:
-        if pid > cursor:
-            state["cursor"] = pid
-            return pid, "aggregate-saturation"
-    state["cursor"] = eligible[0]
-    return eligible[0], "aggregate-saturation"
+    # One route per controller sample, round-robin by stable candidate key.
+    cursor = state.get("cursor")
+    if cursor in eligible:
+        candidate = eligible[(eligible.index(cursor) + 1) % len(eligible)]
+    else:
+        candidate = eligible[0]
+    state["cursor"] = candidate
+    return candidate, "aggregate-saturation"
+
+def reconcile_aggregate_quota(state, previous_quota, observed_quota):
+    """Reset saturation hysteresis on parent quota drift; never retain stale normalization."""
+    try:
+        observed = float(observed_quota)
+        if not math.isfinite(observed) or observed <= 0:
+            raise ValueError
+    except (TypeError, ValueError, OverflowError):
+        state.update(active=False, high_samples=0, low_samples=0, cursor=None)
+        return None, previous_quota is not None
+    if previous_quota is None:
+        return observed, False
+    try:
+        previous = float(previous_quota)
+    except (TypeError, ValueError, OverflowError):
+        previous = float("nan")
+    if not math.isfinite(previous) or not math.isclose(previous, observed, rel_tol=0.0, abs_tol=0.01):
+        state.update(active=False, high_samples=0, low_samples=0, cursor=None)
+        return observed, True
+    return observed, False
 
 def shadow_config_error(alpha=SHADOW_EWMA_ALPHA, route_threshold=SHADOW_ROUTE_THRESHOLD,
                         clear_threshold=SHADOW_CLEAR_THRESHOLD,
@@ -475,7 +769,8 @@ def routing_config_error():
         return "recovery sample count must be a positive integer"
     if AGGREGATE_ROUTING and (not all(math.isfinite(value) for value in (AGGREGATE_ROUTE_RATIO, AGGREGATE_CLEAR_RATIO, AGGREGATE_MIN_WORKER_CPU)) or
             not 0 < AGGREGATE_ROUTE_RATIO <= 1 or not 0 <= AGGREGATE_CLEAR_RATIO < AGGREGATE_ROUTE_RATIO or
-            AGGREGATE_MIN_WORKER_CPU <= 0 or not isinstance(AGGREGATE_SUSTAINED_SAMPLES, int) or AGGREGATE_SUSTAINED_SAMPLES < 1):
+            AGGREGATE_MIN_WORKER_CPU <= 0 or not isinstance(AGGREGATE_SUSTAINED_SAMPLES, int) or AGGREGATE_SUSTAINED_SAMPLES < 1 or
+            not isinstance(AGGREGATE_SCOPE_WEIGHT, int) or not 1 <= AGGREGATE_SCOPE_WEIGHT < 100):
         return "aggregate routing thresholds and sustained sample count are invalid"
     return None
 
@@ -902,14 +1197,20 @@ def load_state():
 
 def main():
     global SHADOW_ENABLED, QUOTA_DYNAMIC, QUOTA_AIMD_SHADOW
+    scope_route_state = load_scope_state()
     routing_error = routing_config_error()
     if routing_error:
+        parent = user_cgroup(PARENT_UNIT)
+        candidates = workload_scope_candidates(parent, scope_route_state.keys()) if parent else {}
+        if not SCOPE_DISCOVERY_ERROR and reconcile_scope_routes(scope_route_state, candidates, False):
+            write_scope_state(scope_route_state)
         logging.error("routing disabled due to invalid configuration: %s", routing_error)
         return
     prev={}
     hot={}
     shadow_policy={}
-    aggregate_policy = {"active": False, "high_samples": 0, "low_samples": 0, "cursor": -1}
+    aggregate_policy = {"active": False, "high_samples": 0, "low_samples": 0, "cursor": None}
+    scope_usage_previous = {}
     aggregate_parent_quota = None
     aggregate_quota_checked_at = 0.0
     moved=set()
@@ -947,9 +1248,9 @@ def main():
     quota_sched_observation = None
     logging.info('started threshold=%.0f%% sustained=%ss recovery<%.0f%% adaptive=%s shadow=%s', CPU_THRESHOLD, SAMPLE_SEC*SUSTAINED_SAMPLES, RECOVERY_CPU_THRESHOLD, ADAPTIVE, SHADOW_ENABLED)
     if AGGREGATE_ROUTING:
-        logging.warning('aggregate routing OPT-IN enabled: aggregate>=%.0f%% for %s samples, per-worker>=%.0f%%, clear<=%.0f%%; one route per sample; quota/cgroup telemetry required',
+        logging.warning('aggregate scope routing OPT-IN enabled: aggregate>=%.0f%% for %s samples, per-scope>=%.0f%%, clear<=%.0f%%; CPUWeight=%s; usage/quota telemetry required',
                         AGGREGATE_ROUTE_RATIO * 100, AGGREGATE_SUSTAINED_SAMPLES,
-                        AGGREGATE_MIN_WORKER_CPU, AGGREGATE_CLEAR_RATIO * 100)
+                        AGGREGATE_MIN_WORKER_CPU, AGGREGATE_CLEAR_RATIO * 100, AGGREGATE_SCOPE_WEIGHT)
     if SHADOW_ENABLED:
         shadow_error = shadow_config_error()
         if shadow_error:
@@ -976,9 +1277,11 @@ def main():
         logging.info('quota policy=aimd-shadow decrease=%.3f additive_increase=%.1f; proposals are log-only',
                      QUOTA_AIMD_DECREASE, QUOTA_AIMD_ADD)
     ensure_workload_units()
+    signal.signal(signal.SIGTERM, request_shutdown)
+    signal.signal(signal.SIGINT, request_shutdown)
     last_unit_start_attempt=time.monotonic()
     missing_cgroups = None
-    while True:
+    while not STOP_REQUESTED:
         gateway_cgroup = user_cgroup(PARENT_UNIT)
         heavy_cgroup = user_cgroup(HEAVY_UNIT)
         if gateway_cgroup and not os.path.isdir(gateway_cgroup):
@@ -1037,9 +1340,27 @@ def main():
         now={}
         aggregate_cpu = {}
         if AGGREGATE_ROUTING and time.monotonic() - aggregate_quota_checked_at >= 5.0:
-            aggregate_parent_quota = unit_quota(PARENT_UNIT)
+            observed_parent_quota = unit_quota(PARENT_UNIT)
+            aggregate_parent_quota, quota_drift = reconcile_aggregate_quota(
+                aggregate_policy, aggregate_parent_quota, observed_parent_quota)
+            if quota_drift:
+                logging.warning("aggregate parent quota changed or became unavailable; resetting scope saturation state observed=%s",
+                                observed_parent_quota)
             aggregate_quota_checked_at = time.monotonic()
         if gateway_cgroup and heavy_cgroup:
+            scope_candidates = workload_scope_candidates(gateway_cgroup, scope_route_state.keys()) if (AGGREGATE_ROUTING or scope_route_state) else {}
+            scope_sampled_at = time.monotonic()
+            scope_cpu, scope_usage_previous, scope_telemetry_valid = scope_cpu_samples(
+                scope_candidates, scope_usage_previous, scope_sampled_at, max(SAMPLE_SEC * 3.0, 10.0))
+            scope_telemetry_valid = scope_telemetry_valid and not SCOPE_DISCOVERY_OVERFLOW and not SCOPE_DISCOVERY_ERROR
+            if SCOPE_DISCOVERY_OVERFLOW:
+                logging.error("aggregate scope discovery exceeded maximum=%s; no new scope routing until count falls", AGGREGATE_MAX_SCOPES)
+            if SCOPE_DISCOVERY_ERROR:
+                logging.warning("aggregate scope discovery failed transiently; preserving persisted scope-route identities")
+            if scope_route_state and not SCOPE_DISCOVERY_ERROR and reconcile_scope_routes(
+                    scope_route_state, scope_candidates,
+                    AGGREGATE_ROUTING and aggregate_policy.get("active", False) and scope_telemetry_valid and aggregate_parent_quota is not None):
+                write_scope_state(scope_route_state)
             protected_pids = cgroup_tree_pids(gateway_cgroup)
             heavy_pids = cgroup_tree_pids(heavy_cgroup) if (SHADOW_ENABLED or AGGREGATE_ROUTING) else set()
             if AGGREGATE_ROUTING:
@@ -1176,40 +1497,38 @@ def main():
                             moved.discard(pid); routes.pop(pid, None); recovery_hot.pop(pid, None); recovery_since.pop(pid, None); state_dirty = True
                             route_prev.pop(pid, None)
             if AGGREGATE_ROUTING:
-                aggregate_pid, aggregate_reason = update_aggregate_route_policy(
-                    aggregate_policy, aggregate_cpu, protected_pids, aggregate_parent_quota)
+                aggregate_quota_sample = aggregate_parent_quota if scope_telemetry_valid else None
+                routable_scopes = set(scope_candidates) - {
+                    unit for unit, record in scope_route_state.items() if record.get("suppressed")
+                }
+                aggregate_scope, aggregate_reason = update_aggregate_route_policy(
+                    aggregate_policy, scope_cpu, routable_scopes, aggregate_quota_sample)
                 if aggregate_policy.get("high_samples", 0) in (1, AGGREGATE_SUSTAINED_SAMPLES) or aggregate_reason in ("aggregate-telemetry-unavailable", "aggregate-saturation-cleared"):
-                    logging.info('aggregate routing observation status=%s active=%s eligible_workers=%s observed_workers=%s demand_cpu=%.1f%% parent_quota=%s high_samples=%s low_samples=%s',
+                    logging.info('aggregate scope observation status=%s active=%s eligible_scopes=%s observed_scopes=%s demand_cpu=%.1f%% parent_quota=%s high_samples=%s low_samples=%s telemetry_valid=%s',
                                  aggregate_reason, aggregate_policy.get("active"),
-                                 sum(1 for pid in protected_pids if aggregate_cpu.get(pid, 0.0) >= AGGREGATE_MIN_WORKER_CPU),
-                                 sum(1 for value in aggregate_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
-                                 sum(value for value in aggregate_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
-                                 aggregate_parent_quota, aggregate_policy.get("high_samples"), aggregate_policy.get("low_samples"))
-                if aggregate_pid is not None and aggregate_pid in now and aggregate_pid not in moved:
-                    _, aggregate_cmd, aggregate_starttime, _ = now[aggregate_pid]
-                    if (aggregate_pid not in last_move or time.monotonic() - last_move[aggregate_pid] >= COOLDOWN_SEC):
-                        source_path = proc_cgroup(aggregate_pid)
-                        source_cgroup = SYSTEMD_PREFIX + source_path if source_path else gateway_cgroup
-                        before_move = proc_stat(aggregate_pid)
-                        if (before_move is not None and before_move[3] == aggregate_starttime and
-                                in_cgroup_tree(aggregate_pid, gateway_cgroup) and
-                                move(aggregate_pid, heavy_cgroup, aggregate_reason)):
-                            after_move = proc_stat(aggregate_pid)
-                            if after_move is not None and after_move[3] == aggregate_starttime:
-                                moved.add(aggregate_pid)
-                                routes[aggregate_pid] = (aggregate_cpu.get(aggregate_pid, 0.0), aggregate_reason,
-                                                         source_cgroup, heavy_cgroup, aggregate_cmd, aggregate_starttime)
-                                last_move[aggregate_pid] = time.monotonic()
-                                route_events += 1
-                                state_dirty = True
-                                logging.info('route decision=accepted pid=%s cpu=%.1f%% reason=%s aggregate_workers=%s aggregate_quota=%.1f%% cmd=%s',
-                                             aggregate_pid, aggregate_cpu[aggregate_pid], aggregate_reason,
-                                             sum(1 for value in aggregate_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
-                                             aggregate_parent_quota, aggregate_cmd[:180])
+                                 sum(1 for name in scope_candidates if scope_cpu.get(name, 0.0) >= AGGREGATE_MIN_WORKER_CPU),
+                                 sum(1 for value in scope_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
+                                 sum(value for value in scope_cpu.values() if value >= AGGREGATE_MIN_WORKER_CPU),
+                                 aggregate_parent_quota, aggregate_policy.get("high_samples"), aggregate_policy.get("low_samples"), scope_telemetry_valid)
+                scope_state_changed = False
+                if not SCOPE_DISCOVERY_ERROR:
+                    scope_state_changed = reconcile_scope_routes(
+                        scope_route_state, scope_candidates,
+                        aggregate_policy.get("active", False) and scope_telemetry_valid and aggregate_parent_quota is not None)
+                if aggregate_scope is not None and aggregate_scope in scope_candidates:
+                    ok, actuation_status = apply_scope_route(scope_route_state, aggregate_scope, scope_candidates[aggregate_scope])
+                    logging.info('aggregate scope decision=%s unit=%s cpu=%.1f%% weight=%s status=%s inode=%s',
+                                 aggregate_reason, aggregate_scope, scope_cpu.get(aggregate_scope, 0.0),
+                                 AGGREGATE_SCOPE_WEIGHT, actuation_status, scope_candidates[aggregate_scope]["inode"])
+                    scope_state_changed = scope_state_changed or ok
                 elif aggregate_reason not in ("aggregate-saturation-pending", "aggregate-no-routable-worker"):
-                    logging.info('aggregate routing state=%s active=%s high_samples=%s low_samples=%s quota=%s',
+                    logging.info('aggregate scope state=%s active=%s high_samples=%s low_samples=%s quota=%s',
                                  aggregate_reason, aggregate_policy.get("active"), aggregate_policy.get("high_samples"),
-                                 aggregate_policy.get("low_samples"), aggregate_parent_quota)
+                                 aggregate_policy.get("low_samples"), aggregate_quota_sample)
+                if scope_state_changed:
+                    write_scope_state(scope_route_state)
+                elif aggregate_reason not in ("aggregate-saturation-pending", "aggregate-no-routable-worker"):
+                    logging.info("aggregate scope route not applied reason=%s", aggregate_reason)
         # Average routed CPU across the entire interval between quota samples.
         # One stale hot process sample must not dominate the controller after
         # the workload has already gone idle.
@@ -1360,6 +1679,17 @@ def main():
                             "top_cpu": top_cpu})
             history_stat_prev = hstat; history_stat_time = now_mono; last_history_save = now_mono
         prev=now
-        time.sleep(SAMPLE_SEC)
+        sleep_until = time.monotonic() + SAMPLE_SEC
+        while not STOP_REQUESTED and time.monotonic() < sleep_until:
+            time.sleep(min(0.25, max(0.0, sleep_until - time.monotonic())))
+
+    # A normal systemd stop restores only weights this controller previously
+    # changed and only for the same live cgroup inode. On SIGKILL, the persisted
+    # journal is reconciled by the next service start.
+    parent = user_cgroup(PARENT_UNIT)
+    candidates = workload_scope_candidates(parent, scope_route_state.keys()) if parent else {}
+    if not SCOPE_DISCOVERY_ERROR and reconcile_scope_routes(scope_route_state, candidates, False):
+        write_scope_state(scope_route_state)
+    logging.info("shutdown complete; aggregate scope routes reconciled")
 
 if __name__=='__main__': main()

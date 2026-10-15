@@ -38,3 +38,5 @@ jobs:
         run: ./tests/shadow-routing.sh
       - name: Controller integration
         run: ./tests/controller-integration.sh
+      - name: Aggregate scope integration
+        run: ./tests/aggregate-scope-integration.sh

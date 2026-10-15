@@ -115,6 +115,86 @@ for _ in range(6):
     pid, _ = router.update_aggregate_route_policy(aggregate, {101: 30, 202: 30, 303: 30}, {101, 202, 303}, 100)
     seen.append(pid)
 check(seen == [101, 202, 303, 101, 202, 303], "aggregate routing fairness rotation/starvation invariant failed")
+quota_state = {"active": True, "high_samples": 3, "low_samples": 0, "cursor": "lwg-workload-a.scope"}
+observed_quota, changed = router.reconcile_aggregate_quota(quota_state, 100, 200)
+check(observed_quota == 200 and changed and not quota_state["active"] and quota_state["high_samples"] == 0,
+      "parent quota drift must reset aggregate hysteresis before new routing decisions")
+observed_quota, changed = router.reconcile_aggregate_quota(quota_state, 200, None)
+check(observed_quota is None and changed and not quota_state["active"],
+      "missing parent quota must clear the aggregate latch")
+
+# Scope-based aggregate accounting survives short-lived PID churn: it consumes
+# the scope's cgroup cpu.stat usage counter, and the scope inode is the identity
+# boundary when systemd recreates a unit with the same name.
+with tempfile.TemporaryDirectory() as tempdir:
+    parent = os.path.join(tempdir, "protected-workload.slice")
+    os.mkdir(parent)
+    scope = os.path.join(parent, "lwg-workload-test-worker.scope")
+    os.mkdir(scope)
+    with open(os.path.join(scope, "cgroup.procs"), "w") as f:
+        f.write("111\n222\n")
+    with open(os.path.join(scope, "cpu.stat"), "w") as f:
+        f.write("usage_usec 1000000\nuser_usec 900000\nsystem_usec 100000\n")
+    spoof = os.path.join(parent, "lwg-workload-test-unmarked.scope")
+    os.mkdir(spoof)
+    open(os.path.join(spoof, "cgroup.procs"), "w").close()
+    with open(os.path.join(spoof, "cpu.stat"), "w") as f:
+        f.write("usage_usec 99999999\n")
+    def fake_scope_property(unit, prop):
+        path = scope if unit == "lwg-workload-test-worker.scope" else spoof
+        return {"Description": router.AGGREGATE_SCOPE_DESCRIPTION if unit.endswith("worker.scope") else "unrelated scope",
+                "ActiveState": "active", "ControlGroup": path}.get(prop)
+    with patch.object(router, "unit_property", side_effect=fake_scope_property):
+        candidates = router.workload_scope_candidates(parent)
+    check(set(candidates) == {"lwg-workload-test-worker.scope"},
+          "scope discovery must include only explicitly named direct workload scopes")
+    check(candidates["lwg-workload-test-worker.scope"]["usage_usec"] == 1000000,
+          "scope usage parser should not require quota-only cpu.stat counters")
+    previous = {"lwg-workload-test-worker.scope": (candidates["lwg-workload-test-worker.scope"]["inode"], 500000, 10.0)}
+    measured, next_previous, valid = router.scope_cpu_samples(candidates, previous, 11.0, 10.0)
+    check(valid and abs(measured["lwg-workload-test-worker.scope"] - 50.0) < 1e-9,
+          "scope CPU percentage must derive from real usage_usec deltas")
+    stale, _, valid = router.scope_cpu_samples(candidates, previous, 30.1, 10.0)
+    check(not valid and not stale, "stale scope telemetry must fail closed")
+    missing = dict(candidates)
+    missing["lwg-workload-test-worker.scope"] = dict(candidates["lwg-workload-test-worker.scope"], usage_usec=None)
+    missing_cpu, _, valid = router.scope_cpu_samples(missing, previous, 11.0, 10.0)
+    check(not valid and not missing_cpu, "missing scope usage telemetry must fail closed")
+    state_path = os.path.join(tempdir, "routes.scopes.tsv")
+    state = {"lwg-workload-test-worker.scope": {"cgroup": scope, "inode": candidates["lwg-workload-test-worker.scope"]["inode"],
+                                                "original_weight": 100, "route_weight": 20, "suppressed": False}}
+    router.write_scope_state(state, state_path)
+    check((os.stat(state_path).st_mode & 0o777) == 0o600,
+          "scope route state must be persisted with owner-only permissions")
+    restored = router.load_scope_state(state_path)
+    check(restored == state, "scope route state did not persist scope inode/original/route weight")
+    # A same-name cgroup recreation must drop the stale record, never write to
+    # the new unit instance based only on its reusable name.
+    state["lwg-workload-test-worker.scope"]["inode"] -= 1
+    with patch.object(router, "unit_cpu_weight", return_value=20), patch.object(router, "set_unit_cpu_weight") as set_weight:
+        changed = router.reconcile_scope_routes(state, candidates, False)
+        check(changed and not state and not set_weight.called,
+              "cgroup recreation must discard stale route identity without restoring the new scope")
+    state = {"lwg-workload-test-worker.scope": {"cgroup": scope, "inode": candidates["lwg-workload-test-worker.scope"]["inode"],
+                                                "original_weight": 100, "route_weight": 20, "suppressed": False}}
+    with patch.object(router, "unit_cpu_weight", return_value=20), patch.object(router, "set_unit_cpu_weight", return_value=True) as set_weight:
+        changed = router.reconcile_scope_routes(state, candidates, False)
+        check(changed and not state, "scope recovery must clear a controller-owned route record")
+        set_weight.assert_called_once_with("lwg-workload-test-worker.scope", 100, scope,
+                                           candidates["lwg-workload-test-worker.scope"]["inode"])
+    state = {"lwg-workload-test-worker.scope": {"cgroup": scope, "inode": candidates["lwg-workload-test-worker.scope"]["inode"],
+                                                "original_weight": 100, "route_weight": 20, "suppressed": False}}
+    with patch.object(router, "unit_cpu_weight", return_value=55), patch.object(router, "set_unit_cpu_weight") as set_weight:
+        router.reconcile_scope_routes(state, candidates, False)
+        check(state["lwg-workload-test-worker.scope"]["suppressed"] and not set_weight.called,
+              "recovery must not overwrite a scope weight changed externally and must persist suppression")
+
+with tempfile.TemporaryDirectory() as tempdir:
+    for index in range(router.AGGREGATE_MAX_SCOPES + 1):
+        os.mkdir(os.path.join(tempdir, f"lwg-workload-overflow-{index}.scope"))
+    overflow_candidates = router.workload_scope_candidates(tempdir)
+    check(router.SCOPE_DISCOVERY_OVERFLOW and not overflow_candidates,
+          "excess candidate scopes must disable new routing instead of truncating aggregate demand")
 
 
 # Production PSI default threshold behavior: >=0.40 reduces quota; just below
@@ -288,6 +368,7 @@ for env, expected in (
     ({"WORKLOAD_GUARD_HISTORY_INTERVAL_SEC": "broken"}, "finite"),
     ({"WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC": "0"}, "statistics interval"),
     ({"WORKLOAD_GUARD_HISTORY_INTERVAL_SEC": "0.0001"}, "history interval"),
+    ({"WORKLOAD_GUARD_AGGREGATE_ROUTING": "true", "WORKLOAD_GUARD_AGGREGATE_SCOPE_WEIGHT": "100"}, "aggregate routing thresholds"),
 ):
     with patch.dict(os.environ, env, clear=False):
         spec = importlib.util.spec_from_file_location("router_bad_core_env", os.path.join(ROOT, "bin", "workload-router.py"))

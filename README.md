@@ -26,7 +26,7 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - Explicit `workload-guard protect` helper for placing latency-sensitive commands in the protected slice.
 - Automatic recovery of long-lived routed workloads after sustained low CPU usage.
 - Restart-safe route-state reconciliation and fail-safe quota telemetry handling.
-- Experimental opt-in aggregate-saturation routing for multiple sustained workers; disabled by default and documented with explicit hysteresis/fairness limits.
+- Experimental opt-in aggregate-saturation routing by stable workload scope and cgroup `usage_usec`; uses verified `CPUWeight` changes without PID moves, is disabled by default, and documents explicit hysteresis/fairness limits.
 - cgroup v2 resource enforcement.
 
 ## Architecture
@@ -61,7 +61,7 @@ Protected workloads also get higher `CPUWeight` (`1000`) than heavy workloads (`
 
 `100%` is approximately one logical CPU. Quotas are cgroup limits, not CPU priority scores. Dynamic quota also uses the heavy cgroup's `cpu.stat` throttling counters as a demand signal.
 
-Aggregate-saturation routing is an experimental opt-in policy for multiple long-lived workers sharing a constrained parent quota. It does not lower the existing per-process threshold and is disabled by default; see [aggregate-routing policy and limitations](docs/aggregate-routing.md) before testing it.
+Aggregate-saturation routing is an experimental opt-in policy for multiple build/compiler/test scopes sharing a constrained parent quota. With the flag enabled, `run-workload` starts recognized commands in named protected scopes; the router uses scope `cpu.stat` and lowers one scope's scheduler weight at a time, preserving process-tree identity and leaving the parent CPU quota as the hard cap. It does not lower the existing per-process threshold and is disabled by default; see [aggregate-routing policy and limitations](docs/aggregate-routing.md) before testing it.
 
 ## CLI
 
