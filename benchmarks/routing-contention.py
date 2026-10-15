@@ -11,6 +11,7 @@ import os
 import pathlib
 import statistics
 import subprocess
+import shutil
 import sys
 import tempfile
 import time
@@ -18,6 +19,7 @@ import time
 REPS = int(os.getenv("REPS", "3"))
 DURATION = float(os.getenv("DURATION", "30"))
 WORKERS = int(os.getenv("WORKERS", "1"))
+WORKLOAD_KIND = os.getenv("WORKLOAD_KIND", "synthetic").strip().lower()
 REQUIRE_ROUTED = os.getenv("REQUIRE_ROUTED", "true").lower() in ("1", "true", "yes", "on")
 RESULT = pathlib.Path(os.getenv("RESULT", "/tmp/routing-contention.tsv"))
 CGROOT = pathlib.Path("/sys/fs/cgroup")
@@ -59,7 +61,10 @@ def pct(xs, p):
     return ys[min(len(ys)-1, max(0, math.ceil(len(ys)*p)-1))]
 def write_worker_files(directory):
     hog = directory / "hog.py"
-    hog.write_text('''import os,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nx=0x123456789abcdef0; count=0; deadline=time.monotonic()+1.0\nwith open(progress,"a",buffering=1) as f:\n while True:\n  x ^= (x << 7) & ((1<<64)-1); x ^= x >> 9; x=(x*0x9e3779b97f4a7c15)&((1<<64)-1); count += 1\n  now=time.monotonic()\n  if now >= deadline:\n   f.write(f"{now:.6f}\\t{count}\\n"); deadline += 1.0\n''')
+    if WORKLOAD_KIND == "terminal-openssl":
+        hog.write_text('''import os, re, subprocess, sys, time\npidfile, progress, output, duration = sys.argv[1:5]\nseconds=max(10, int(float(duration)-3))\nwith open(output, "w") as log:\n p=subprocess.Popen(["openssl", "speed", "-seconds", str(seconds), "-bytes", "16384", "sha256"], stdout=log, stderr=subprocess.STDOUT)\n open(pidfile,"w").write(str(p.pid))\n rc=p.wait()\nrate=float("nan")\nfor line in open(output, errors="replace"):\n if line.lstrip().startswith("sha256"):\n  values=re.findall(r"([0-9]+(?:\\.[0-9]+)?)(?:k)?", line)\n  if values:\n   try: rate=float(values[-1])\n   except ValueError: pass\nwith open(progress,"a",buffering=1) as f: f.write(f"{time.monotonic():.6f}\\t{int(rate) if rate==rate and rate>0 else 0}\\n")\nraise SystemExit(rc)\n''')
+    else:
+        hog.write_text('''import os,sys,time\npidfile,progress=sys.argv[1:3]\nopen(pidfile,"w").write(str(os.getpid()))\nx=0x123456789abcdef0; count=0; deadline=time.monotonic()+1.0\nwith open(progress,"a",buffering=1) as f:\n while True:\n  x ^= (x << 7) & ((1<<64)-1); x ^= x >> 9; x=(x*0x9e3779b97f4a7c15)&((1<<64)-1); count += 1\n  now=time.monotonic()\n  if now >= deadline:\n   f.write(f"{now:.6f}\\t{count}\\n"); deadline += 1.0\n''')
     probe = directory / "probe.py"
     probe.write_text('''import os,sys,time\nout=sys.argv[1]; duration=float(sys.argv[2]); end=time.monotonic()+duration; rows=[]; period=.020; deadline=time.monotonic()+period\nwhile deadline<end:\n time.sleep(max(0,deadline-time.monotonic()))\n woke=time.monotonic(); wake_ms=max(0.0,(woke-deadline)*1000); t=time.monotonic_ns(); x=0\n for i in range(5000): x=(x*1664525+i+1013904223)&0xffffffff\n work_ms=(time.monotonic_ns()-t)/1e6\n rows.append((woke,wake_ms,work_ms)); deadline+=period\n if deadline < time.monotonic()-period: deadline=time.monotonic()+period\nwith open(out,"w") as f:\n for t,w,dt in rows: f.write(f"{t:.6f}\\t{w:.6f}\\t{dt:.6f}\\n")\n''')
     return hog, probe
@@ -123,7 +128,12 @@ def run_trial(mode, rep, directory, hog, probe):
         for i in range(WORKERS):
             pidfile=directory / f"{tag}-hog{i}.pid"
             progressfile=directory / f"{tag}-hog{i}.progress.tsv"
-            p=launch_scope(f"{tag}-hog{i}.scope", [sys.executable, str(hog), str(pidfile), str(progressfile)])
+            if WORKLOAD_KIND == "terminal-openssl":
+                outputfile=directory / f"{tag}-hog{i}.openssl.log"
+                worker_command=[sys.executable, str(hog), str(pidfile), str(progressfile), str(outputfile), str(DURATION)]
+            else:
+                worker_command=[sys.executable, str(hog), str(pidfile), str(progressfile)]
+            p=launch_scope(f"{tag}-hog{i}.scope", worker_command)
             scopes.append(f"{tag}-hog{i}.scope"); pids.append((pidfile,p)); progress_files.append(progressfile)
         probe_file=directory / f"{tag}-probe.tsv"
         pp=launch_scope(f"{tag}-probe.scope", [sys.executable, str(probe), str(probe_file), str(DURATION)])
@@ -134,6 +144,8 @@ def run_trial(mode, rep, directory, hog, probe):
         if not all(f.exists() for f,p in pids): raise RuntimeError("worker PID startup timeout")
         worker_pids=[int(f.read_text()) for f,p in pids]
         router_ticks_start, _ = router_process_metrics()
+        trial_psi_start = read_psi()
+        trial_load_start = read_loadavg()
         start=time.monotonic()
         routed_at=None
         peak_workers_in_heavy=0
@@ -158,16 +170,16 @@ def run_trial(mode, rep, directory, hog, probe):
                 t,wake_ms,work_ms=line.split("\t"); rows.append((float(t),float(wake_ms),float(work_ms)))
         now=time.monotonic()
         if not rows: raise RuntimeError("probe produced no samples")
-        # Separate initial routing convergence from steady state. Baseline uses the same elapsed window.
+        # Compare identical elapsed windows. The previous routed window started
+        # at routed_at+2s (~10.5s) while baseline started at 12s, so paired
+        # percentiles used different sample counts and were not fully comparable.
         trial_start=rows[0][0]
         all_ms=[wake_ms for _,wake_ms,_ in rows]
         work_ms=[work for _,_,work in rows]
-        steady_rows=[r for r in rows if (r[0]-trial_start >= 12.0 if mode == "baseline" else
-                                       (routed_at is not None and r[0]-trial_start >= routed_at+2))]
+        steady_rows=[r for r in rows if r[0]-trial_start >= 12.0]
         steady_ms=[wake for _,wake,_ in steady_rows]
         steady_work_ms=[work for _,_,work in steady_rows]
-        steady_start = trial_start + (12.0 if mode == "baseline" else
-                                      ((routed_at + 2.0) if routed_at is not None else DURATION + 1.0))
+        steady_start = trial_start + 12.0
         worker_rates=[]
         for progressfile in progress_files:
             samples=[]
@@ -180,9 +192,12 @@ def run_trial(mode, rep, directory, hog, probe):
                             samples.append((ts, count))
                     except (ValueError, TypeError):
                         continue
-            if len(samples) >= 2 and samples[-1][0] > samples[0][0]:
+            if WORKLOAD_KIND == "terminal-openssl" and samples:
+                worker_rates.append(float(samples[-1][1]))
+            elif len(samples) >= 2 and samples[-1][0] > samples[0][0]:
                 worker_rates.append((samples[-1][1] - samples[0][1]) / (samples[-1][0] - samples[0][0]))
-        worker_iterations_per_sec = sum(worker_rates) if len(worker_rates) == WORKERS else float("nan")
+        worker_throughput_per_sec = sum(worker_rates) if len(worker_rates) == WORKERS else float("nan")
+        worker_iterations_per_sec = worker_throughput_per_sec if WORKLOAD_KIND == "synthetic" else float("nan")
         router_ticks_end, router_peak_rss_kib = router_process_metrics()
         router_cpu_pct = None
         if (mode == "router" and router_ticks_start is not None and router_ticks_end is not None
@@ -193,8 +208,15 @@ def run_trial(mode, rep, directory, hog, probe):
         with sample_path.open("a") as raw:
             for t,wake,work in rows:
                 raw.write(f"{mode}\t{rep}\t{t-trial_start:.6f}\t{wake:.6f}\t{work:.6f}\n")
-        route_complete = mode != "router" or peak_workers_in_heavy == WORKERS
-        validity_reason = "" if route_complete else f"routing-incomplete:{peak_workers_in_heavy}/{WORKERS}"
+        route_complete = mode != "router" or (
+            peak_workers_in_heavy == WORKERS and routed_at is not None and routed_at + 2.0 <= 12.0
+        )
+        if route_complete:
+            validity_reason = ""
+        elif peak_workers_in_heavy != WORKERS:
+            validity_reason = f"routing-incomplete:{peak_workers_in_heavy}/{WORKERS}"
+        else:
+            validity_reason = "routing-converged-too-late-for-common-steady-window"
         return {"mode":mode,"rep":rep,"samples":len(all_ms),"elapsed_s":round(now-start,3),
                 "routed_at_s":"" if routed_at is None else round(routed_at,3),
                 "workers_in_heavy":peak_workers_in_heavy,"worker_count":WORKERS,
@@ -207,9 +229,12 @@ def run_trial(mode, rep, directory, hog, probe):
                 "steady_p99_ms":pct(steady_ms,.99),"steady_max_ms":max(steady_ms) if steady_ms else float('nan'),
                 "steady_work_p95_ms":pct(steady_work_ms,.95),
                 "worker_iterations_per_sec":worker_iterations_per_sec,
+                "worker_throughput_per_sec":worker_throughput_per_sec,
                 "router_cpu_pct_one_core":router_cpu_pct,
                 "router_peak_rss_kib":router_peak_rss_kib if mode == "router" else None,
-                "psi_some_avg10":read_psi(),"router_enabled_during_trial":int(mode == "router")}
+                "psi_some_avg10_start":trial_psi_start,"psi_some_avg10":read_psi(),
+                "loadavg_1m_start":trial_load_start,"loadavg_1m_end":read_loadavg(),
+                "router_enabled_during_trial":int(mode == "router")}
     finally:
         for unit in scopes: stop_scope(unit)
         stop_router()
@@ -222,11 +247,39 @@ def read_psi():
     except Exception: pass
     return float("nan")
 
+def read_loadavg():
+    try:
+        return float(pathlib.Path("/proc/loadavg").read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return float("nan")
+
+def cpu_model():
+    try:
+        for line in pathlib.Path("/proc/cpuinfo").read_text().splitlines():
+            if line.lower().startswith(("model name", "hardware")) and ":" in line:
+                value = line.split(":", 1)[1].strip()
+                if value:
+                    return value
+    except OSError:
+        pass
+    return "unavailable"
+
+def git_revision():
+    try:
+        return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                                       text=True, stderr=subprocess.DEVNULL, timeout=2).strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
+
 def main():
     global ROUTER_LOG_PATH, ROUTER_STATE_PATH, ROUTER_ENV
     global CREATED_UNIT_FILES
     if REPS < 1 or WORKERS < 1 or DURATION < 20:
         raise SystemExit("REPS and WORKERS must be positive; DURATION must be >=20s for comparable steady windows")
+    if WORKLOAD_KIND not in ("synthetic", "terminal-openssl"):
+        raise SystemExit("WORKLOAD_KIND must be synthetic or terminal-openssl")
+    if WORKLOAD_KIND == "terminal-openssl" and not shutil.which("openssl"):
+        raise SystemExit("WORKLOAD_KIND=terminal-openssl requires the openssl CLI")
     if not pathlib.Path("/sys/fs/cgroup/cgroup.controllers").exists():
         raise SystemExit("cgroup v2 required")
     sample_path = RESULT.with_suffix(".samples.tsv")
@@ -255,15 +308,22 @@ def main():
                 f.write(contents)
             CREATED_UNIT_FILES.append(path)
         with RESULT.open("x", newline="") as f:
-            fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","worker_count","trial_valid","validity_reason","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","worker_iterations_per_sec","router_cpu_pct_one_core","router_peak_rss_kib","psi_some_avg10","router_enabled_during_trial"]
+            fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","worker_count","trial_valid","validity_reason","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","worker_iterations_per_sec","worker_throughput_per_sec","router_cpu_pct_one_core","router_peak_rss_kib","psi_some_avg10_start","psi_some_avg10","loadavg_1m_start","loadavg_1m_end","router_enabled_during_trial"]
             writer=csv.DictWriter(f,fieldnames=fields,delimiter="\t",lineterminator="\n"); writer.writeheader(); f.flush()
         with sample_path.open("x") as f:
             f.write("mode\trep\trelative_s\twakeup_lateness_ms\twork_duration_ms\n")
         with environment_path.open("x") as f:
             f.write(f"started_at={time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n")
             f.write(f"host={os.uname()}\npython={sys.version.replace(chr(10), ' ')}\nlogical_cpus={os.cpu_count()}\n")
+            f.write(f"git_revision={git_revision()}\ncpu_model={cpu_model()}\n")
+            f.write(f"cpu_pressure_initial_some_avg10={read_psi()}\nloadavg_initial_1m={read_loadavg()}\n")
+            try:
+                f.write(f"cgroup_controllers={pathlib.Path('/sys/fs/cgroup/cgroup.controllers').read_text().strip()}\n")
+            except OSError:
+                f.write("cgroup_controllers=unavailable\n")
             f.write(f"systemd={ctl('--version').stdout.splitlines()[0]}\ncgroup_mode=v2\n")
             f.write(f"repetitions={REPS}\nworkers={WORKERS}\nduration_seconds={DURATION}\n")
+            f.write(f"workload_kind={WORKLOAD_KIND}\n")
             f.write(f"parent_unit={PARENT_UNIT}\nheavy_unit={HEAVY_UNIT}\nrecovery_unit={RECOVERY_UNIT}\n")
             f.write("parent_cpu_quota=100%; heavy_child_cpu_quota=100%; both modes share the same 100% parent aggregate ceiling\n")
             f.write("capacity_model=equal aggregate CPU ceiling; heavy slice is nested beneath parent\n")
@@ -272,14 +332,29 @@ def main():
             f.write(f"router_sustained_samples={os.getenv('BENCH_ROUTER_SUSTAINED_SAMPLES', '4')}\n")
             f.write(f"router_cpu_threshold_percent={os.getenv('BENCH_ROUTER_CPU_THRESHOLD', '70')}\n")
             f.write("percentile_method=nearest-rank ceil(p*n)-1\n")
-            f.write("worker_throughput=synthetic Python integer-mixing iterations per second over steady-state samples\n")
+            f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block)\n")
+            f.write("steady_state_window=common elapsed time >=12s after probe start in both modes; routing must have converged before window for a valid router trial\n")
+            f.write("noise_diagnostics=host CPU PSI some avg10 and /proc/loadavg 1m sampled at each trial start/end; diagnostic only, no post-hoc exclusion\n")
             f.write("router_overhead=isolated router process CPU percentage of one logical CPU and VmHWM peak RSS\n")
-            f.write("candidate_acceptance=5 valid pairs; >=500 steady samples per mode; median paired wakeup p95/p99 and work p95 ratios <=1.10; throughput ratio >=0.90; router CPU <=5% of one logical CPU; peak RSS <=32768 KiB\n")
+            f.write("candidate_acceptance=5 valid pairs; >=500 steady samples per mode; identical >=12s elapsed steady window; route convergence at least 2s before window; median paired wakeup p95/p99 and wall-work p95 ratios <=1.10; throughput ratio >=0.90; router CPU <=5% of one logical CPU; peak RSS <=32768 KiB\n")
+            f.write("workload_seed=0x123456789abcdef0; probe_period_seconds=0.020; probe_integer_operations=5000\n")
+            governor = pathlib.Path('/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor')
+            f.write(f"cpu_governor={governor.read_text().strip() if governor.is_file() else 'unavailable'}\n")
             f.write(f"command=REPS={REPS} DURATION={DURATION} WORKERS={WORKERS} RESULT={RESULT} python3 benchmarks/routing-contention.py\n")
         with ROUTER_LOG_PATH.open("x"):
             pass
         ctl("daemon-reload")
         ctl("start", PARENT_UNIT, HEAVY_UNIT, RECOVERY_UNIT)
+        with environment_path.open("a") as manifest:
+            for unit in (PARENT_UNIT, HEAVY_UNIT, RECOVERY_UNIT):
+                cg = cgroup_path(unit)
+                manifest.write(f"{unit}_control_group={show(unit, 'ControlGroup')}\n")
+                for name in ("cpu.max", "cpu.weight", "cpuset.cpus.effective"):
+                    try:
+                        value = pathlib.Path(cg, name).read_text().strip()
+                    except OSError:
+                        value = "unavailable"
+                    manifest.write(f"{unit}_{name.replace('.', '_')}={value}\n")
         with tempfile.TemporaryDirectory(prefix="lwg-routing-bench-") as td:
             directory=pathlib.Path(td); hog,probe=write_worker_files(directory); results=[]
             ROUTER_STATE_PATH = directory / "routes.tsv"
@@ -308,7 +383,7 @@ def main():
                 for rep in range(1,REPS+1):
                     modes=("baseline","router") if rep%2 else ("router","baseline")
                     for mode in modes:
-                        print(f"trial {rep}/{REPS}: {mode} ({DURATION:.0f}s, {WORKERS} CPU workers)",flush=True)
+                        print(f"trial {rep}/{REPS}: {mode} ({DURATION:.0f}s, {WORKERS} workers, workload={WORKLOAD_KIND})",flush=True)
                         row=run_trial(mode,rep,directory,hog,probe)
                         writer.writerow(row); f.flush(); results.append(row)
                         validity = "valid" if row["trial_valid"] else row["validity_reason"]
@@ -318,7 +393,7 @@ def main():
             print("\nSummary by mode (mean of per-trial percentiles; ms):")
             for mode in ("baseline","router"):
                 group=[r for r in results if r["mode"]==mode]
-                for key in ("all_p50_ms","all_p95_ms","all_p99_ms","work_p95_ms","steady_p95_ms","steady_p99_ms","steady_work_p95_ms","worker_iterations_per_sec","router_cpu_pct_one_core","router_peak_rss_kib"):
+                for key in ("all_p50_ms","all_p95_ms","all_p99_ms","work_p95_ms","steady_p95_ms","steady_p99_ms","steady_work_p95_ms","worker_iterations_per_sec","worker_throughput_per_sec","router_cpu_pct_one_core","router_peak_rss_kib"):
                     eligible=[r for r in group if r["trial_valid"]]
                     vals=[r[key] for r in eligible if isinstance(r[key],(int,float)) and r[key]==r[key]]
                     print(f"  {mode:8s} {key:16s} {statistics.mean(vals):.3f} (n={len(vals)})" if vals else f"  {mode:8s} {key:16s} n/a (no valid trials)")

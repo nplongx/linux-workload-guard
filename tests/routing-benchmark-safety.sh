@@ -34,5 +34,18 @@ grep -q 'worker_iterations_per_sec' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'router_cpu_pct_one_core' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'router_peak_rss_kib' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'candidate_acceptance=5 valid pairs' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'identical >=12s elapsed steady window' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'git_revision=' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'loadavg_1m_start' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'WORKLOAD_KIND must be synthetic or terminal-openssl' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'openssl", "speed"' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'worker_throughput_per_sec' "$ROOT/benchmarks/routing-contention.py"
+
+# Unknown workload modes must fail before creating evidence or temporary units.
+if WORKLOAD_KIND=unknown RESULT="$TMP/unknown.tsv" DURATION=20 "$BENCH" >/dev/null 2>"$TMP/unknown.err"; then
+  echo 'routing benchmark accepted an unknown workload kind' >&2; exit 1
+fi
+grep -q 'WORKLOAD_KIND must be synthetic or terminal-openssl' "$TMP/unknown.err"
+[ ! -e "$TMP/unknown.tsv" ]
 
 printf '%s\n' 'routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)'

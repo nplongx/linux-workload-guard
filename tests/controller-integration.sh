@@ -1,11 +1,23 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-if ! command -v systemd-run >/dev/null 2>&1 || ! command -v systemctl >/dev/null 2>&1 ||
-   [ ! -f /sys/fs/cgroup/cgroup.controllers ] || ! systemctl --user show-environment >/dev/null 2>&1; then
-  printf '%s\n' 'controller integration: skipped (systemd user manager/cgroup v2 unavailable)'
+report_skip() {
+  reason=$1
+  mode=v1-or-unknown; [ ! -f /sys/fs/cgroup/cgroup.controllers ] || mode=v2
+  controllers=unavailable; [ ! -r /sys/fs/cgroup/cgroup.controllers ] || controllers=$(tr '\n' ' ' < /sys/fs/cgroup/cgroup.controllers)
+  kernel=$(uname -r 2>/dev/null || echo unavailable)
+  printf 'controller integration: SKIP reason=%s kernel=%s cgroup_mode=%s available_controllers="%s"\n' "$reason" "$kernel" "$mode" "$controllers"
+  printf '::notice title=controller integration SKIP::%s; kernel=%s; cgroup_mode=%s; controllers=%s\n' "$reason" "$kernel" "$mode" "$controllers"
+  if [ "${WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER:-0}" = 1 ]; then
+    printf '%s\n' 'controller integration: strict live-capability mode converts SKIP to failure' >&2
+    exit 1
+  fi
   exit 0
-fi
+}
+if ! command -v systemd-run >/dev/null 2>&1; then report_skip 'systemd-run command unavailable'; fi
+if ! command -v systemctl >/dev/null 2>&1; then report_skip 'systemctl command unavailable'; fi
+if [ ! -f /sys/fs/cgroup/cgroup.controllers ]; then report_skip 'cgroup v2 is unavailable'; fi
+if ! systemctl --user show-environment >/dev/null 2>&1; then report_skip 'systemd user manager/session bus unavailable'; fi
 
 # Unique test-only slice units isolate dynamic quota writes from the user's real
 # protected/heavy slices and from the installed workload-router.service.
@@ -42,8 +54,7 @@ ROUTER_PID=''; WORK_PID_1=''; WORK_PID_2=''; PROBE_PID=''; UNITS_CREATED=0
 TEST_DYNAMIC_QUOTA=true
 
 if [ -e "$PARENT_FILE" ] || [ -e "$RECOVERY_FILE" ] || [ -e "$HEAVY_FILE" ]; then
-  printf '%s\n' 'controller integration: skipped (unique test unit path already exists)'
-  exit 0
+  report_skip 'unique test unit path already exists; refusing to reuse prior state'
 fi
 cleanup() {
   rc=$?
@@ -367,17 +378,15 @@ PY
   sleep 0.1
 done
 if [ "$CPU_STAT_READY" -ne 1 ]; then
-  printf '%s\n' 'controller integration: skipped (test cgroup does not expose usage_usec/nr_periods/nr_throttled required for quota decisions)'
-  exit 0
+  AVAILABLE_KEYS=$(awk 'NF==2 {printf "%s%s",sep,$1; sep=","}' "$HEAVY_CGROUP/cpu.stat" 2>/dev/null || echo unavailable)
+  report_skip "delegated cpu.stat missing required counters usage_usec/nr_periods/nr_throttled; available_keys=${AVAILABLE_KEYS:-unavailable}; cgroup=${HEAVY_CGROUP}"
 fi
 if ! systemctl --user set-property "$HEAVY_UNIT" CPUQuota=100% >/dev/null 2>&1; then
-  printf '%s\n' 'controller integration: skipped (test environment rejects isolated CPUQuota property changes)'
-  exit 0
+  report_skip "systemd rejected CPUQuota on isolated cgroup=${HEAVY_CGROUP}"
 fi
 QUOTA_PROPERTY=$(systemctl --user show "$HEAVY_UNIT" -p CPUQuotaPerSecUSec --value 2>/dev/null || true)
 case "$QUOTA_PROPERTY" in ''|infinity|infinity\ *)
-  printf '%s\n' 'controller integration: skipped (isolated test quota property is unavailable)'
-  exit 0
+  report_skip "isolated CPUQuota readback unavailable; observed=${QUOTA_PROPERTY:-empty}; cgroup=${HEAVY_CGROUP}"
   ;;
 esac
 

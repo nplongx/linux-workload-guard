@@ -407,7 +407,7 @@ REPS=5 DURATION=20 WORKERS=1 \
 
 **The historical implementation used for those measurements is not safe for the current production-hardening workflow**: it modified the installed router state and production slice quotas. The current `benchmarks/routing-contention.py` and `benchmarks/routing-contention-isolated.sh` use unique temporary user slices and a directly spawned test router. They do not edit `workload-guard.env`, stop/restart the installed service, or write production slice quotas. The current pass-6 methodology nests the temporary heavy slice beneath the temporary parent; both modes share the same 100% aggregate CPU ceiling. Dynamic quota and AIMD are disabled for this routing-only comparison.
 
-The harness alternates mode order, refuses to overwrite any result/sidecar, writes an environment manifest and router log, uses nearest-rank percentiles, records synthetic worker throughput and router CPU/RSS, and defaults to `REQUIRE_ROUTED=true`; every router trial must actually move all intended workers. For the current predeclared acceptance review, use 30 seconds per mode to provide at least 500 steady-state samples:
+The harness counterbalances mode order, refuses to overwrite any result/sidecar, writes an environment manifest and router log, uses nearest-rank percentiles, records per-trial host PSI/load, throughput, router CPU/RSS, and defaults to `REQUIRE_ROUTED=true`; every router trial must actually move all intended workers. Both modes now use the same elapsed steady window (samples at or after 12 seconds), and a route must converge at least two seconds before that window. Use 30 seconds per mode to provide at least 500 steady-state samples:
 
 ```bash
 DURATION=30 REPS=5 WORKERS=1 REQUIRE_ROUTED=true \
@@ -416,9 +416,20 @@ DURATION=30 REPS=5 WORKERS=1 REQUIRE_ROUTED=true \
 python3 benchmarks/performance-review.py benchmarks/results/routing-contention-isolated-new.tsv
 ```
 
+For a real CPU-bound command-line workload in addition to the synthetic integer loop, run the same isolated paired harness with OpenSSL SHA-256 throughput. It requires the `openssl` CLI, keeps the work inside the same temporary 100% aggregate CPU ceiling, records SHA-256 throughput in kB/s, and still requires every worker to be observed in the heavy cgroup:
+
+```bash
+WORKLOAD_KIND=terminal-openssl DURATION=30 REPS=5 WORKERS=1 REQUIRE_ROUTED=true \
+  RESULT=benchmarks/results/routing-contention-terminal-openssl-new.tsv \
+  ./benchmarks/routing-contention-isolated.sh
+python3 benchmarks/performance-review.py benchmarks/results/routing-contention-terminal-openssl-new.tsv
+```
+
+The acceptance evaluator cross-checks the raw sample file against summary counts and steady-window membership, rejects missing/non-finite/out-of-order samples and incomplete manifests, validates the predeclared thresholds, and refuses to overwrite an acceptance report. A synthetic PASS applies only to the synthetic probe; a terminal-openssl PASS applies only to this SHA-256 command-line workload, not to compiler builds or all terminal applications. Do not pool throughput values across workload kinds.
+
 The 2026-10-15 pass-3 three-pair result remains a historical diagnostic; its old methodology had separate protected/heavy sibling ceilings and is superseded by the equal-aggregate-capacity pass-6 run. The pass-6 five-pair results, synthetic throughput/overhead, and acceptance verdict are documented in [`benchmarks/results/release-readiness-2026-10-15-pass6.md`](benchmarks/results/release-readiness-2026-10-15-pass6.md) with raw TSV, samples, manifest, router log, and acceptance review.
 
-Older 2026-10-09 result files, including `routing-contention-isolated-1worker-5rep-2026-10-09.tsv`, remain untouched. Their `router_was_active` field captured whether the service was active before each mode switch, not whether it was active during the trial, and their protected/heavy quotas differed. Treat them as historical diagnostics only. Multi-worker trials remain valid only if every intended worker is verified in the target cgroup; inspect `trial_valid` and `validity_reason` before comparing.
+Older 2026-10-09 result files, including `routing-contention-isolated-1worker-5rep-2026-10-09.tsv`, remain untouched. Their `router_was_active` field captured whether the service was active before each mode switch, not whether it was active during the trial, and their protected/heavy quotas differed. Treat them as historical diagnostics only. Multi-worker trials remain valid only if every intended worker is verified in the target cgroup; inspect `trial_valid` and `validity_reason` before comparing. Unknown commands route only after each process exceeds the 70%-of-one-logical-CPU trigger for four consecutive samples by default. Under a shared 100% parent quota, two unknown CPU-bound workers may each remain near 50% and therefore not route; this is a known per-process-policy limitation, not a reason to lower the production trigger without false-positive/fairness evidence. Known-heavy command matching remains a separate immediate-route path.
 
 The 2026-10-15 release-readiness reports record bounded integration metrics, benchmark-method corrections, verification results, controller/monitor hardening, and remaining RC2/RC3/stable blockers: [`release-readiness-2026-10-15.md`](benchmarks/results/release-readiness-2026-10-15.md), [`release-readiness-2026-10-15-pass2.md`](benchmarks/results/release-readiness-2026-10-15-pass2.md), [`release-readiness-2026-10-15-pass3.md`](benchmarks/results/release-readiness-2026-10-15-pass3.md), [`release-readiness-2026-10-15-pass4.md`](benchmarks/results/release-readiness-2026-10-15-pass4.md), [`release-readiness-2026-10-15-pass5.md`](benchmarks/results/release-readiness-2026-10-15-pass5.md), and [`release-readiness-2026-10-15-pass6.md`](benchmarks/results/release-readiness-2026-10-15-pass6.md).
 
