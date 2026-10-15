@@ -51,7 +51,7 @@ The focused hardening/config regression reruns are recorded in [`controller-hard
 - Quota/routing benchmark safety, live PSI collector safety, performance evaluator tests, soak-monitor tests: PASS.
 - Python compilation, POSIX shell syntax, Bash syntax, `systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice`, `git diff --check`: PASS.
 - `./bin/workload-guard version`: `0.6.5-rc.1`.
-- Hosted CI for the pass-8 commit: **PENDING until push and workflow completion**. The previous pass-7 hosted run was green on Ubuntu 22.04/24.04 but is not CI evidence for this commit.
+- Hosted CI for pass-8 commit [`fc22fb1`](https://github.com/nplongx/linux-workload-guard/actions/runs/38710073650): **PASS** on Ubuntu 22.04 and 24.04. Ubuntu 22.04 still reports the explicit delegated `cpu.stat` skip detailed below; the workflow is green but that live-controller gate is not closed. A non-blocking Node.js 20 deprecation notice for `actions/checkout@v4` remains.
 
 ## Release gates
 
@@ -62,8 +62,8 @@ The focused hardening/config regression reruns are recorded in [`controller-hard
 | Aggregate-policy performance acceptance | **INCOMPLETE / OPEN** | One pair only; baseline has 482 steady samples and fails the evaluator minimum. Five-pair two-worker run not completed. |
 | Compiler/build representative performance | **INCOMPLETE / OPEN** | Smoke routes 0/2 benchmark worker PIDs due compiler process churn; redesign worker identity/scope routing before acceptance. |
 | CLI CPU-bound evidence | **PASS — narrow prior evidence** | Pass-7 five-pair OpenSSL SHA-256 CLI result on this host; not a universal workload pass. |
-| Ubuntu 24.04 controller integration | **PASS locally on current host; hosted CI pending** | The local controller integration passed. Hosted CI for this commit must complete. |
-| Ubuntu 22.04 real delegated CPU counters | **SKIP / OPEN** | Previous hosted run 38705936543 recorded kernel `6.8.0-1064-azure`, cgroup v2, controllers `cpuset cpu io memory hugetlb pids rdma misc`, but the test leaf's `cpu.stat` exposed only `usage_usec,user_usec,system_usec,core_sched.force_idle_usec` and lacked `nr_periods`/`nr_throttled`. This is a delegated-cgroup interface/counter limitation on that hosted runner, not a fabricated counter or a passing integration. Run with `WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1` on a runner provisioned with real quota/throttling counters. |
+| Ubuntu 24.04 controller integration | **PASS** | Hosted CI run 38710073650 passed the complete matrix including controller integration. |
+| Ubuntu 22.04 real delegated CPU counters | **SKIP / OPEN** | Pass-8 hosted run 38710073650 again recorded kernel `6.8.0-1064-azure`, cgroup v2, controllers `cpuset cpu io memory hugetlb pids rdma misc`, but the test leaf's `cpu.stat` exposed only `usage_usec,user_usec,system_usec,core_sched.force_idle_usec` and lacked `nr_periods`/`nr_throttled`. This is a delegated-cgroup interface/counter limitation on that hosted runner, not a fabricated counter or a passing integration. Run with `WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1` on a runner provisioned with real quota/throttling counters. |
 | Natural live PSI `some avg10 >=0.40` correlated with controller action | **NOT RUN** | Current passive observations did not cross threshold. Keep collector passive; record timestamped PSI, decision, quota readback and service state only if a safe natural event occurs. |
 | Independent second host | **NOT RUN** | No independent host was available in this execution context. Repeat tests and benchmark with a fresh environment manifest on a genuinely independent host. |
 | Operator install/upgrade/rollback on dedicated test host | **PARTIAL** | Mocked install/uninstall and isolated recovery pass; operator procedure remains unexecuted on a separate representative host. |
