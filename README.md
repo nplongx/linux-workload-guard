@@ -279,7 +279,19 @@ The project is designed for user-level installation and does not require root.
 
 Tests cover Python syntax, routing/exclusion logic, quota decisions, telemetry reset/staleness, PID reuse, service-command timeouts, real cgroup routing, recovery after sustained low CPU, and route-state reconciliation across router restart. The integration tests require a systemd user manager and cgroup v2; otherwise they print `SKIP` and exit successfully. The combined dynamic-quota integration additionally skips if the delegated test slice lacks `usage_usec`, `nr_periods`, or `nr_throttled`, or systemd rejects isolated `CPUQuota` changes. In hosted CI run [38532132779](https://github.com/nplongx/linux-workload-guard/actions/runs/38532132779), Ubuntu 22.04 skipped this stage for missing CPU counters; Ubuntu 24.04 ran it successfully. Do not treat that skip as quota-controller coverage on Ubuntu 22.04.
 
+Core routing environment values are validated before the routing loop starts. Malformed/non-finite values, non-positive sample counts, unsafe sample intervals, and out-of-range thresholds disable routing with an explicit error instead of crashing during module import or entering a zero-delay loop. Correct the setting and restart the user service to recover; dynamic quota remains separately opt-in, and invalid core configuration does not trigger an automatic quota write.
+
 Run the deterministic controller regression directly with `python3 tests/controller-hardening.py`. On a host with a working systemd user manager and cgroup v2, run `./tests/controller-integration.sh` to exercise the combined path using temporary, uniquely named slices: brief-burst rejection, two competing CPU-bound workers, routing, dynamic quota increase/decrease, AIMD log-only behavior, cgroup recreation, and idle recovery to a leaf slice. It does not change the installed service's environment or the normal `protected-workload.slice` / `heavy-workload.slice`. The test uses shortened sampling and test-only thresholds; it is functional regression coverage, not a production-latency or long-soak benchmark.
+
+### Preparing a release soak
+
+`benchmarks/soak-monitor.sh OUTPUT_DIR [DURATION_SECONDS=86400] [INTERVAL_SECONDS=60]` is a monitor-only collector for a separately approved soak window. It refuses an existing output directory and does not start workloads, restart the router, change configuration, or write quota properties. It records environment and start/end times, service active state/PID/restart count/exit status, host CPU PSI, heavy-slice quota property, router CPU time/RSS/runqueue-delay delta, routed-process count, service-state errors, and the user-service journal. Example for the required 24-hour observation:
+
+```sh
+benchmarks/soak-monitor.sh "$HOME/lwg-soak-$(date +%Y%m%d-%H%M%S)" 86400 60
+```
+
+Run only with a stable power/network/host window and a separately defined representative workload plan. The monitor alone is not a soak acceptance pass: attach workload/phase, route-validity, quota-transition/oscillation, failure/recovery, and resource-overhead analysis. Interruptions or service-state errors remain in the artifacts and invalidate a claim of continuous 24-hour coverage.
 
 ## Benchmark
 
@@ -364,6 +376,8 @@ DURATION=20 REPS=3 WORKERS=1 REQUIRE_ROUTED=true \
 ```
 
 The multi-worker case is a routing test only if the router actually moves all worker processes into `heavy-workload.slice`. Because the router evaluates CPU thresholds per process, multi-worker trials may not trigger routing; inspect `trial_valid` and `validity_reason` in the TSV before comparing results.
+
+The 2026-10-15 release-readiness report records the latest bounded integration metrics, verification results, the new core configuration validation, and remaining RC2/RC3/stable blockers: [`release-readiness-2026-10-15.md`](benchmarks/results/release-readiness-2026-10-15.md).
 
 A follow-up isolated run with five paired trials per mode routed the single worker in all five router trials (8.4–9.5 s). Median per-trial wake-up p95 was 0.179 ms baseline versus 0.118 ms with routing; wake-up p99 was 2.198 ms versus 0.984 ms; probe-work p95 was 6.829 ms versus 3.342 ms. Median paired changes were -24.1%, -63.9%, and -51.1%, respectively. This is encouraging but still synthetic, single-host evidence; one baseline trial had a much higher work-duration tail, and it does not establish general UI-latency improvement. Raw results are in [`benchmarks/results/routing-contention-isolated-1worker-5rep-2026-10-09.tsv`](benchmarks/results/routing-contention-isolated-1worker-5rep-2026-10-09.tsv).
 

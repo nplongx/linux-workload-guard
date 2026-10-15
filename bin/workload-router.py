@@ -4,6 +4,23 @@ import json, math, os, time, logging, subprocess
 SYSTEMD_PREFIX = "/sys/fs/cgroup"
 
 
+def core_float_env(name, default):
+    """Parse core routing floats without crashing import on malformed service env."""
+    try:
+        value = float(os.getenv(name, str(default)))
+        return value if math.isfinite(value) else float("nan")
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def core_int_env(name, default):
+    """Represent malformed core integer settings as invalid, not implicit defaults."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return None
+
+
 def shadow_float_env(name, default):
     """Keep malformed shadow-only settings representable so validation can fail closed."""
     try:
@@ -28,21 +45,21 @@ def numeric_env(name, default):
         return float("nan")
 
 
-SAMPLE_SEC = float(os.getenv("WORKLOAD_GUARD_SAMPLE_SEC", "2"))
-SUSTAINED_SAMPLES = int(os.getenv("WORKLOAD_GUARD_SUSTAINED_SAMPLES", "4"))
-CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_CPU_THRESHOLD", "70"))
+SAMPLE_SEC = core_float_env("WORKLOAD_GUARD_SAMPLE_SEC", 2)
+SUSTAINED_SAMPLES = core_int_env("WORKLOAD_GUARD_SUSTAINED_SAMPLES", 4)
+CPU_THRESHOLD = core_float_env("WORKLOAD_GUARD_CPU_THRESHOLD", 70)
 SHADOW_ENABLED = os.getenv("WORKLOAD_GUARD_SHADOW", "false").lower() in ("1", "true", "yes", "on")
 SHADOW_EWMA_ALPHA = shadow_float_env("WORKLOAD_GUARD_SHADOW_EWMA_ALPHA", 0.35)
 SHADOW_ROUTE_THRESHOLD = shadow_float_env("WORKLOAD_GUARD_SHADOW_ROUTE_THRESHOLD", CPU_THRESHOLD)
 SHADOW_SUSTAINED_SAMPLES = shadow_int_env("WORKLOAD_GUARD_SHADOW_SUSTAINED_SAMPLES", SUSTAINED_SAMPLES)
 ADAPTIVE = os.getenv("WORKLOAD_GUARD_ADAPTIVE", "false").lower() in ("1", "true", "yes", "on")
-LEARNING_RATE = float(os.getenv("WORKLOAD_GUARD_LEARNING_RATE", "0.15"))
-ROUTE_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_ROUTE_THRESHOLD", "0.75"))
-COOLDOWN_SEC = float(os.getenv("WORKLOAD_GUARD_COOLDOWN_SEC", "20"))
-MIN_SAMPLES = int(os.getenv("WORKLOAD_GUARD_MIN_SAMPLES", "8"))
-RECOVERY_CPU_THRESHOLD = float(os.getenv("WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD", "35"))
-RECOVERY_SAMPLES = int(os.getenv("WORKLOAD_GUARD_RECOVERY_SAMPLES", "10"))
-RECOVERY_DWELL_SEC = float(os.getenv("WORKLOAD_GUARD_RECOVERY_DWELL_SEC", "20"))
+LEARNING_RATE = core_float_env("WORKLOAD_GUARD_LEARNING_RATE", 0.15)
+ROUTE_THRESHOLD = core_float_env("WORKLOAD_GUARD_ROUTE_THRESHOLD", 0.75)
+COOLDOWN_SEC = core_float_env("WORKLOAD_GUARD_COOLDOWN_SEC", 20)
+MIN_SAMPLES = core_int_env("WORKLOAD_GUARD_MIN_SAMPLES", 8)
+RECOVERY_CPU_THRESHOLD = core_float_env("WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD", 35)
+RECOVERY_SAMPLES = core_int_env("WORKLOAD_GUARD_RECOVERY_SAMPLES", 10)
+RECOVERY_DWELL_SEC = core_float_env("WORKLOAD_GUARD_RECOVERY_DWELL_SEC", 20)
 SHADOW_CLEAR_THRESHOLD = shadow_float_env("WORKLOAD_GUARD_SHADOW_CLEAR_THRESHOLD", RECOVERY_CPU_THRESHOLD)
 SHADOW_RECOVERY_SAMPLES = shadow_int_env("WORKLOAD_GUARD_SHADOW_RECOVERY_SAMPLES", RECOVERY_SAMPLES)
 SHADOW_RECOVERY_DWELL_SEC = shadow_float_env("WORKLOAD_GUARD_SHADOW_RECOVERY_DWELL_SEC", RECOVERY_DWELL_SEC)
@@ -60,8 +77,8 @@ QUOTA_THROTTLE_HIGH = numeric_env("WORKLOAD_GUARD_QUOTA_THROTTLE_HIGH", "0.10")
 QUOTA_MIN_DWELL_SEC = numeric_env("WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC", "10")
 QUOTA_SCHED_DELAY_HIGH_MS = numeric_env("WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS", "20")
 QUOTA_SCHED_DELAY_LOW_MS = numeric_env("WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS", "5")
-STATS_SAVE_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC", "10"))
-HISTORY_INTERVAL_SEC = float(os.getenv("WORKLOAD_GUARD_HISTORY_INTERVAL_SEC", "300"))
+STATS_SAVE_INTERVAL_SEC = core_float_env("WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC", 10)
+HISTORY_INTERVAL_SEC = core_float_env("WORKLOAD_GUARD_HISTORY_INTERVAL_SEC", 300)
 HISTORY_FILE = os.getenv("WORKLOAD_GUARD_HISTORY_FILE", os.path.join(os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "linux-workload-guard", "history.jsonl"))
 STATS_FILE = os.getenv("WORKLOAD_GUARD_STATS_FILE", os.path.join(
     os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
@@ -362,6 +379,34 @@ def shadow_config_error(alpha=SHADOW_EWMA_ALPHA, route_threshold=SHADOW_ROUTE_TH
         return "shadow sample counts must be at least 1"
     if recovery_dwell_sec < 0:
         return "shadow recovery dwell must be non-negative"
+    return None
+
+
+def routing_config_error():
+    """Reject malformed or unsafe core routing settings before entering the loop."""
+    floats = (SAMPLE_SEC, CPU_THRESHOLD, LEARNING_RATE, ROUTE_THRESHOLD,
+              COOLDOWN_SEC, RECOVERY_CPU_THRESHOLD, RECOVERY_DWELL_SEC,
+              STATS_SAVE_INTERVAL_SEC, HISTORY_INTERVAL_SEC)
+    if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in floats):
+        return "core routing settings must be finite numbers"
+    if not 0 < SAMPLE_SEC <= 60:
+        return "sample interval must be in (0, 60] seconds"
+    if not 0 < CPU_THRESHOLD <= 100 or not 0 <= RECOVERY_CPU_THRESHOLD <= 100:
+        return "CPU thresholds must be in (0, 100] and [0, 100]"
+    if not 0 < LEARNING_RATE <= 1:
+        return "adaptive learning rate must be in (0, 1]"
+    if not 0 <= ROUTE_THRESHOLD <= 1:
+        return "adaptive route threshold must be in [0, 1]"
+    if COOLDOWN_SEC < 0 or RECOVERY_DWELL_SEC < 0:
+        return "cooldown and recovery dwell must be non-negative"
+    if STATS_SAVE_INTERVAL_SEC <= 0 or HISTORY_INTERVAL_SEC <= 0:
+        return "statistics and history intervals must be positive"
+    if not isinstance(SUSTAINED_SAMPLES, int) or SUSTAINED_SAMPLES < 1:
+        return "sustained sample count must be a positive integer"
+    if not isinstance(MIN_SAMPLES, int) or MIN_SAMPLES < 1:
+        return "adaptive minimum sample count must be a positive integer"
+    if not isinstance(RECOVERY_SAMPLES, int) or RECOVERY_SAMPLES < 1:
+        return "recovery sample count must be a positive integer"
     return None
 
 def parse_cpu_pressure(text):
@@ -733,6 +778,10 @@ def load_state():
 
 def main():
     global SHADOW_ENABLED, QUOTA_DYNAMIC, QUOTA_AIMD_SHADOW
+    routing_error = routing_config_error()
+    if routing_error:
+        logging.error("routing disabled due to invalid configuration: %s", routing_error)
+        return
     prev={}
     hot={}
     shadow_policy={}

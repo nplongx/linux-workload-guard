@@ -73,6 +73,7 @@ router.STATE_FILE = original_state_file
 # a quota increase even when scheduler-delay measurement looks low.
 check(router.QUOTA_PRESSURE_HIGH == 0.40, "production PSI high threshold drifted")
 check(router.QUOTA_PRESSURE_LOW == 0.10, "production PSI low threshold drifted")
+check(router.routing_config_error() is None, "checked-in core routing defaults are invalid")
 check(router.dynamic_quota_target(300, 0.40, 0.9, sched_delay_ms=1.0) == 250,
       "PSI at the default threshold did not request a bounded decrease")
 check(router.dynamic_quota_target(300, 0.3999, 0.9, sched_delay_ms=1.0) == 300,
@@ -141,5 +142,32 @@ check(router.dynamic_quota_target("invalid", 0.05, 0.9) == "invalid", "invalid c
 check(router.aimd_quota_target("invalid", 0.05, 0.9) is None, "invalid AIMD quota must not propose actuation")
 check(router.aimd_quota_target(200, -0.1, 0.9, sched_delay_ms=1.0) == 200,
       "negative PSI must not trigger AIMD proposal")
+
+# Core routing settings used to be parsed directly during module import, so a
+# malformed environment value could crash the service before fail-safe checks.
+for env, expected in (
+    ({"WORKLOAD_GUARD_SAMPLE_SEC": "not-a-number"}, "finite"),
+    ({"WORKLOAD_GUARD_SAMPLE_SEC": "nan"}, "finite"),
+    ({"WORKLOAD_GUARD_SAMPLE_SEC": "0"}, "interval"),
+    ({"WORKLOAD_GUARD_SAMPLE_SEC": "120"}, "interval"),
+    ({"WORKLOAD_GUARD_SUSTAINED_SAMPLES": "bad"}, "sustained sample"),
+    ({"WORKLOAD_GUARD_SUSTAINED_SAMPLES": "0"}, "sustained sample"),
+    ({"WORKLOAD_GUARD_RECOVERY_SAMPLES": "-2"}, "recovery sample"),
+    ({"WORKLOAD_GUARD_CPU_THRESHOLD": "inf"}, "finite"),
+    ({"WORKLOAD_GUARD_CPU_THRESHOLD": "101"}, "CPU thresholds"),
+    ({"WORKLOAD_GUARD_COOLDOWN_SEC": "-1"}, "non-negative"),
+    ({"WORKLOAD_GUARD_HISTORY_INTERVAL_SEC": "broken"}, "finite"),
+    ({"WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC": "0"}, "intervals must be positive"),
+):
+    with patch.dict(os.environ, env, clear=False):
+        spec = importlib.util.spec_from_file_location("router_bad_core_env", os.path.join(ROOT, "bin", "workload-router.py"))
+        candidate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(candidate)
+        error = candidate.routing_config_error()
+        check(error is not None and expected in error,
+              f"unsafe core config was not rejected: {env!r}, got {error!r}")
+        with patch.object(candidate, "ensure_workload_units") as ensure:
+            candidate.main()
+            ensure.assert_not_called()
 
 print("controller hardening: ok (PSI, counter continuity, PID identity, quota/recovery sequence, timeout fail-safe)")

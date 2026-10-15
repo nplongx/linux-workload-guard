@@ -8,6 +8,7 @@ This roadmap describes the project's intended path from the current `v0.6.5-rc.1
 - **Hosted CI:** hardening commit `c39272e` passed the Ubuntu 22.04 and 24.04 matrix in [run 38532132779](https://github.com/nplongx/linux-workload-guard/actions/runs/38532132779). Both jobs passed. Ubuntu 22.04 explicitly skipped only the dynamic-quota integration stage because its delegated cgroup did not expose `usage_usec`, `nr_periods`, and `nr_throttled`; Ubuntu 24.04 ran and passed that stage. This is an environment-specific coverage gap, not a claim that the controller path was validated on Ubuntu 22.04.
 - **Scope:** Dynamic quota control is opt-in. AIMD remains a log-only shadow experiment; experimental replay results are not production controller behavior.
 - **Known validation limit:** Live testing has exercised the scheduler-delay path. The production PSI high-pressure threshold has not yet been directly crossed in live decision-making at its default setting; deterministic tests cover the relevant logic.
+- **Latest readiness assessment:** [`release-readiness-2026-10-15.md`](benchmarks/results/release-readiness-2026-10-15.md) records this pass's verification, diagnostic run, and remaining gates. It does not authorize a version or release change.
 
 ### RC1 hardening evidence — 2026-10-14
 
@@ -21,6 +22,8 @@ The current hardening pass closes several code-level failure modes without chang
 - A new isolated integration test exercises burst rejection, two competing CPU-bound workers, dynamic quota increase/decrease, AIMD log-only proposals, idle recovery, and cgroup disappearance/recreation. The current version also records a short synthetic paired baseline/enabled probe with p50/p95/p99 wake-up lateness and work duration, Python-loop throughput, host PSI, router process CPU/RSS/HWM, runqueue-delay delta, quota transitions, and routing/quota/recovery timing.
 - Three repeated runs of the final bounded controller smoke test (raw files plus aggregation in `benchmarks/results/controller-hardening-smoke-2026-10-14.md`) measured median route detection of 1.066 s, first quota increase at 1.353 s, idle-to-quota-decrease/recovery at 2.377 s, router CPU near 1.16% of one logical CPU, and peak RSS near 17.8 MiB (18,224 KiB). The test-only pressure settings deliberately did not exercise the production PSI-high branch.
 - The static quota benchmark cleanup now attempts to restore its initially observed quota instead of unconditionally leaving the heavy slice at `400%`.
+- Core routing environment parsing now represents malformed/non-finite values as invalid and validates sample intervals, thresholds, counts, and dwell values before entering the routing loop. Invalid core routing configuration is logged and routing stays disabled rather than crashing at import or spinning with a zero interval. Deterministic regressions cover malformed, non-finite, zero, negative, and out-of-range examples.
+- Added `benchmarks/soak-monitor.sh`, a monitor-only collector for a separately approved soak window. A two-second smoke verified its output schema and that it leaves the running service unchanged; this is harness verification only, not a soak.
 
 The evidence remains host-limited. Existing repeated latency comparisons are synthetic, single-host measurements. Earlier 2- and 4-worker benchmark trials did not route the workers and are not valid router-on/router-off comparisons. The three 5-second-per-mode integration probes are smoke measurements; they are not stable performance or overhead acceptance evidence. There is no confirmed second-host validation or 24-hour/72-hour soak. Broad routed-workload throughput remains uncharacterized.
 
@@ -84,7 +87,9 @@ The time ranges below are planning estimates from the current RC, not promises. 
 
 **Exit gate:** no release-blocking issue is found; any remaining limitation has a documented mitigation.
 
-**Soak evidence status:** no 24-hour run or 72-hour target run is recorded as of 2026-10-14. Existing load traces are short experiments and cannot be counted toward this gate. The soak report must record its continuous start/end timestamps, host/kernel/cgroup details, router restarts/errors, routed process counts, quota transitions/oscillation, PSI and scheduler-delay telemetry availability, CPU/memory overhead, and recovery events.
+**Soak evidence status:** no 24-hour run or 72-hour target run is recorded as of 2026-10-15. Existing load traces are short experiments and cannot be counted toward this gate. The soak report must record its continuous start/end timestamps, host/kernel/cgroup details, router restarts/errors, routed process counts, quota transitions/oscillation, PSI and scheduler-delay telemetry availability, CPU/memory overhead, and recovery events.
+
+`benchmarks/soak-monitor.sh OUTPUT_DIR [DURATION_SECONDS=86400] [INTERVAL_SECONDS=60]` prepares monitor-only artifacts without generating load or changing the live service. It has been smoke-tested for two seconds only. Before a release soak, select a safe host/window and define the representative workload phases; then analyze its service journal and metrics alongside workload and transition logs. The monitor alone does not satisfy the soak gate.
 
 ### Phase 4 — v1.0.0 release preparation
 

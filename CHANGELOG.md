@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Core routing environment values are now parsed into explicit invalid sentinels and validated before the routing loop. Malformed/non-finite values, invalid sample intervals/counts, and unsafe thresholds no longer crash module import or enter an unsafe loop; invalid core routing configuration logs an error and leaves routing disabled until corrected.
 - Dynamic quota telemetry now rejects malformed, duplicate, negative, missing, reset, or impossible cgroup counters, and skips stale observation windows instead of silently converting counter regressions to zero.
 - Missing, malformed, non-finite, or out-of-range CPU PSI is reported as unavailable; unknown pressure no longer counts as low pressure for quota increases.
 - Process sampling now rejects malformed `/proc/<pid>/stat` data and measures CPU usage over real sample intervals. Recovery does not treat failed process reads, counter regressions, or stale intervals as idle CPU.
@@ -21,6 +22,7 @@
 - Isolated systemd integration coverage for transient-burst rejection, routing two competing workers, dynamic quota increase/decrease, AIMD log-only behavior, and recovery. The test uses temporary slice units and does not change the installed service configuration.
 - `protected-workload-recovery.slice` provides a stable leaf fallback inherited from the protected CPU budget; the installer, uninstaller, and service dependencies now include it.
 - The bounded integration smoke test reports synthetic probe p50/p95/p99, CPU-bound loop throughput, host PSI observations, router process CPU/RSS and scheduler-delay delta, quota transitions, and detection/recovery timings. Single-run smoke metrics are not performance acceptance evidence.
+- Added a monitor-only soak collector for service state/restarts, PSI, quota property, router CPU/RSS, route-state count, and service journal. It does not create load or alter service/configuration; it is tooling, not soak evidence.
 
 ## [0.6.5-rc.1] - 2026-10-09
 

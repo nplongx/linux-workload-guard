@@ -9,7 +9,7 @@ python3 -m py_compile "$ROOT/benchmarks/controller-replay.py"
 python3 -m py_compile "$ROOT/benchmarks/quota-pressure-replay.py"
 python3 -m py_compile "$ROOT/tests/controller-hardening.py"
 python3 "$ROOT/tests/controller-hardening.py"
-sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/recovery-unit.sh"
+sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/recovery-unit.sh" "$ROOT/benchmarks/soak-monitor.sh"
 python3 - "$ROOT/bin/workload-router.py" <<'PY'
 import importlib.util, sys
 from types import SimpleNamespace
