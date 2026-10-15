@@ -102,6 +102,76 @@ UNITS_CREATED=1
 systemctl --user daemon-reload
 systemctl --user start "$PARENT_UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT"
 
+# Exercise the production PSI boundary all the way through the real quota
+# actuator/readback, but only on this test's temporary heavy slice and without
+# generating load. This is deterministic decision/actuation coverage, not live
+# host PSI-threshold acceptance evidence.
+if ! env \
+  WORKLOAD_GUARD_QUOTA_MIN=100 WORKLOAD_GUARD_QUOTA_MAX=400 WORKLOAD_GUARD_QUOTA_STEP=50 \
+  WORKLOAD_GUARD_QUOTA_PRESSURE_LOW=0.10 WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH=0.40 \
+  WORKLOAD_GUARD_QUOTA_INTERVAL_SEC=5 WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC=10 \
+  WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS=5 WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS=20 \
+  python3 - "$ROOT/bin/workload-router.py" "$HEAVY_UNIT" <<'PY'
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("lwg_threshold_actuation", sys.argv[1])
+router = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(router)
+unit = sys.argv[2]
+if router.QUOTA_PRESSURE_HIGH != 0.40:
+    raise SystemExit("production PSI-high threshold is not 0.40")
+original = router.unit_quota(unit)
+if original != 100.0:
+    raise SystemExit(f"unexpected temporary-slice baseline quota: {original!r}")
+base = {"usage_usec": 1_000_000, "nr_periods": 100, "nr_throttled": 10}
+sample = {"usage_usec": 1_500_000, "nr_periods": 105, "nr_throttled": 12}
+
+def decide(current, pressure, demand=0.8, elapsed=5.0, scheduler_ms=0.0):
+    decision, reason = router.quota_decision_from_sample(
+        current, base, sample, elapsed, pressure, scheduler_ms, demand,
+    )
+    if reason != "ok" or decision is None:
+        raise AssertionError(f"unexpected decision failure: {reason}")
+    return decision["target"]
+
+def apply(expected):
+    if not router.set_unit_quota(unit, expected):
+        raise AssertionError(f"temporary-slice quota actuation/readback failed: {expected}")
+    actual = router.unit_quota(unit)
+    if actual != float(expected):
+        raise AssertionError(f"temporary-slice quota mismatch: expected={expected} actual={actual}")
+
+try:
+    apply(300)
+    if decide(300, 0.3999) != 300 or router.unit_quota(unit) != 300.0:
+        raise AssertionError("PSI just below 0.40 must hold the quota")
+    if decide(300, 0.40) != 250:
+        raise AssertionError("PSI exactly at 0.40 must request one bounded decrease")
+    apply(250)
+    if decide(250, 0.4001) != 200:
+        raise AssertionError("PSI above 0.40 must request one bounded decrease")
+    apply(200)
+    if decide(200, None) != 200 or router.unit_quota(unit) != 200.0:
+        raise AssertionError("missing PSI plus low scheduler delay must not authorize a quota change")
+    stale, reason = router.quota_decision_from_sample(
+        200, base, sample, 60.0, 0.40, 0.0, 0.8,
+    )
+    if stale is not None or reason != "stale-or-invalid-sample-window" or router.unit_quota(unit) != 200.0:
+        raise AssertionError("stale telemetry must not authorize quota actuation")
+    if decide(200, 0.05, demand=0.40) != 250:
+        raise AssertionError("low PSI plus valid scheduler signal and meaningful throttled demand should corroborate growth")
+    apply(250)
+    print("production PSI boundary: below/equal/above 0.40; missing/stale hold; bounded quota readback passed in temporary slice")
+finally:
+    if not router.set_unit_quota(unit, original):
+        raise RuntimeError("failed to restore temporary-slice quota after PSI threshold test")
+PY
+then
+  echo 'controller integration: failed (production PSI threshold decision/actuation check)' >&2
+  exit 1
+fi
+
 cat > "$WORKER" <<PY
 import os, time
 phase_file = "$PHASE_FILE"
