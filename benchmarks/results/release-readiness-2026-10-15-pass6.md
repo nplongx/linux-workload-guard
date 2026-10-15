@@ -8,6 +8,8 @@
 
 - Host: Ubuntu 26.04.1 LTS, x86_64, kernel 7.0.0-38-generic, 8 logical CPUs, cgroup v2, systemd 259.5-0ubuntu3.4, Python 3.14.4.
 - Starting repository HEAD before this pass: [38148f5](https://github.com/nplongx/linux-workload-guard/commit/38148f5); main and origin/main were aligned.
+- Pass-6 implementation/evidence commit: [1e03658](https://github.com/nplongx/linux-workload-guard/commit/1e036586adea4069bd5777d2d1e300730dbcd9ef), pushed to `main`.
+- Hosted CI for that commit: [run 38699127061](https://github.com/nplongx/linux-workload-guard/actions/runs/38699127061) completed successfully on Ubuntu 22.04 and 24.04. Both jobs passed their workflow steps; Ubuntu 22.04 explicitly skipped the longer dynamic-quota integration because the delegated test cgroup lacked required counters. Ubuntu 24.04 ran the full controller integration successfully.
 - VERSION remains 0.6.5-rc.1; no v1.0.0 tag exists.
 - Final local runtime check after benchmark and test matrix: user-level workload-router.service active/running, MainPID=358400, NRestarts=0, ExecMainStatus=0; user-level heavy-workload.slice remains at CPUQuotaPerSecUSec=1s (100%). The distinct system-level heavy-workload.slice is inactive and has unlimited quota. The route-state file contains zero records and no temporary lwgb* units/unit files remain.
 - Final sampled host PSI after the final local matrix: some avg10=2.62, avg60=2.58, avg300=2.11; full averages zero. This is below the 40% production threshold and is not live-threshold evidence.
@@ -98,7 +100,7 @@ All commands below completed with exit code zero after the final pass-6 code and
 
 | Gate | Status | Evidence / closure requirement |
 |---|---|---|
-| Controller correctness, bounds, quota readback/retry, stale/missing telemetry | **PASS locally** | Full controller-hardening and temporary-slice integration suite; latest pass-6 hosted CI still pending push. |
+| Controller correctness, bounds, quota readback/retry, stale/missing telemetry | **PASS locally and in hosted CI where supported** | Full controller-hardening and temporary-slice integration suite; both hosted jobs passed. Ubuntu 22.04's longer dynamic-quota integration is explicitly skipped for missing delegated counters. |
 | Deterministic production PSI 0.40 boundary-to-actuation | **PASS deterministic only** | Actual decision function and isolated quota actuator/readback tested below/at/above threshold; not live evidence. |
 | Live production PSI-high 0.40 | **NOT RUN** | Collector smoke saw zero threshold samples. Need a safe natural crossing with correlated controller decision and effective quota before/after. |
 | Representative performance | **FAIL / OPEN** | Synthetic paired run fails p99 and probe-work p95 limits. Need analyze controller policy/measurement noise and rerun only after correction; then validate representative terminal workloads, multiple load shapes, and another host. |
@@ -108,7 +110,7 @@ All commands below completed with exit code zero after the final pass-6 code and
 | Second host | **NOT RUN** | Current host and hosted CI are not independent second-host evidence. Use docs/operator-rollback.md manifest checklist on another machine. |
 | RC3 soak (24h minimum, 72h target) | **NOT RUN** | No long soak started. Require approved workload phases, continuous timestamps/samples/journal, run_status=COMPLETE, and reviewed recovery/oscillation/overhead. |
 | Operator rollback | **PARTIAL** | Mocked install/uninstall and isolated dynamic-quota-disabled rollback pass; controlled operator-level config/upgrade/rollback exercise remains to be run on a representative test host. |
-| Hosted CI for pass-6 commit | **PENDING** | Push the reviewed commits and verify both Ubuntu jobs. A skip remains a skip, not a pass. |
+| Hosted CI for pass-6 implementation commit | **PASS with Ubuntu 22.04 environment SKIP** | [Run 38699127061](https://github.com/nplongx/linux-workload-guard/actions/runs/38699127061): Ubuntu 22.04 and 24.04 jobs passed; 22.04 longer dynamic-quota integration skipped due to missing delegated counters. |
 | v1.0.0 release hygiene | **OPEN** | Do not tag or release until required gates close and a deliberate release review approves the candidate. |
 
 ## Next actions
@@ -118,6 +120,6 @@ All commands below completed with exit code zero after the final pass-6 code and
 3. On a safe observation window, run the passive PSI collector long enough to capture natural host behavior; never manufacture a 40% crossing.
 4. Resolve or explicitly scope the two-worker routing limitation without lowering the production trigger merely to pass a benchmark.
 5. Run dynamic-quota integration on a delegated cgroup exposing all required counters, validate rollback on a separate test host, and complete the 24-hour/72-hour soak.
-6. Verify pass-6 hosted CI after push. Keep the release version unchanged and no v1.0.0 tag until every mandatory gate is closed.
+6. Keep the release version unchanged and no v1.0.0 tag until every mandatory gate is closed. CI is green for the implementation commit, but the environment skip is still an open release gate.
 
 Dynamic quota remains opt-in; AIMD remains log-only. Gradient2, PID, weighted fairness, eBPF, and sched_ext remain research/proposed work.
