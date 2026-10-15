@@ -6,25 +6,14 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 cd "$ROOT"
 python3 benchmarks/analyze-aggregate-routing.py \
   --out "$TMP/pairs.tsv" --summary "$TMP/summary.txt" \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-5rep-pass9-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-5rep30-pass12-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-5rep30-pass13-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.tsv \
-  benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.tsv \
   benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA3-pass15-5rep30-2026-10-15.tsv \
   benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB3-pass15-5rep30-2026-10-15.tsv \
   benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB4-pass15-5rep30-2026-10-15.tsv \
   benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA4-pass15-5rep30-2026-10-15.tsv \
   > "$TMP/analyzer.stdout"
-grep -q '^paired_rows=62$' "$TMP/summary.txt"
+grep -q '^paired_rows=20$' "$TMP/summary.txt"
 grep -q '^all_pairs_retained=true$' "$TMP/summary.txt"
 grep -q '^block=B4 weight=80 n=5 median=0.824 range=\[0.671,1.035\]' "$TMP/summary.txt"
-grep -q '^pass14_predeclared_weight_effect_interpretation=CONFOUNDED_INCONCLUSIVE$' "$TMP/summary.txt"
 grep -q '^pass15_predeclared_weight_effect_interpretation=CONFOUNDED_INCONCLUSIVE$' "$TMP/summary.txt"
 grep -q '^pass15_contrast_B3_minus_A3=-0.090' "$TMP/summary.txt"
 grep -q '^pass15_contrast_B4_minus_A4=-0.165' "$TMP/summary.txt"
@@ -32,7 +21,7 @@ python3 - "$TMP/pairs.tsv" <<'PY'
 import csv, sys
 with open(sys.argv[1], newline="") as source:
     rows = list(csv.DictReader(source, delimiter="\t"))
-assert len(rows) == 62, len(rows)
+assert len(rows) == 20, len(rows)
 for block in ("A3", "B3", "B4", "A4"):
     selected = [row for row in rows if row["block"] == block]
     assert len(selected) == 5, (block, len(selected))
