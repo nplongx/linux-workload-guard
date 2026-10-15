@@ -16,29 +16,32 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
   exit 0
 fi
 
-UNIT="workload-guard-e2e-$$.scope"
-. "$ROOT/tests/recovery-unit.sh"
+TAG="lwgintegration$(id -u)$(date +%s)$$"
+UNIT="$TAG-worker.scope"
+PARENT_UNIT="$TAG.slice"
+RECOVERY_UNIT="$TAG-recovery.slice"
+HEAVY_UNIT="$TAG-heavy.slice"
 PID_FILE="/tmp/linux-workload-guard-e2e.$$.pid"
 ROUTER_PID=''
 WORK_PID=''
 STATE_FILE="/tmp/linux-workload-guard-e2e.$$.routes.tsv"
 PHASE_FILE="/tmp/linux-workload-guard-e2e.$$.phase"
 WORKER="/tmp/linux-workload-guard-e2e.$$.py"
-SERVICE_WAS_ACTIVE=0
-systemctl --user is-active --quiet workload-router.service && SERVICE_WAS_ACTIVE=1 || true
 cleanup() {
-  if [ -n "$ROUTER_PID" ]; then kill "$ROUTER_PID" 2>/dev/null || true; fi
+  if [ -n "$ROUTER_PID" ]; then kill "$ROUTER_PID" 2>/dev/null || true; wait "$ROUTER_PID" 2>/dev/null || true; fi
   if [ -n "$WORK_PID" ]; then kill "$WORK_PID" 2>/dev/null || true; fi
-  systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
-  if [ "$SERVICE_WAS_ACTIVE" -eq 1 ]; then systemctl --user start workload-router.service >/dev/null 2>&1 || true; fi
-  cleanup_test_recovery_unit
+  systemctl --user stop "$UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT" "$PARENT_UNIT" >/dev/null 2>&1 || true
+  systemctl --user reset-failed "$UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT" "$PARENT_UNIT" >/dev/null 2>&1 || true
   rm -f "$PID_FILE" "$STATE_FILE" "$PHASE_FILE" "$WORKER" "$PHASE_FILE.done" "/tmp/linux-workload-guard-e2e.$$.log"
 }
 trap cleanup EXIT INT TERM
 
-setup_test_recovery_unit
-if [ "$SERVICE_WAS_ACTIVE" -eq 1 ]; then systemctl --user stop workload-router.service; fi
-systemctl --user start protected-workload.slice "$TEST_RECOVERY_UNIT" heavy-workload.slice
+systemctl --user start "$PARENT_UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT"
+if ! systemctl --user set-property "$PARENT_UNIT" CPUQuota=150% >/dev/null 2>&1 ||
+   ! systemctl --user set-property "$HEAVY_UNIT" CPUQuota=100% >/dev/null 2>&1; then
+  printf '%s\n' 'integration routing: skipped (test environment rejects isolated CPUQuota changes)'
+  exit 0
+fi
 
 cat > "$WORKER" <<PY
 import os, time
@@ -61,7 +64,7 @@ while True:
 PY
 printf '%s' idle > "$PHASE_FILE"
 rm -f "$PHASE_FILE.done"
-systemd-run --user --scope --slice=protected-workload.slice --unit="$UNIT" python3 "$WORKER" >/dev/null 2>&1 &
+systemd-run --user --scope --slice="$PARENT_UNIT" --unit="$UNIT" python3 "$WORKER" >/dev/null 2>&1 &
 
 for _ in $(seq 1 40); do
   if [ -s "$PID_FILE" ]; then
@@ -79,14 +82,14 @@ env \
   WORKLOAD_GUARD_SAMPLE_SEC=0.25 \
   WORKLOAD_GUARD_SUSTAINED_SAMPLES=3 \
   WORKLOAD_GUARD_CPU_THRESHOLD=10 \
-  WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice \
-  WORKLOAD_GUARD_RECOVERY_UNIT="$TEST_RECOVERY_UNIT" \
-  WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice \
+  WORKLOAD_GUARD_PARENT_UNIT="$PARENT_UNIT" \
+  WORKLOAD_GUARD_RECOVERY_UNIT="$RECOVERY_UNIT" \
+  WORKLOAD_GUARD_HEAVY_UNIT="$HEAVY_UNIT" \
   WORKLOAD_GUARD_STATE_FILE="$STATE_FILE" \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-e2e.$$.log 2>&1 &
 ROUTER_PID=$!
 
-HEAVY_CGROUP=$(systemctl --user show heavy-workload.slice -p ControlGroup --value)
+HEAVY_CGROUP=$(systemctl --user show "$HEAVY_UNIT" -p ControlGroup --value)
 test -n "$HEAVY_CGROUP"
 HEAVY_CGROUP="/sys/fs/cgroup$HEAVY_CGROUP"
 

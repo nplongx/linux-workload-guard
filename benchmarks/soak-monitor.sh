@@ -11,11 +11,15 @@ DURATION=${2:-86400}
 INTERVAL=${3:-60}
 case "$DURATION:$INTERVAL" in *[!0-9:]*|:*|*:) echo 'duration and interval must be positive integers' >&2; exit 2;; esac
 [ "$DURATION" -ge 1 ] && [ "$INTERVAL" -ge 1 ] || { echo 'duration and interval must be positive integers' >&2; exit 2; }
+START_MONO_NS=$(python3 -c 'import time; print(time.monotonic_ns())' 2>/dev/null || true)
+case "$START_MONO_NS" in ''|*[!0-9]*) echo 'monotonic clock unavailable; cannot certify soak duration' >&2; exit 1;; esac
+INTERVAL_NS=$((INTERVAL*1000000000))
+DURATION_NS=$((DURATION*1000000000))
 OUT_PARENT=$(dirname -- "$OUT")
 mkdir -p "$OUT_PARENT" 2>/dev/null || { echo "cannot create output parent: $OUT_PARENT" >&2; exit 1; }
 mkdir "$OUT" 2>/dev/null || { echo "refusing existing output directory: $OUT" >&2; exit 1; }
-START_EPOCH=$(date +%s)
 START_ISO=$(date --iso-8601=seconds)
+START_EPOCH=$(date +%s)
 ROUTER_PID_START=$(systemctl --user show workload-router.service -p MainPID --value 2>/dev/null || echo 0)
 ROUTER_RESTARTS_START=$(systemctl --user show workload-router.service -p NRestarts --value 2>/dev/null || echo unknown)
 cat > "$OUT/environment.txt" <<EOF
@@ -29,25 +33,53 @@ service_initial_main_pid=$ROUTER_PID_START
 service_initial_restarts=$ROUTER_RESTARTS_START
 duration_seconds=$DURATION
 interval_seconds=$INTERVAL
+timing_clock=monotonic_ns for duration/cadence; wall timestamps checked against monotonic cadence
 mode=monitor-only; no workload generation; no configuration or quota writes
 quota_transition_observation=sampled systemd property; sub-interval transitions require journal review
 EOF
 printf 'timestamp\tactive_state\tsub_state\tmain_pid\trestarts\texit_status\tcpu_psi_some_avg10_pct\tcpu_psi_some_avg60_pct\tcpu_psi_full_avg10_pct\theavy_cpu_quota_property\trouter_cpu_seconds\trouter_rss_kib\trouter_runqueue_delay_delta_ms\tverified_routed_processes\n' > "$OUT/samples.tsv"
 printf 'timestamp\tpriority\tmessage\n' > "$OUT/errors.tsv"
-PREV_PID=''; PREV_STARTTIME=''; PREV_SCHED_NS=''; PREV_SAMPLE_EPOCH=''
+PREV_PID=''; PREV_STARTTIME=''; PREV_SCHED_NS=''; PREV_SAMPLE_EPOCH=''; PREV_SAMPLE_MONO_NS=''
 PREV_SERVICE_PID=$ROUTER_PID_START; PREV_RESTARTS=$ROUTER_RESTARTS_START; PREV_QUOTA_PROPERTY=''; PREV_QUOTA_PCT=''; PREV_QUOTA_DIRECTION=0
 SAMPLE_COUNT=0; MISSED_INTERVALS=0; SAMPLING_FAILURES=0; QUOTA_TRANSITIONS=0; QUOTA_REVERSALS=0; RUN_STATUS=INCOMPLETE
 sample() {
   ts=$(date --iso-8601=seconds)
   sample_epoch=$(date +%s)
+  sample_start_ns=$(python3 -c 'import time; print(time.monotonic_ns())' 2>/dev/null || true)
   if [ -n "$PREV_SAMPLE_EPOCH" ]; then
-    gap=$((sample_epoch-PREV_SAMPLE_EPOCH))
-    if [ "$gap" -gt "$((INTERVAL+1))" ]; then
-      missed=$((gap/INTERVAL-1))
-      printf '%s\tWARN\tsampling gap %ss; estimated missed intervals=%s\n' "$ts" "$gap" "$missed" >> "$OUT/errors.tsv"
-    fi
+    case "$PREV_SAMPLE_MONO_NS:$sample_start_ns" in
+      :*|*:|*[!0-9:]*)
+        printf '%s\tERROR\tmonotonic sample-start continuity unavailable\n' "$ts" >> "$OUT/errors.tsv"
+        SAMPLING_FAILURES=$((SAMPLING_FAILURES+1));;
+      *)
+        if [ "$sample_start_ns" -lt "$PREV_SAMPLE_MONO_NS" ]; then
+          printf '%s\tERROR\tmonotonic sample-start clock regressed\n' "$ts" >> "$OUT/errors.tsv"
+          SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+        else
+          gap_ns=$((sample_start_ns-PREV_SAMPLE_MONO_NS))
+          interval_ns=$((INTERVAL*1000000000))
+          gap_seconds=$(awk -v n="$gap_ns" 'BEGIN {printf "%.3f",n/1e9}')
+          if [ "$gap_ns" -gt "$((interval_ns+1000000000))" ]; then
+            missed=$((gap_ns/interval_ns-1))
+            printf '%s\tWARN\tsampling gap %ss; estimated missed intervals=%s\n' "$ts" "$gap_seconds" "$missed" >> "$OUT/errors.tsv"
+            # The final sample has no following scheduler iteration to account
+            # for its gap, so every overlong gap also invalidates completeness.
+            SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+          fi
+          wall_gap=$((sample_epoch-PREV_SAMPLE_EPOCH))
+          mono_gap_seconds=$(awk -v n="$gap_ns" 'BEGIN {printf "%.0f",n/1e9}')
+          wall_clock_delta=$((wall_gap-mono_gap_seconds))
+          wall_clock_tolerance=$((INTERVAL/10))
+          [ "$wall_clock_tolerance" -ge 2 ] || wall_clock_tolerance=2
+          if [ "$wall_clock_delta" -gt "$wall_clock_tolerance" ] || [ "$wall_clock_delta" -lt "$((-wall_clock_tolerance))" ]; then
+            printf '%s\tERROR\twall-clock sample timestamps discontinuous relative to monotonic cadence (wall_delta=%ss monotonic_delta=%ss)\n' "$ts" "$wall_gap" "$mono_gap_seconds" >> "$OUT/errors.tsv"
+            SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+          fi
+        fi;;
+    esac
   fi
   PREV_SAMPLE_EPOCH=$sample_epoch
+  PREV_SAMPLE_MONO_NS=$sample_start_ns
   props=$(systemctl --user show workload-router.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus --value 2>/dev/null || true)
   active=$(printf '%s\n' "$props" | sed -n '1p'); sub=$(printf '%s\n' "$props" | sed -n '2p')
   pid=$(printf '%s\n' "$props" | sed -n '3p'); restarts=$(printf '%s\n' "$props" | sed -n '4p'); status=$(printf '%s\n' "$props" | sed -n '5p')
@@ -169,11 +201,53 @@ PY
     printf '%s\tWARN\tmissing metric(s): psi_avg10=%s quota=%s router_cpu=%s router_rss_kib=%s scheduler_delta_ms=%s verified_routes=%s\n' "$ts" "$psi10" "$quota" "$cpu" "$rss" "$sched_delta" "$routes" >> "$OUT/errors.tsv"
     SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
   fi
+  sample_end_ns=$(python3 -c 'import time; print(time.monotonic_ns())' 2>/dev/null || true)
+  case "$sample_start_ns:$sample_end_ns" in
+    :*|*:|*[!0-9:]*)
+      printf '%s\tERROR\tmonotonic sample-collection timer unavailable\n' "$(date --iso-8601=seconds)" >> "$OUT/errors.tsv"
+      SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+      ;;
+    *)
+      if [ "$sample_end_ns" -lt "$sample_start_ns" ]; then
+        printf '%s\tERROR\tmonotonic sample-collection timer regressed\n' "$(date --iso-8601=seconds)" >> "$OUT/errors.tsv"
+        SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+      else
+        collection_elapsed_ns=$((sample_end_ns-sample_start_ns))
+        if [ "$collection_elapsed_ns" -gt "$((INTERVAL*1000000000))" ]; then
+          collection_elapsed_ms=$((collection_elapsed_ns/1000000))
+          printf '%s\tWARN\tsample collection took %sms, exceeding interval=%ss\n' "$(date --iso-8601=seconds)" "$collection_elapsed_ms" "$INTERVAL" >> "$OUT/errors.tsv"
+          SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+        fi
+      fi
+      ;;
+  esac
 }
 finish() {
   rc=$?
   END_ISO=$(date --iso-8601=seconds)
   END_EPOCH=$(date +%s)
+  END_MONO_NS=$(python3 -c 'import time; print(time.monotonic_ns())' 2>/dev/null || true)
+  case "$START_MONO_NS:$END_MONO_NS" in
+    :*|*:|*[!0-9:]*)
+      printf '%s\tERROR\tmonotonic duration timer unavailable at finalization\n' "$END_ISO" >> "$OUT/errors.tsv"
+      SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+      MONO_ELAPSED_NS=0;;
+    *)
+      if [ "$END_MONO_NS" -lt "$START_MONO_NS" ]; then
+        printf '%s\tERROR\tmonotonic duration timer regressed at finalization\n' "$END_ISO" >> "$OUT/errors.tsv"
+        SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+        MONO_ELAPSED_NS=0
+      else
+        MONO_ELAPSED_NS=$((END_MONO_NS-START_MONO_NS))
+      fi;;
+  esac
+  MONO_ELAPSED_SECONDS=$((MONO_ELAPSED_NS/1000000000))
+  wall_elapsed=$((END_EPOCH-START_EPOCH))
+  wall_clock_elapsed_delta=$((wall_elapsed-MONO_ELAPSED_SECONDS))
+  if [ "$wall_clock_elapsed_delta" -gt 2 ] || [ "$wall_clock_elapsed_delta" -lt -2 ]; then
+    printf '%s\tERROR\twall-clock total duration diverged from monotonic duration (wall=%ss monotonic=%ss)\n' "$END_ISO" "$wall_elapsed" "$MONO_ELAPSED_SECONDS" >> "$OUT/errors.tsv"
+    SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+  fi
   restarts_end=$(systemctl --user show workload-router.service -p NRestarts --value 2>/dev/null || echo unknown)
   final_pid=$(systemctl --user show workload-router.service -p MainPID --value 2>/dev/null || echo unknown)
   case "$restarts_end:$PREV_RESTARTS" in *[!0-9:]*|:*|*:)
@@ -206,13 +280,13 @@ finish() {
   fi
   {
     printf 'ended_at=%s\n' "$END_ISO"
-    printf 'elapsed_seconds=%s\n' "$((END_EPOCH-START_EPOCH))"
+    printf 'elapsed_seconds=%s\n' "$MONO_ELAPSED_SECONDS"
     printf 'exit_code=%s\n' "$rc"
     printf 'service_final_restarts=%s\n' "$restarts_end"
     printf 'service_final_pid=%s\n' "$final_pid"
     expected_samples=$(((DURATION+INTERVAL-1)/INTERVAL+1))
     coverage=$(awk -v got="$SAMPLE_COUNT" -v want="$expected_samples" 'BEGIN {if(want>0) printf "%.4f",got/want; else print "n/a"}')
-    if [ "$RUN_STATUS" = COMPLETE ] && [ "$SAMPLE_COUNT" -eq "$expected_samples" ] && [ "$MISSED_INTERVALS" -eq 0 ] && [ "$SAMPLING_FAILURES" -eq 0 ] && [ "$((END_EPOCH-START_EPOCH))" -ge "$DURATION" ]; then
+    if [ "$RUN_STATUS" = COMPLETE ] && [ "$SAMPLE_COUNT" -eq "$expected_samples" ] && [ "$MISSED_INTERVALS" -eq 0 ] && [ "$SAMPLING_FAILURES" -eq 0 ] && [ "$MONO_ELAPSED_NS" -ge "$DURATION_NS" ]; then
       final_status=COMPLETE
     else
       final_status=INCOMPLETE
@@ -228,21 +302,34 @@ trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 printf 'soak monitor started: %s; output=%s; duration=%ss; interval=%ss\n' "$START_ISO" "$OUT" "$DURATION" "$INTERVAL"
-NEXT_SAMPLE_EPOCH=$((START_EPOCH+INTERVAL))
+NEXT_SAMPLE_MONO_NS=$((START_MONO_NS+INTERVAL_NS))
 while :; do
-  now=$(date +%s)
-  [ "$((now-START_EPOCH))" -lt "$DURATION" ] || break
+  now_mono_ns=$(python3 -c 'import time; print(time.monotonic_ns())' 2>/dev/null || true)
+  case "$now_mono_ns" in ''|*[!0-9]*)
+    printf '%s\tERROR\tmonotonic scheduling clock unavailable\n' "$(date --iso-8601=seconds)" >> "$OUT/errors.tsv"
+    SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+    break;;
+  esac
+  if [ "$now_mono_ns" -lt "$START_MONO_NS" ]; then
+    printf '%s\tERROR\tmonotonic scheduling clock regressed before the run start\n' "$(date --iso-8601=seconds)" >> "$OUT/errors.tsv"
+    SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+    break
+  fi
+  [ "$((now_mono_ns-START_MONO_NS))" -lt "$DURATION_NS" ] || break
   sample
+  case "$sample_end_ns" in ''|*[!0-9]*) break;; esac
+  now_mono_ns=$sample_end_ns
   MISSED_BEFORE=$MISSED_INTERVALS
-  now=$(date +%s)
-  if [ "$now" -lt "$NEXT_SAMPLE_EPOCH" ]; then
-    sleep "$((NEXT_SAMPLE_EPOCH-now))"
-    NEXT_SAMPLE_EPOCH=$((NEXT_SAMPLE_EPOCH+INTERVAL))
-  elif [ "$now" -le "$((NEXT_SAMPLE_EPOCH+1))" ]; then
-    NEXT_SAMPLE_EPOCH=$((NEXT_SAMPLE_EPOCH+INTERVAL))
+  if [ "$now_mono_ns" -lt "$NEXT_SAMPLE_MONO_NS" ]; then
+    remaining_ns=$((NEXT_SAMPLE_MONO_NS-now_mono_ns))
+    sleep_seconds=$(awk -v n="$remaining_ns" 'BEGIN {printf "%.3f",n/1e9}')
+    sleep "$sleep_seconds"
+    NEXT_SAMPLE_MONO_NS=$((NEXT_SAMPLE_MONO_NS+INTERVAL_NS))
+  elif [ "$now_mono_ns" -le "$((NEXT_SAMPLE_MONO_NS+1000000000))" ]; then
+    NEXT_SAMPLE_MONO_NS=$((NEXT_SAMPLE_MONO_NS+INTERVAL_NS))
   else
-    while [ "$NEXT_SAMPLE_EPOCH" -lt "$((now-1))" ]; do
-      NEXT_SAMPLE_EPOCH=$((NEXT_SAMPLE_EPOCH+INTERVAL))
+    while [ "$NEXT_SAMPLE_MONO_NS" -lt "$((now_mono_ns-1000000000))" ]; do
+      NEXT_SAMPLE_MONO_NS=$((NEXT_SAMPLE_MONO_NS+INTERVAL_NS))
       MISSED_INTERVALS=$((MISSED_INTERVALS+1))
     done
     if [ "$MISSED_INTERVALS" -gt "$MISSED_BEFORE" ]; then

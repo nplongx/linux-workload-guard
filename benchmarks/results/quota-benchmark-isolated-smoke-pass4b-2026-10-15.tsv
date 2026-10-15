@@ -1,0 +1,3 @@
+quota	rep	elapsed_s	cpu_s	throttle_periods	periods	psi_some_avg10	psi_some_avg60
+100	1	0.061	0.039	0	0	0.32	0.99
+200	1	0.056	0.039	0	1	0.26	0.96

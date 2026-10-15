@@ -9,7 +9,7 @@ fi
 
 # Unique test-only slice units isolate dynamic quota writes from the user's real
 # protected/heavy slices and from the installed workload-router.service.
-TAG="lwg-controller-it-$(id -u)-$$"
+TAG="lwgcontrollerit$(id -u)$(date +%s)$$"
 RESULT_DIR=${WORKLOAD_GUARD_CONTROLLER_RESULTS_DIR:-}
 if [ -n "$RESULT_DIR" ]; then
   case "$RESULT_DIR" in /*) ;; *) RESULT_DIR="$ROOT/$RESULT_DIR" ;; esac
@@ -39,6 +39,7 @@ PROBE_SAMPLES="/tmp/$TAG-probe.tsv"
 LOG="/tmp/$TAG.log"
 STATE="/tmp/$TAG.routes.tsv"
 ROUTER_PID=''; WORK_PID_1=''; WORK_PID_2=''; PROBE_PID=''; UNITS_CREATED=0
+TEST_DYNAMIC_QUOTA=true
 
 if [ -e "$PARENT_FILE" ] || [ -e "$RECOVERY_FILE" ] || [ -e "$HEAVY_FILE" ]; then
   printf '%s\n' 'controller integration: skipped (unique test unit path already exists)'
@@ -248,7 +249,7 @@ start_router() {
     WORKLOAD_GUARD_SHADOW_SUSTAINED_SAMPLES=3 \
     WORKLOAD_GUARD_SHADOW_RECOVERY_SAMPLES=2 \
     WORKLOAD_GUARD_SHADOW_RECOVERY_DWELL_SEC=1 \
-    WORKLOAD_GUARD_DYNAMIC_QUOTA=true \
+    WORKLOAD_GUARD_DYNAMIC_QUOTA="$TEST_DYNAMIC_QUOTA" \
     WORKLOAD_GUARD_AIMD_SHADOW=true \
     WORKLOAD_GUARD_QUOTA_INTERVAL_SEC=1 \
     WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC=2 \
@@ -354,6 +355,24 @@ if [ "$INCREASED" -ne 1 ]; then
   exit 1
 fi
 
+# An operator can change the isolated test quota while the controller is live.
+# The controller must adopt the observed value, reset its telemetry baseline,
+# and hold through a fresh dwell window rather than acting on a stale cache.
+systemctl --user set-property "$HEAVY_UNIT" CPUQuota=350% >/dev/null
+EXTERNAL_QUOTA_RECONCILED=0
+for _ in $(seq 1 36); do
+  if grep -q 'quota property changed outside controller; adopting observed quota=350.0%' "$LOG"; then
+    EXTERNAL_QUOTA_RECONCILED=1
+    break
+  fi
+  sleep 0.1
+done
+if [ "$EXTERNAL_QUOTA_RECONCILED" -ne 1 ]; then
+  echo 'controller integration: failed (out-of-band test-slice quota change was not reconciled)' >&2
+  sed -n '1,220p' "$LOG" >&2
+  exit 1
+fi
+
 # Match baseline window length for a useful, intentionally short paired probe.
 while awk -v s="$ENABLED_START_NS" -v n="$(mono_ns)" 'BEGIN { exit !((n-s)/1000000000 < 5.0) }'; do sleep 0.1; done
 set -- $(read_router_stats)
@@ -392,7 +411,7 @@ if [ "$RESTARTED" -ne 1 ] || ! grep -qx "$WORK_PID_1" "$HEAVY_CGROUP/cgroup.proc
   sed -n '1,220p' "$LOG" >&2
   exit 1
 fi
-LIFECYCLE_RESULT='router restart with active routes recovered'
+LIFECYCLE_RESULT='external quota change reconciled; router restart with active routes recovered'
 
 ROUTE_DETECTION_SEC=$(awk -v s="$ENABLED_START_NS" -v e="$ROUTE_DETECTION_END_NS" 'BEGIN { printf "%.3f", (e-s)/1000000000 }')
 QUOTA_CHANGE_SEC=$(awk -v s="$ENABLED_START_NS" -v e="$QUOTA_CHANGE_NS" 'BEGIN { printf "%.3f", (e-s)/1000000000 }')
@@ -498,6 +517,43 @@ else
   systemctl --user start "$HEAVY_UNIT"
   LIFECYCLE_RESULT="$LIFECYCLE_RESULT; cgroup removal/recreation SKIP (systemd retained empty cgroup)"
 fi
+
+# Rollback contract: stop only the isolated test router, pin a known temporary
+# quota, then restart it with dynamic actuation disabled. The controller must
+# leave that operator-selected quota unchanged rather than silently restoring a
+# hard-coded default or continuing to actuate from shadow proposals.
+kill "$ROUTER_PID"
+wait "$ROUTER_PID" 2>/dev/null || true
+ROUTER_PID=''
+systemctl --user set-property "$HEAVY_UNIT" CPUQuota=250% >/dev/null
+ROLLBACK_QUOTA_BEFORE=$(systemctl --user show "$HEAVY_UNIT" -p CPUQuotaPerSecUSec --value)
+ROLLBACK_LOG_LINES=$(wc -l < "$LOG")
+STARTED_COUNT_ROLLBACK_BEFORE=$(grep -c 'started threshold=' "$LOG" || true)
+TEST_DYNAMIC_QUOTA=false
+start_router
+for _ in $(seq 1 30); do
+  if [ "$(grep -c 'started threshold=' "$LOG" || true)" -gt "$STARTED_COUNT_ROLLBACK_BEFORE" ]; then break; fi
+  sleep 0.1
+done
+if [ "$(grep -c 'started threshold=' "$LOG" || true)" -le "$STARTED_COUNT_ROLLBACK_BEFORE" ]; then
+  echo 'controller integration: failed (isolated router did not restart in dynamic-quota-disabled mode)' >&2
+  sed -n '1,300p' "$LOG" >&2
+  exit 1
+fi
+sleep 2.25
+ROLLBACK_QUOTA_AFTER=$(systemctl --user show "$HEAVY_UNIT" -p CPUQuotaPerSecUSec --value)
+if [ "$ROLLBACK_QUOTA_AFTER" != "$ROLLBACK_QUOTA_BEFORE" ]; then
+  echo "controller integration: failed (dynamic-quota rollback changed isolated quota: before=$ROLLBACK_QUOTA_BEFORE after=$ROLLBACK_QUOTA_AFTER)" >&2
+  sed -n '1,300p' "$LOG" >&2
+  exit 1
+fi
+if tail -n +$((ROLLBACK_LOG_LINES + 1)) "$LOG" | grep -q "quota changed unit=$HEAVY_UNIT "; then
+  echo 'controller integration: failed (quota actuation continued after dynamic quota was disabled)' >&2
+  sed -n '1,300p' "$LOG" >&2
+  exit 1
+fi
+LIFECYCLE_RESULT="$LIFECYCLE_RESULT; dynamic quota disabled without changing the recorded temporary quota"
+
 if [ -n "$RESULT_DIR" ]; then
   cp "$PROBE_SAMPLES" "$RESULT_DIR/probe-samples.tsv"
   cp "$PID_FILE_1.throughput.tsv" "$RESULT_DIR/worker-1-throughput.tsv"
@@ -518,6 +574,7 @@ if [ -n "$RESULT_DIR" ]; then
     printf 'test_recovery_unit=%s\n' "$RECOVERY_UNIT"
     printf 'test_heavy_unit=%s\n' "$HEAVY_UNIT"
     printf 'test_dynamic_quota=true\n'
+    printf 'test_dynamic_quota_rollback_phase=false\n'
     printf 'test_aimd_shadow=true\n'
     printf 'test_psi_threshold_override=0.99/1.00 (test-only; production .10/.40 not modified)\n'
     printf 'test_scheduler_delay_threshold_override=99999/100000ms (test-only)\n'

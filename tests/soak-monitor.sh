@@ -15,6 +15,7 @@ case "$*" in
     n=0; [ ! -r "${MOCK_SERVICE_COUNT:-/nonexistent}" ] || n=$(cat "$MOCK_SERVICE_COUNT")
     n=$((n+1)); [ -z "${MOCK_SERVICE_COUNT:-}" ] || printf '%s\n' "$n" > "$MOCK_SERVICE_COUNT"
     [ "${MOCK_SLOW_SAMPLE:-0}" != 1 ] || sleep 2
+    [ "${MOCK_SLOW_FINAL_SAMPLE:-0}" != 1 ] || [ "$n" -lt 2 ] || sleep 2
     if [ "${MOCK_ACTIVE:-active}" = active ]; then
       restarts=0; pid=${MOCK_MAINPID:-0}
       if [ "${MOCK_SERVICE_RESTART:-0}" = 1 ] && [ "$n" -ge 2 ]; then restarts=1; pid=$((pid+1)); fi
@@ -50,6 +51,34 @@ cat > "$MOCKBIN/journalctl" <<'SH'
 printf 'mock journal capture\n'
 SH
 chmod 0755 "$MOCKBIN/systemctl" "$MOCKBIN/journalctl"
+REAL_PYTHON=$(command -v python3)
+REAL_DATE=$(command -v date)
+cat > "$MOCKBIN/python3" <<'SH'
+#!/bin/sh
+case "$*" in
+  *time.monotonic_ns*)
+    if [ "${MOCK_MONOTONIC_FAIL:-0}" = 1 ]; then
+      n=0; [ ! -r "${MOCK_MONOTONIC_COUNT:-/nonexistent}" ] || n=$(cat "$MOCK_MONOTONIC_COUNT")
+      n=$((n+1)); [ -z "${MOCK_MONOTONIC_COUNT:-}" ] || printf '%s\n' "$n" > "$MOCK_MONOTONIC_COUNT"
+      [ "$n" -lt 2 ] || exit 1
+    fi;;
+esac
+exec "$REAL_PYTHON" "$@"
+SH
+chmod 0755 "$MOCKBIN/python3"
+cat > "$MOCKBIN/date" <<'SH'
+#!/bin/sh
+if [ "$*" = '+%s' ] && [ "${MOCK_WALL_CLOCK_JUMP:-0}" = 1 ]; then
+  n=0; [ ! -r "${MOCK_DATE_COUNT:-/nonexistent}" ] || n=$(cat "$MOCK_DATE_COUNT")
+  n=$((n+1)); [ -z "${MOCK_DATE_COUNT:-}" ] || printf '%s\n' "$n" > "$MOCK_DATE_COUNT"
+  if [ "$n" -eq 2 ]; then
+    now=$("$REAL_DATE" +%s); printf '%s\n' "$((now+3600))"; exit 0
+  fi
+fi
+exec "$REAL_DATE" "$@"
+SH
+chmod 0755 "$MOCKBIN/date"
+export REAL_PYTHON REAL_DATE
 export PATH="$MOCKBIN:$PATH" XDG_RUNTIME_DIR="$TMP/runtime" MOCK_MAINPID="$$"
 
 # Argument errors must not create an output directory.
@@ -146,4 +175,26 @@ set -e
 grep -q '^run_status=INCOMPLETE$' "$TMP/interrupted/environment.txt"
 grep -q '^exit_code=143$' "$TMP/interrupted/environment.txt"
 
-printf '%s\n' 'soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overrun, journal failure, missing service, interruption/completeness)'
+# A slow final sample occurs after the scheduling loop. It must still invalidate
+# continuity rather than escape the loop's missed-deadline accounting.
+MOCK_SLOW_FINAL_SAMPLE=1 MOCK_SERVICE_COUNT="$TMP/final-sample-count" \
+  "$MONITOR" "$TMP/slow-final-sample" 1 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/slow-final-sample/environment.txt"
+grep -q 'WARN.*sample collection took' "$TMP/slow-final-sample/errors.tsv"
+awk -F= '$1=="sampling_failures" {if ($2+0<1) exit 1; found=1} END {if(!found) exit 1}' "$TMP/slow-final-sample/environment.txt"
+
+# A missing monotonic clock must be an explicit monitoring failure, not a shell
+# arithmetic error that skips the final summary or falsely passes the run.
+MOCK_MONOTONIC_FAIL=1 MOCK_MONOTONIC_COUNT="$TMP/monotonic-count" \
+  "$MONITOR" "$TMP/no-monotonic-clock" 1 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/no-monotonic-clock/environment.txt"
+grep -q 'ERROR.*monotonic sample-collection timer unavailable' "$TMP/no-monotonic-clock/errors.tsv"
+
+# Wall-clock steps must not control duration/scheduling or silently corrupt
+# sample timestamps while the monotonic interval remains steady.
+MOCK_WALL_CLOCK_JUMP=1 MOCK_DATE_COUNT="$TMP/date-count" \
+  "$MONITOR" "$TMP/wall-clock-jump" 2 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/wall-clock-jump/environment.txt"
+grep -q 'ERROR.*wall-clock sample timestamps discontinuous' "$TMP/wall-clock-jump/errors.tsv"
+
+printf '%s\n' 'soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)'

@@ -1,0 +1,21 @@
+started_at=2026-10-15T11:14:11+07:00
+host=Linux bougainvillean 7.0.0-38-generic #38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+VERSION_ID="26.04"
+logical_cpus=8
+cgroup_mode=v2
+systemd=systemd 259 (259.5-0ubuntu3.4)
+python=Python 3.14.4
+workers=1
+work_iterations_per_worker=5000000
+repetitions=1
+quotas=100,200
+temporary_slice=lwg-quota-bench-1792037651-327603.slice
+temporary_cgroup=/user.slice/user-1000.slice/user@1000.service/lwg.slice/lwg-quota.slice/lwg-quota-bench.slice/lwg-quota-bench-1792037651.slice/lwg-quota-bench-1792037651-327603.slice
+production_service_touched=false
+production_slice_touched=false
+result_path=benchmarks/results/quota-benchmark-isolated-smoke-pass4-2026-10-15.tsv
+command=WORKERS=1 WORK=5000000 REPS=1 QUOTAS=100,200 RESULT=benchmarks/results/quota-benchmark-isolated-smoke-pass4-2026-10-15.tsv ./benchmarks/quota-benchmark.sh
+ended_at=2026-10-15T11:14:15+07:00
+run_status=COMPLETE
+trial_count=2

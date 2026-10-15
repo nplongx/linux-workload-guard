@@ -93,6 +93,10 @@ check(router.aimd_quota_target(200, 0.01, 0.9) == 200,
       "missing scheduler-delay sample must not permit AIMD additive proposal")
 check(router.dynamic_quota_target(200, float("nan"), 0.9, sched_delay_ms=0.0) == 200,
       "non-finite PSI must not permit quota increase")
+check(router.dynamic_quota_target(200, 0.01, 1.1, sched_delay_ms=0.0) == 200,
+      "out-of-range normalized demand must not permit quota increase")
+check(router.aimd_quota_target(200, 0.01, -0.1, sched_delay_ms=0.0) == 200,
+      "negative normalized demand must not permit an AIMD proposal")
 check(router.dynamic_quota_target(200, 0.01, 0.10, throttled_ratio=0.50, sched_delay_ms=0.0) == 150,
       "idle demand should decrease quota even when recent throttling remains high")
 check(router.dynamic_quota_target(200, 0.01, 0.40, throttled_ratio=0.50, sched_delay_ms=0.0) == 250,
@@ -106,6 +110,24 @@ check(router.cgroup_cpu_delta(
     {"usage_usec": 101, "nr_periods": 10, "nr_throttled": 3},
     {"usage_usec": 100, "nr_periods": 10, "nr_throttled": 2},
 ) is None, "impossible throttled-period delta must be rejected")
+check(router.reconcile_quota_observation(200, 200) == (200.0, "ok"),
+      "unchanged systemd quota property should retain the confirmed baseline")
+check(router.reconcile_quota_observation(200, 250) == (250.0, "quota-changed-externally"),
+      "out-of-band quota changes must be detected and re-baselined")
+check(router.reconcile_quota_observation(None, 200) == (200.0, "quota-baseline-reset"),
+      "recovered quota telemetry must establish a new baseline before actuation")
+check(router.reconcile_quota_observation(200, None) == (None, "quota-unavailable"),
+      "missing quota property must invalidate the cached quota")
+check(router.reconcile_quota_observation(200, float("nan")) == (None, "quota-unavailable"),
+      "non-finite observed quota must invalidate the cached quota")
+check(router.reconcile_quota_observation(200, "malformed") == (None, "quota-unavailable"),
+      "malformed observed quota must invalidate the cached quota")
+check(router.dynamic_quota_target(450, 0.40, 0.9, sched_delay_ms=1.0) == 450,
+      "bounded-step helper must not turn an invalid observed quota into a step")
+check(router.dynamic_quota_target(150.5, 0.40, 0.9, sched_delay_ms=1.0) == 150.5,
+      "bounded-step helper must not quantize fractional current quota")
+check(router.aimd_quota_target(450, 0.40, 0.9, sched_delay_ms=1.0) is None,
+      "AIMD helper must refuse an out-of-bounds current quota")
 
 
 # Cross-step quota sequence using the same guarded observation function called
@@ -155,6 +177,12 @@ check(decision is None and reason == "counter-reset-or-anomaly", "impossible thr
 decision, reason = router.quota_decision_from_sample(250, base, high, 5.0, None, 0.0, 0.9)
 check(reason == "ok" and decision["target"] == 250 and decision["aimd_target"] == 250,
       "missing PSI must hold both controller proposals when scheduler delay is low")
+decision, reason = router.quota_decision_from_sample(250, base, high, 5.0, 0.05, 0.0, -0.1)
+check(decision is None and reason == "invalid-route-demand",
+      "negative route demand is inconsistent telemetry and must not be clamped into a valid decision")
+decision, reason = router.quota_decision_from_sample(250, base, high, 5.0, 0.05, 0.0, 1.1)
+check(decision is None and reason == "invalid-route-demand",
+      "route demand above its normalized range must fail closed")
 
 
 # External failures have explicit bounded timeouts and must not be reported as
@@ -163,6 +191,23 @@ with patch.object(router.subprocess, "check_output", side_effect=subprocess.Time
     check(router.user_cgroup("heavy-workload.slice") is None, "systemctl timeout must yield unavailable cgroup")
 with patch.object(router.subprocess, "run", side_effect=subprocess.TimeoutExpired("systemctl", 3)):
     check(not router.set_unit_quota("heavy-workload.slice", 150), "quota timeout must not report success")
+with patch.object(router.subprocess, "run") as run_set, patch.object(router, "unit_quota", return_value=150.0):
+    check(router.set_unit_quota("temporary-test.slice", 150),
+          "quota actuator should report success after exact effective-property readback")
+    run_set.assert_called_once()
+with patch.object(router.subprocess, "run") as run_set, patch.object(router, "unit_quota", return_value=200.0):
+    check(not router.set_unit_quota("temporary-test.slice", 150),
+          "quota actuator must not claim success when effective property differs")
+    run_set.assert_called_once()
+with patch.object(router.subprocess, "run") as run_set, patch.object(router, "unit_quota", return_value=None):
+    check(not router.set_unit_quota("temporary-test.slice", 150),
+          "quota actuator must not claim success when readback is unavailable")
+    run_set.assert_called_once()
+with patch.object(router.subprocess, "run") as run_set:
+    for unsafe_quota in (50, 150.5, 450, float("nan"), float("inf")):
+        check(not router.set_unit_quota("temporary-test.slice", unsafe_quota),
+              f"quota actuator accepted an unsafe target: {unsafe_quota!r}")
+    run_set.assert_not_called()
 check(router.quota_config_error() is None, "checked-in production quota configuration is invalid")
 check(router.dynamic_quota_target("invalid", 0.05, 0.9) == "invalid", "invalid current quota must not actuate")
 check(router.aimd_quota_target("invalid", 0.05, 0.9) is None, "invalid AIMD quota must not propose actuation")

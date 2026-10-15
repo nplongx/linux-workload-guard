@@ -522,6 +522,32 @@ def unit_quota(unit):
         pass
     return None
 
+
+def reconcile_quota_observation(current_quota, observed_quota):
+    """Reconcile cached quota with systemd's live property before deciding.
+
+    A missing property invalidates the cached value. First observations and
+    out-of-band changes establish a new baseline; neither is an actuation
+    opportunity because the preceding counter interval may span a quota change.
+    """
+    if observed_quota is None:
+        return None, "quota-unavailable"
+    try:
+        observed = float(observed_quota)
+    except (TypeError, ValueError):
+        return None, "quota-unavailable"
+    if not math.isfinite(observed) or observed <= 0:
+        return None, "quota-unavailable"
+    if current_quota is None:
+        return observed, "quota-baseline-reset"
+    try:
+        current = float(current_quota)
+    except (TypeError, ValueError):
+        return observed, "quota-baseline-reset"
+    if not math.isfinite(current) or current != observed:
+        return observed, "quota-changed-externally"
+    return observed, "ok"
+
 def schedstat_delay_ms():
     try:
         with open(f"/proc/{os.getpid()}/schedstat") as f:
@@ -535,13 +561,27 @@ def set_unit_quota(unit, quota):
         quota = float(quota)
     except (TypeError, ValueError):
         return False
-    if not math.isfinite(quota) or quota <= 0:
+    if (not math.isfinite(quota) or not quota.is_integer() or
+            not QUOTA_MIN <= quota <= QUOTA_MAX):
         return False
     try:
         subprocess.run(
             ["systemctl", "--user", "set-property", unit, f"CPUQuota={quota:.0f}%"],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3,
         )
+        # A successful systemctl exit confirms the request was accepted, not
+        # that the effective unit property is the exact value the controller
+        # expects. Read back the effective property before updating its cache.
+        # If readback is missing or differs, the caller keeps the last confirmed
+        # value and retries with bounded backoff; the next observation window
+        # will reconcile any quota that did in fact change.
+        observed = unit_quota(unit)
+        if observed is None or not math.isclose(observed, quota, rel_tol=0.0, abs_tol=0.01):
+            logging.warning(
+                "quota actuation readback mismatch unit=%s requested=%.0f%% observed=%s",
+                unit, quota, "unavailable" if observed is None else f"{observed:.2f}%",
+            )
+            return False
         return True
     except (OSError, subprocess.SubprocessError):
         return False
@@ -551,14 +591,15 @@ def dynamic_quota_target(current, pressure, demand, throttled_ratio=0.0, sched_d
         current = float(current)
     except (TypeError, ValueError):
         return current
-    if not math.isfinite(current):
+    if not math.isfinite(current) or not current.is_integer() or not QUOTA_MIN <= current <= QUOTA_MAX:
         return current
     try:
         demand = float(demand)
         throttled_ratio = float(throttled_ratio)
     except (TypeError, ValueError):
         return current
-    if not math.isfinite(demand) or not math.isfinite(throttled_ratio) or not 0.0 <= throttled_ratio <= 1.0:
+    if (not math.isfinite(demand) or not 0.0 <= demand <= 1.0 or
+            not math.isfinite(throttled_ratio) or not 0.0 <= throttled_ratio <= 1.0):
         return current
     if pressure is not None:
         try:
@@ -661,7 +702,7 @@ def quota_decision_from_sample(current_quota, previous_stat, current_stat, elaps
     max_sample_gap = max(QUOTA_INTERVAL_SEC * 3.0, SAMPLE_SEC * 3.0)
     if not math.isfinite(elapsed) or elapsed <= 0 or elapsed > max_sample_gap:
         return None, "stale-or-invalid-sample-window"
-    if not math.isfinite(route_demand):
+    if not math.isfinite(route_demand) or not 0.0 <= route_demand <= 1.0:
         return None, "invalid-route-demand"
     usage_pct = deltas["usage_usec"] / (elapsed * 10000.0)
     cgroup_demand = min(1.0, usage_pct / max(100.0, quota_value))
@@ -692,6 +733,8 @@ def aimd_quota_target(current, pressure, demand, throttled_ratio=0.0, sched_dela
         return None
     if not math.isfinite(current) or not math.isfinite(decrease) or not math.isfinite(additive_increase):
         return None
+    if not current.is_integer() or not QUOTA_MIN <= current <= QUOTA_MAX:
+        return None
     if not 0 < decrease < 1 or additive_increase <= 0:
         return None
     try:
@@ -699,7 +742,8 @@ def aimd_quota_target(current, pressure, demand, throttled_ratio=0.0, sched_dela
         throttled_ratio = float(throttled_ratio)
     except (TypeError, ValueError):
         return current
-    if not math.isfinite(demand) or not math.isfinite(throttled_ratio) or not 0.0 <= throttled_ratio <= 1.0:
+    if (not math.isfinite(demand) or not 0.0 <= demand <= 1.0 or
+            not math.isfinite(throttled_ratio) or not 0.0 <= throttled_ratio <= 1.0):
         return current
     if pressure is not None:
         try:
@@ -820,7 +864,6 @@ def main():
     quota_changes=0
     quota_cgroup_path=None
     quota_telemetry_status=None
-    last_quota_refresh=0.0
     quota_observe = QUOTA_DYNAMIC or QUOTA_AIMD_SHADOW
     history_stat_prev = cgroup_cpu_stat(user_cgroup(HEAVY_UNIT)) if quota_observe else None
     history_stat_time = time.monotonic()
@@ -909,7 +952,6 @@ def main():
             quota_sched_observation = None
             observed_quota = unit_quota(HEAVY_UNIT)
             current_quota = observed_quota
-            last_quota_refresh = quota_stat_time
             quota_path_changed = True
             quota_route_cpu_sum = 0.0
             quota_route_cpu_samples = 0
@@ -1078,13 +1120,26 @@ def main():
                 after_stat = cgroup_cpu_stat(heavy_cgroup)
                 sched_delay_ms = quota_sched_observation
                 now_stat_time = time.monotonic()
-                if current_quota is None and now_mono - last_quota_refresh >= QUOTA_INTERVAL_SEC:
-                    current_quota = unit_quota(HEAVY_UNIT)
-                    last_quota_refresh = now_mono
+                observed_quota = unit_quota(HEAVY_UNIT)
+                reconciled_quota, quota_observation_status = reconcile_quota_observation(
+                    current_quota, observed_quota,
+                )
+                current_quota = reconciled_quota
                 route_cpu_average = quota_route_cpu_sum / quota_route_cpu_samples if quota_route_cpu_samples else 0.0
                 route_demand = min(1.0, max(0.0, route_cpu_average) / max(100.0, current_quota or QUOTA_MIN))
                 quota_stat_elapsed = now_stat_time - quota_stat_time
-                if quota_path_changed:
+                if quota_observation_status != "ok":
+                    decision, decision_status = None, quota_observation_status
+                    # Do not compare a window spanning an unavailable or changed
+                    # quota property. The next complete interval is the first
+                    # eligible controller observation.
+                    quota_stat_prev = after_stat
+                    quota_stat_time = now_stat_time
+                    if quota_observation_status == "quota-changed-externally":
+                        logging.warning("quota property changed outside controller; adopting observed quota=%.1f%% and resetting dwell/baseline", current_quota)
+                        last_quota_change = now_mono
+                        quota_dwell_until = now_mono + QUOTA_MIN_DWELL_SEC
+                elif quota_path_changed:
                     decision, decision_status = None, "cgroup-changed"
                 else:
                     decision, decision_status = quota_decision_from_sample(

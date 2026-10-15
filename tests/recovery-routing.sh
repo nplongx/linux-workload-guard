@@ -5,8 +5,11 @@ if ! command -v systemd-run >/dev/null 2>&1 || ! command -v systemctl >/dev/null
   printf '%s\n' 'recovery routing: skipped (systemd/cgroup v2/user manager unavailable)'
   exit 0
 fi
-UNIT="workload-guard-recovery-$$.scope"
-. "$ROOT/tests/recovery-unit.sh"
+TAG="lwgrecovery$(id -u)$(date +%s)$$"
+UNIT="$TAG-worker.scope"
+PARENT_UNIT="$TAG.slice"
+RECOVERY_UNIT="$TAG-recovery.slice"
+HEAVY_UNIT="$TAG-heavy.slice"
 PID_FILE="/tmp/linux-workload-guard-recovery.$$.pid"
 PHASE_FILE="/tmp/linux-workload-guard-recovery.$$.phase"
 WORKER="/tmp/linux-workload-guard-recovery.$$.py"
@@ -15,15 +18,20 @@ ROUTER_PID=''
 WORK_PID=''
 cleanup() {
   [ -n "$ROUTER_PID" ] && kill "$ROUTER_PID" 2>/dev/null || true
+  [ -n "$ROUTER_PID" ] && wait "$ROUTER_PID" 2>/dev/null || true
   [ -n "$WORK_PID" ] && kill "$WORK_PID" 2>/dev/null || true
-  systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
-  cleanup_test_recovery_unit
+  systemctl --user stop "$UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT" "$PARENT_UNIT" >/dev/null 2>&1 || true
+  systemctl --user reset-failed "$UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT" "$PARENT_UNIT" >/dev/null 2>&1 || true
   rm -f "$PID_FILE" "$PHASE_FILE" "$STATE_FILE" "$WORKER" "/tmp/linux-workload-guard-recovery.$$.log"
 }
 trap cleanup EXIT INT TERM
-setup_test_recovery_unit
 printf '%s' hot > "$PHASE_FILE"
-systemctl --user start protected-workload.slice "$TEST_RECOVERY_UNIT" heavy-workload.slice
+systemctl --user start "$PARENT_UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT"
+if ! systemctl --user set-property "$PARENT_UNIT" CPUQuota=150% >/dev/null 2>&1 ||
+   ! systemctl --user set-property "$HEAVY_UNIT" CPUQuota=100% >/dev/null 2>&1; then
+  printf '%s\n' 'recovery routing: skipped (test environment rejects isolated CPUQuota changes)'
+  exit 0
+fi
 cat > "$WORKER" <<PY
 import time
 phase_file = "$PHASE_FILE"
@@ -37,14 +45,14 @@ while True:
     else:
         time.sleep(0.1)
 PY
-systemd-run --user --scope --slice=protected-workload.slice --unit="$UNIT" python3 "$WORKER" >/dev/null 2>&1 &
+systemd-run --user --scope --slice="$PARENT_UNIT" --unit="$UNIT" python3 "$WORKER" >/dev/null 2>&1 &
 for _ in $(seq 1 40); do [ -s "$PID_FILE" ] && break; sleep 0.1; done
 WORK_PID=$(cat "$PID_FILE")
 SOURCE_CGROUP=$(awk -F: '$1=="0" {print "/sys/fs/cgroup" $3}' "/proc/$WORK_PID/cgroup")
 test -n "$SOURCE_CGROUP"
-PARENT_CGROUP=$(systemctl --user show protected-workload.slice -p ControlGroup --value)
+PARENT_CGROUP=$(systemctl --user show "$PARENT_UNIT" -p ControlGroup --value)
 PARENT_CGROUP="/sys/fs/cgroup$PARENT_CGROUP"
-RECOVERY_CGROUP=$(systemctl --user show "$TEST_RECOVERY_UNIT" -p ControlGroup --value)
+RECOVERY_CGROUP=$(systemctl --user show "$RECOVERY_UNIT" -p ControlGroup --value)
 RECOVERY_CGROUP="/sys/fs/cgroup$RECOVERY_CGROUP"
 env \
   WORKLOAD_GUARD_SAMPLE_SEC=0.25 \
@@ -53,13 +61,13 @@ env \
   WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD=35 \
   WORKLOAD_GUARD_RECOVERY_SAMPLES=2 \
   WORKLOAD_GUARD_RECOVERY_DWELL_SEC=1 \
-  WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice \
-  WORKLOAD_GUARD_RECOVERY_UNIT="$TEST_RECOVERY_UNIT" \
-  WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice \
+  WORKLOAD_GUARD_PARENT_UNIT="$PARENT_UNIT" \
+  WORKLOAD_GUARD_RECOVERY_UNIT="$RECOVERY_UNIT" \
+  WORKLOAD_GUARD_HEAVY_UNIT="$HEAVY_UNIT" \
   WORKLOAD_GUARD_STATE_FILE="$STATE_FILE" \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-recovery.$$.log 2>&1 &
 ROUTER_PID=$!
-HEAVY_CGROUP=$(systemctl --user show heavy-workload.slice -p ControlGroup --value)
+HEAVY_CGROUP=$(systemctl --user show "$HEAVY_UNIT" -p ControlGroup --value)
 HEAVY_CGROUP="/sys/fs/cgroup$HEAVY_CGROUP"
 for _ in $(seq 1 40); do
   if grep -qx "$WORK_PID" "$HEAVY_CGROUP/cgroup.procs" 2>/dev/null; then break; fi
@@ -68,6 +76,7 @@ done
 grep -qx "$WORK_PID" "$HEAVY_CGROUP/cgroup.procs"
 awk -F '\t' -v pid="$WORK_PID" '$1 == pid { found=1 } END { exit !found }' "$STATE_FILE"
 kill "$ROUTER_PID"
+wait "$ROUTER_PID" 2>/dev/null || true
 ROUTER_PID=''
 env \
   WORKLOAD_GUARD_SAMPLE_SEC=0.25 \
@@ -76,9 +85,9 @@ env \
   WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD=35 \
   WORKLOAD_GUARD_RECOVERY_SAMPLES=2 \
   WORKLOAD_GUARD_RECOVERY_DWELL_SEC=1 \
-  WORKLOAD_GUARD_PARENT_UNIT=protected-workload.slice \
-  WORKLOAD_GUARD_RECOVERY_UNIT="$TEST_RECOVERY_UNIT" \
-  WORKLOAD_GUARD_HEAVY_UNIT=heavy-workload.slice \
+  WORKLOAD_GUARD_PARENT_UNIT="$PARENT_UNIT" \
+  WORKLOAD_GUARD_RECOVERY_UNIT="$RECOVERY_UNIT" \
+  WORKLOAD_GUARD_HEAVY_UNIT="$HEAVY_UNIT" \
   WORKLOAD_GUARD_STATE_FILE="$STATE_FILE" \
   python3 "$ROOT/bin/workload-router.py" >/tmp/linux-workload-guard-recovery.$$.log 2>&1 &
 ROUTER_PID=$!
