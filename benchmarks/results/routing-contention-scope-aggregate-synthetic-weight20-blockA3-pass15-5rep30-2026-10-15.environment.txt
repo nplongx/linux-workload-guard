@@ -1,0 +1,54 @@
+started_at=2026-10-15T19:45:34+0700
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+python=3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]
+logical_cpus=8
+git_revision=8b7effc5608f7cbfc29c414a59bf72ba53283c70
+git_dirty=false
+git_diff_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+git_untracked_path_count=0
+cpu_model=Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz
+cpu_pressure_initial_some_avg10=1.49
+loadavg_initial_1m=1.24
+cgroup_controllers=cpuset cpu io memory hugetlb pids rdma misc dmem
+systemd=systemd 259 (259.5-0ubuntu3.4)
+cgroup_mode=v2
+repetitions=5
+workers=2
+duration_seconds=30.0
+workload_kind=synthetic
+parent_unit=lwgb1000x1570242parent.slice
+heavy_unit=lwgb1000x1570242parent-heavy.slice
+recovery_unit=lwgb1000x1570242parent-recovery.slice
+parent_cpu_quota=100%; heavy_child_cpu_quota=100%; both modes share the same 100% parent aggregate ceiling
+aggregate_routing=enabled; policy observes opt-in scope cpu.stat usage_usec; requires >=2 scopes at >=20% CPU each and >=85% aggregate quota for 3 samples; clears <=65% for 3 samples; one scope CPUWeight=20 per sample
+capacity_model=equal aggregate CPU ceiling; heavy slice is nested beneath parent
+dynamic_quota=false; production user service/configuration/quotas untouched
+router_sample_seconds=2
+router_sustained_samples=4
+router_cpu_threshold_percent=70
+percentile_method=nearest-rank ceil(p*n)-1
+worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block); terminal-gzip mode is compressed output bytes/s; terminal-build mode is completed generated C translation-unit compile/link steps per second; terminal-repo-cli mode is completed real-repository Python compileall passes/s with read-only workload-guard status calls every two passes
+steady_state_window=common elapsed time >=12s after probe start in both modes; routing must have converged before window for a valid router trial
+raw_summary_validation=true; evaluator independently recomputes probe summary statistics and per-worker throughput from the raw files
+noise_diagnostics=host CPU PSI some avg10 and /proc/loadavg 1m sampled at each trial start/end; diagnostic only, no post-hoc exclusion
+interval_telemetry=benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA3-pass15-5rep30-2026-10-15.telemetry.tsv; 1s monotonic samples of parent/heavy/recovery/workload/probe cgroup cpu.stat cumulative counters, cpu.weight readback, cgroup+host CPU PSI, loadavg, router CPU ticks/RSS and newly emitted router decisions; derive deltas within each (mode,rep,unit), never across trials
+throughput_raw=benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA3-pass15-5rep30-2026-10-15.throughput.tsv; raw per-worker progress counters from the same steady-window selection used by the summary; synthetic/gzip/build rates are recomputable; OpenSSL stores its final reported CLI rate
+router_overhead=isolated router process CPU percentage of one logical CPU and VmHWM peak RSS
+candidate_acceptance=5 valid pairs; >=500 steady samples per mode; identical >=12s elapsed steady window; route convergence at least 2s before window; median paired wakeup p95/p99 and wall-work p95 ratios <=1.10; throughput ratio >=0.90; router CPU <=5% of one logical CPU; peak RSS <=32768 KiB
+workload_seed=0x123456789abcdef0; probe_period_seconds=0.020; probe_integer_operations=5000
+cpu_governor=performance
+command=REPS=5 DURATION=30.0 WORKERS=2 RESULT=benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA3-pass15-5rep30-2026-10-15.tsv python3 benchmarks/routing-contention.py
+lwgb1000x1570242parent.slice_control_group=/user.slice/user-1000.slice/user@1000.service/lwgb1000x1570242parent.slice
+lwgb1000x1570242parent.slice_cpu_max=100000 100000
+lwgb1000x1570242parent.slice_cpu_weight=1000
+lwgb1000x1570242parent.slice_cpuset_cpus_effective=unavailable
+lwgb1000x1570242parent-heavy.slice_control_group=/user.slice/user-1000.slice/user@1000.service/lwgb1000x1570242parent.slice/lwgb1000x1570242parent-heavy.slice
+lwgb1000x1570242parent-heavy.slice_cpu_max=100000 100000
+lwgb1000x1570242parent-heavy.slice_cpu_weight=100
+lwgb1000x1570242parent-heavy.slice_cpuset_cpus_effective=unavailable
+lwgb1000x1570242parent-recovery.slice_control_group=/user.slice/user-1000.slice/user@1000.service/lwgb1000x1570242parent.slice/lwgb1000x1570242parent-recovery.slice
+lwgb1000x1570242parent-recovery.slice_cpu_max=max 100000
+lwgb1000x1570242parent-recovery.slice_cpu_weight=1000
+lwgb1000x1570242parent-recovery.slice_cpuset_cpus_effective=unavailable
+result_status=COMPLETE
+ended_at=2026-10-15T19:51:29+0700

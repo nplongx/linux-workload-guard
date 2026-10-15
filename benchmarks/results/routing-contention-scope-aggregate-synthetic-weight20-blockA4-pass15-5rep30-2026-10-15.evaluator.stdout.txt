@@ -1,0 +1,67 @@
+acceptance_status=PASS
+result_tsv=benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA4-pass15-5rep30-2026-10-15.tsv
+raw_samples_tsv=benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA4-pass15-5rep30-2026-10-15.samples.tsv
+manifest=benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA4-pass15-5rep30-2026-10-15.environment.txt
+git_revision=8b7effc5608f7cbfc29c414a59bf72ba53283c70
+workload_kind=synthetic
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+duration_seconds=30.0
+workers=2
+minimum_pairs=5
+minimum_steady_samples_per_mode=500
+max_median_paired_latency_ratio=1.10
+min_median_paired_throughput_ratio=0.90
+max_router_cpu_pct_one_core=5.0
+max_router_peak_rss_kib=32768
+scope=synthetic Python integer-mixing workload and periodic probe only; PASS does not close terminal-workload release gate
+variation_method=paired-ratio range/IQR plus deterministic bootstrap percentile interval; resamples=10000; seed=20261015; descriptive only
+PASS: interval telemetry validated (benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA4-pass15-5rep30-2026-10-15.telemetry.tsv, per-scope cpu.stat/weight/PSI/router coverage)
+PASS: throughput summary recomputed from raw per-worker counters (benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA4-pass15-5rep30-2026-10-15.throughput.tsv)
+PASS: repetition 1 routed all 2 intended worker(s)
+PASS: repetition 1 steady samples baseline/router=740/744
+PASS: repetition 1 router CPU=0.298% of one logical CPU
+PASS: repetition 1 router peak RSS=19936 KiB
+PAIR: repetition 1 steady_p95_ms ratio=1.016
+PAIR: repetition 1 steady_p99_ms ratio=1.000
+PAIR: repetition 1 steady_work_p95_ms ratio=1.078
+PAIR: repetition 1 worker_throughput_per_sec ratio=0.988
+PASS: repetition 2 routed all 2 intended worker(s)
+PASS: repetition 2 steady samples baseline/router=688/750
+PASS: repetition 2 router CPU=0.299% of one logical CPU
+PASS: repetition 2 router peak RSS=19992 KiB
+PAIR: repetition 2 steady_p95_ms ratio=1.007
+PAIR: repetition 2 steady_p99_ms ratio=1.001
+PAIR: repetition 2 steady_work_p95_ms ratio=0.697
+PAIR: repetition 2 worker_throughput_per_sec ratio=1.062
+PASS: repetition 3 routed all 2 intended worker(s)
+PASS: repetition 3 steady samples baseline/router=758/728
+PASS: repetition 3 router CPU=0.298% of one logical CPU
+PASS: repetition 3 router peak RSS=20004 KiB
+PAIR: repetition 3 steady_p95_ms ratio=0.996
+PAIR: repetition 3 steady_p99_ms ratio=1.000
+PAIR: repetition 3 steady_work_p95_ms ratio=1.063
+PAIR: repetition 3 worker_throughput_per_sec ratio=0.996
+PASS: repetition 4 routed all 2 intended worker(s)
+PASS: repetition 4 steady samples baseline/router=713/714
+PASS: repetition 4 router CPU=0.298% of one logical CPU
+PASS: repetition 4 router peak RSS=19984 KiB
+PAIR: repetition 4 steady_p95_ms ratio=0.993
+PAIR: repetition 4 steady_p99_ms ratio=0.976
+PAIR: repetition 4 steady_work_p95_ms ratio=1.113
+PAIR: repetition 4 worker_throughput_per_sec ratio=0.848
+PASS: repetition 5 routed all 2 intended worker(s)
+PASS: repetition 5 steady samples baseline/router=764/696
+PASS: repetition 5 router CPU=0.299% of one logical CPU
+PASS: repetition 5 router peak RSS=19992 KiB
+PAIR: repetition 5 steady_p95_ms ratio=0.993
+PAIR: repetition 5 steady_p99_ms ratio=1.007
+PAIR: repetition 5 steady_work_p95_ms ratio=1.446
+PAIR: repetition 5 worker_throughput_per_sec ratio=0.858
+PASS: median paired steady_p95_ms ratio=0.996 limit=≤1.10
+VARIATION: steady_p95_ms ratio min=0.993 q1=0.993 median=0.996 q3=1.007 max=1.016; bootstrap95CI=[0.993,1.016] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired steady_p99_ms ratio=1.000 limit=≤1.10
+VARIATION: steady_p99_ms ratio min=0.976 q1=1.000 median=1.000 q3=1.001 max=1.007; bootstrap95CI=[0.976,1.007] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired steady_work_p95_ms ratio=1.078 limit=≤1.10
+VARIATION: steady_work_p95_ms ratio min=0.697 q1=1.063 median=1.078 q3=1.113 max=1.446; bootstrap95CI=[0.697,1.446] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired worker_throughput_per_sec ratio=0.988 limit=≥0.90
+VARIATION: worker_throughput_per_sec ratio min=0.848 q1=0.858 median=0.988 q3=0.996 max=1.062; bootstrap95CI=[0.848,1.062] (resamples=10000, seed=20261015; descriptive, not a gate override)

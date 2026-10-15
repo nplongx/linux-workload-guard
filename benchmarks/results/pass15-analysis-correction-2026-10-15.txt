@@ -1,0 +1,10 @@
+record_status=SUPERSEDED_INVALID_ANALYSIS_PRESERVED
+initial_analysis=benchmarks/results/routing-contention-aggregate-analysis-pass15-2026-10-15.tsv
+initial_summary=benchmarks/results/routing-contention-aggregate-analysis-pass15-2026-10-15.summary.txt
+corrected_analysis=benchmarks/results/routing-contention-aggregate-analysis-pass15b-2026-10-15.tsv
+corrected_summary=benchmarks/results/routing-contention-aggregate-analysis-pass15b-2026-10-15.summary.txt
+reason=The first pass-15 analyzer output incorrectly compared block-name strings against (block,weight) tuples in the PSI-confounding grouping. As a result it omitted the pass-15 PSI condition summaries and reported H1_NOT_SUPPORTED_BY_PREDECLARED_CRITERIA instead of the protocol-required CONFOUNDED_INCONCLUSIVE.
+action=Preserved the first output without modification; corrected block grouping, reran analysis under new pass15b filenames, verified PSI metrics for all eight ABBA blocks, and added tests/analyze-aggregate-routing.sh to assert both ABBA decisions and all five pairs per new block.
+raw_benchmark_data_changed=false
+acceptance_thresholds_changed=false
+samples_removed=false

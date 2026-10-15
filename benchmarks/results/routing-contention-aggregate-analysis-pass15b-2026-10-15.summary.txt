@@ -1,0 +1,63 @@
+Aggregate routing comparison — descriptive paired evidence
+source_result_files=14
+paired_rows=62
+acceptance_thresholds=unchanged: median throughput ratio >=0.90; median latency/work ratios <=1.10
+all_pairs_retained=true
+interpretation=single-host synthetic workload; not production policy acceptance
+
+Per block:
+block=A weight=20 n=5 median=1.027 range=[0.859,1.228] below_0.90=1 bootstrap95CI_median=[0.859,1.228]
+block=A2 weight=20 n=5 median=1.033 range=[0.774,1.257] below_0.90=1 bootstrap95CI_median=[0.774,1.257]
+block=A3 weight=20 n=5 median=1.073 range=[0.947,1.264] below_0.90=0 bootstrap95CI_median=[0.947,1.264]
+block=A4 weight=20 n=5 median=0.988 range=[0.848,1.062] below_0.90=2 bootstrap95CI_median=[0.848,1.062]
+block=B weight=80 n=5 median=0.897 range=[0.751,1.069] below_0.90=3 bootstrap95CI_median=[0.751,1.069]
+block=B2 weight=80 n=5 median=0.968 range=[0.825,1.208] below_0.90=2 bootstrap95CI_median=[0.825,1.208]
+block=B3 weight=80 n=5 median=0.983 range=[0.779,1.322] below_0.90=1 bootstrap95CI_median=[0.779,1.322]
+block=B4 weight=80 n=5 median=0.824 range=[0.671,1.035] below_0.90=3 bootstrap95CI_median=[0.671,1.035]
+pooled_weight=20 n=30 median=1.012 range=[0.717,1.265] below_0.90=8 bootstrap95CI_median=[0.964,1.059]
+pooled_weight=80 n=25 median=0.929 range=[0.671,1.322] below_0.90=11 bootstrap95CI_median=[0.863,1.035]
+pass14_weight20_median_host_psi_avg10=26.98
+pass14_weight20_mean_sample_percent_host_psi_gt5=100.0
+pass14_weight80_median_host_psi_avg10=26.97
+pass14_weight80_mean_sample_percent_host_psi_gt5=100.0
+pass14_weight20_n=10 median=1.0301292775388664
+pass14_weight80_n=10 median=0.9326166883279481
+pass14_weight80_minus_weight20_median_delta=-0.098 required_for_H1>=0.050
+pass14_contrast_B_minus_A=-0.130 (must be >0 for weight80 to favor throughput)
+pass14_contrast_B2_minus_A2=-0.065 (must be >0 for weight80 to favor throughput)
+pass14_predeclared_weight_effect_interpretation=CONFOUNDED_INCONCLUSIVE
+pass14_both_weight80_blocks_pass=False
+pass14_both_weight80_block_medians_ge_0.90=False
+pass14_no_weight80_pair_below_0.80=False
+pass14_median_delta_ge_0.05=False
+pass14_both_order_balanced_contrasts_favor_weight80=False
+pass15_weight20_median_host_psi_avg10=29.09
+pass15_weight20_mean_sample_percent_host_psi_gt5=100.0
+pass15_weight80_median_host_psi_avg10=28.21
+pass15_weight80_mean_sample_percent_host_psi_gt5=100.0
+pass15_weight20_n=10 median=1.0144135395604958
+pass15_weight80_n=10 median=0.9431747928931331
+pass15_weight80_minus_weight20_median_delta=-0.071 required_for_H1>=0.050
+pass15_contrast_B3_minus_A3=-0.090 (must be >0 for weight80 to favor throughput)
+pass15_contrast_B4_minus_A4=-0.165 (must be >0 for weight80 to favor throughput)
+pass15_predeclared_weight_effect_interpretation=CONFOUNDED_INCONCLUSIVE
+pass15_both_weight80_blocks_pass=False
+pass15_both_weight80_block_medians_ge_0.90=False
+pass15_no_weight80_pair_below_0.80=False
+pass15_median_delta_ge_0.05=False
+pass15_both_order_balanced_contrasts_favor_weight80=False
+
+Telemetry interpretation:
+block=A weight=20 baseline_host_psi_mean_avg10=27.05 router_host_psi_mean_avg10=26.81 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=1.027
+block=B weight=80 baseline_host_psi_mean_avg10=26.23 router_host_psi_mean_avg10=26.60 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=0.904
+block=B2 weight=80 baseline_host_psi_mean_avg10=26.34 router_host_psi_mean_avg10=26.59 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=0.975
+block=A2 weight=20 baseline_host_psi_mean_avg10=26.49 router_host_psi_mean_avg10=26.25 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=1.035
+block=A3 weight=20 baseline_host_psi_mean_avg10=28.26 router_host_psi_mean_avg10=29.75 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=1.065
+block=B3 weight=80 baseline_host_psi_mean_avg10=27.09 router_host_psi_mean_avg10=27.49 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=0.976
+block=B4 weight=80 baseline_host_psi_mean_avg10=28.95 router_host_psi_mean_avg10=29.53 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=0.827
+block=A4 weight=20 baseline_host_psi_mean_avg10=28.21 router_host_psi_mean_avg10=28.71 samples_gt5pct_mean=100.0 cpu_normalized_efficiency_median=0.988
+decision_pass14=CONFOUNDED_INCONCLUSIVE
+decision_pass15=CONFOUNDED_INCONCLUSIVE
+
+Decision rule: weight effect is not causal unless both weight-80 blocks independently pass, pooled weight-80 median exceeds pooled weight-20 median by >=0.05, both ABBA contrasts favor weight 80, no weight-80 pair is <0.80, latency/overhead gates pass, and host PSI confounding rule is satisfied.
+Any host PSI >5% in >20% of samples or condition median imbalance >5 percentage points makes causal interpretation confounded/inconclusive; no sample is discarded.

@@ -1,0 +1,17 @@
+protocol=docs/aggregate-throughput-investigation-pass15.md
+required_consecutive_readings=3
+reading_interval_seconds=5
+max_wait_seconds=600
+threshold_host_psi_some_avg10_percent_le=5
+2026-10-15T19:44:37+07:00	psi_some_avg10=1.11	loadavg_1m=1.58
+2026-10-15T19:44:42+07:00	psi_some_avg10=1.61	loadavg_1m=1.70
+2026-10-15T19:44:47+07:00	psi_some_avg10=1.00	loadavg_1m=1.72
+preflight_status=PASS
+git_revision=8b7effc5608f7cbfc29c414a59bf72ba53283c70
+worktree_clean=true
+router_service_active=active
+production_quota=1s
+2026-10-15T19:45:24+07:00	psi_some_avg10=0.14	loadavg_1m=1.19
+2026-10-15T19:45:29+07:00	psi_some_avg10=1.95	loadavg_1m=1.09
+2026-10-15T19:45:34+07:00	psi_some_avg10=1.49	loadavg_1m=1.24
+block_preflight_status=PASS

@@ -1,0 +1,15 @@
+protocol=docs/aggregate-throughput-investigation-pass15.md
+block=B4
+weight=80
+required_consecutive_readings=3
+reading_interval_seconds=5
+max_wait_seconds=600
+threshold_host_psi_some_avg10_percent_le=5
+2026-10-15T19:57:59+07:00	psi_some_avg10=20.80	loadavg_1m=3.41
+2026-10-15T19:58:04+07:00	psi_some_avg10=13.94	loadavg_1m=3.14
+2026-10-15T19:58:09+07:00	psi_some_avg10=8.01	loadavg_1m=2.97
+2026-10-15T19:58:14+07:00	psi_some_avg10=5.37	loadavg_1m=2.73
+2026-10-15T19:58:19+07:00	psi_some_avg10=3.09	loadavg_1m=2.51
+2026-10-15T19:58:24+07:00	psi_some_avg10=2.07	loadavg_1m=2.47
+2026-10-15T19:58:29+07:00	psi_some_avg10=3.01	loadavg_1m=2.27
+block_preflight_status=PASS

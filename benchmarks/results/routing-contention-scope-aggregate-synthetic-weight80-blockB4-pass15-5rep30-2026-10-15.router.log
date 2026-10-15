@@ -1,0 +1,205 @@
+2026-10-15 19:59:05,808 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 19:59:05,808 WARNING aggregate scope routing OPT-IN enabled: aggregate>=85% for 3 samples, per-scope>=20%, clear<=65%; CPUWeight=80; usage/quota telemetry required
+2026-10-15 19:59:07,910 INFO aggregate scope observation status=aggregate-telemetry-unavailable active=False eligible_scopes=0 observed_scopes=0 demand_cpu=0.0% parent_quota=100.0 high_samples=0 low_samples=0 telemetry_valid=False
+2026-10-15 19:59:07,910 INFO aggregate scope state=aggregate-telemetry-unavailable active=False high_samples=0 low_samples=0 quota=None
+2026-10-15 19:59:07,910 INFO aggregate scope route not applied reason=aggregate-telemetry-unavailable
+2026-10-15 19:59:09,937 INFO aggregate scope observation status=aggregate-saturation-pending active=False eligible_scopes=2 observed_scopes=2 demand_cpu=91.0% parent_quota=100.0 high_samples=1 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:13,997 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=94.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:14,080 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog0.scope cpu=47.2% weight=80 status=aggregate-scope-weight inode=526145
+2026-10-15 19:59:16,115 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.4% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:16,202 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog1.scope cpu=47.0% weight=80 status=aggregate-scope-weight inode=526196
+2026-10-15 19:59:18,253 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.4% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:18,287 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog0.scope cpu=46.2% weight=80 status=scope-already-routed inode=526145
+2026-10-15 19:59:18,287 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:20,336 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.5% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:20,368 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog1.scope cpu=46.7% weight=80 status=scope-already-routed inode=526196
+2026-10-15 19:59:20,368 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:22,430 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:22,465 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog0.scope cpu=46.0% weight=80 status=scope-already-routed inode=526145
+2026-10-15 19:59:22,466 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:24,539 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:24,582 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog1.scope cpu=46.7% weight=80 status=scope-already-routed inode=526196
+2026-10-15 19:59:24,582 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:26,710 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=90.5% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:26,767 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog0.scope cpu=45.3% weight=80 status=scope-already-routed inode=526145
+2026-10-15 19:59:26,767 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:28,810 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:28,840 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog1.scope cpu=46.4% weight=80 status=scope-already-routed inode=526196
+2026-10-15 19:59:28,840 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:30,904 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:30,938 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog0.scope cpu=45.8% weight=80 status=scope-already-routed inode=526145
+2026-10-15 19:59:30,938 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:32,990 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=94.4% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:33,030 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog1.scope cpu=47.4% weight=80 status=scope-already-routed inode=526196
+2026-10-15 19:59:33,030 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:35,076 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:35,113 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog0.scope cpu=46.8% weight=80 status=scope-already-routed inode=526145
+2026-10-15 19:59:35,113 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:37,172 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.5% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:37,208 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-1-1608465-hog1.scope cpu=46.5% weight=80 status=scope-already-routed inode=526196
+2026-10-15 19:59:37,208 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:37,966 INFO shutdown complete; aggregate scope routes reconciled
+2026-10-15 19:59:41,088 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 19:59:41,088 WARNING aggregate scope routing OPT-IN enabled: aggregate>=85% for 3 samples, per-scope>=20%, clear<=65%; CPUWeight=80; usage/quota telemetry required
+2026-10-15 19:59:43,186 INFO aggregate scope observation status=aggregate-telemetry-unavailable active=False eligible_scopes=0 observed_scopes=0 demand_cpu=0.0% parent_quota=100.0 high_samples=0 low_samples=0 telemetry_valid=False
+2026-10-15 19:59:43,186 INFO aggregate scope state=aggregate-telemetry-unavailable active=False high_samples=0 low_samples=0 quota=None
+2026-10-15 19:59:43,186 INFO aggregate scope route not applied reason=aggregate-telemetry-unavailable
+2026-10-15 19:59:45,224 INFO aggregate scope observation status=aggregate-saturation-pending active=False eligible_scopes=2 observed_scopes=2 demand_cpu=94.4% parent_quota=100.0 high_samples=1 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:49,292 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=94.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:49,392 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog0.scope cpu=47.0% weight=80 status=aggregate-scope-weight inode=526604
+2026-10-15 19:59:51,431 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.5% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:51,522 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog1.scope cpu=47.2% weight=80 status=aggregate-scope-weight inode=526655
+2026-10-15 19:59:53,580 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.2% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:53,613 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog0.scope cpu=45.8% weight=80 status=scope-already-routed inode=526604
+2026-10-15 19:59:53,613 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:55,669 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:55,706 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog1.scope cpu=46.8% weight=80 status=scope-already-routed inode=526655
+2026-10-15 19:59:55,706 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:57,811 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.1% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:57,860 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog0.scope cpu=46.1% weight=80 status=scope-already-routed inode=526604
+2026-10-15 19:59:57,860 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 19:59:59,946 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 19:59:59,992 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog1.scope cpu=46.9% weight=80 status=scope-already-routed inode=526655
+2026-10-15 19:59:59,992 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:00:02,037 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=94.2% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:00:02,077 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog0.scope cpu=47.4% weight=80 status=scope-already-routed inode=526604
+2026-10-15 20:00:02,077 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:00:04,128 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:00:04,159 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog1.scope cpu=45.8% weight=80 status=scope-already-routed inode=526655
+2026-10-15 20:00:04,159 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:00:06,208 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.1% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:00:06,237 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog0.scope cpu=46.5% weight=80 status=scope-already-routed inode=526604
+2026-10-15 20:00:06,237 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:00:08,289 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.8% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:00:08,322 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog1.scope cpu=46.7% weight=80 status=scope-already-routed inode=526655
+2026-10-15 20:00:08,322 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:00:10,364 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=94.1% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:00:10,401 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog0.scope cpu=46.8% weight=80 status=scope-already-routed inode=526604
+2026-10-15 20:00:10,401 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:00:12,451 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.4% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:00:12,484 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-2-1608465-hog1.scope cpu=46.4% weight=80 status=scope-already-routed inode=526655
+2026-10-15 20:00:12,484 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:00:13,242 INFO shutdown complete; aggregate scope routes reconciled
+2026-10-15 20:01:27,212 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 20:01:27,212 WARNING aggregate scope routing OPT-IN enabled: aggregate>=85% for 3 samples, per-scope>=20%, clear<=65%; CPUWeight=80; usage/quota telemetry required
+2026-10-15 20:01:29,344 INFO aggregate scope observation status=aggregate-telemetry-unavailable active=False eligible_scopes=0 observed_scopes=0 demand_cpu=0.0% parent_quota=100.0 high_samples=0 low_samples=0 telemetry_valid=False
+2026-10-15 20:01:29,345 INFO aggregate scope state=aggregate-telemetry-unavailable active=False high_samples=0 low_samples=0 quota=None
+2026-10-15 20:01:29,345 INFO aggregate scope route not applied reason=aggregate-telemetry-unavailable
+2026-10-15 20:01:31,373 INFO aggregate scope observation status=aggregate-saturation-pending active=False eligible_scopes=2 observed_scopes=2 demand_cpu=90.9% parent_quota=100.0 high_samples=1 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:35,430 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.8% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:35,521 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog0.scope cpu=46.3% weight=80 status=aggregate-scope-weight inode=528272
+2026-10-15 20:01:37,600 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.3% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:37,839 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog1.scope cpu=46.7% weight=80 status=aggregate-scope-weight inode=528323
+2026-10-15 20:01:39,896 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.8% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:39,927 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog0.scope cpu=45.7% weight=80 status=scope-already-routed inode=528272
+2026-10-15 20:01:39,927 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:41,973 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.8% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:42,004 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog1.scope cpu=46.8% weight=80 status=scope-already-routed inode=528323
+2026-10-15 20:01:42,004 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:44,065 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=94.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:44,115 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog0.scope cpu=47.0% weight=80 status=scope-already-routed inode=528272
+2026-10-15 20:01:44,115 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:46,202 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=90.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:46,240 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog1.scope cpu=44.9% weight=80 status=scope-already-routed inode=528323
+2026-10-15 20:01:46,240 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:48,287 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:48,322 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog0.scope cpu=46.4% weight=80 status=scope-already-routed inode=528272
+2026-10-15 20:01:48,322 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:50,421 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:50,492 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog1.scope cpu=46.0% weight=80 status=scope-already-routed inode=528323
+2026-10-15 20:01:50,492 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:52,576 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:52,628 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog0.scope cpu=46.5% weight=80 status=scope-already-routed inode=528272
+2026-10-15 20:01:52,628 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:54,716 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=89.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:54,763 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog1.scope cpu=45.0% weight=80 status=scope-already-routed inode=528323
+2026-10-15 20:01:54,763 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:56,912 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:56,963 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog0.scope cpu=45.9% weight=80 status=scope-already-routed inode=528272
+2026-10-15 20:01:56,964 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:59,052 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.8% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:01:59,104 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-3-1608465-hog1.scope cpu=46.8% weight=80 status=scope-already-routed inode=528323
+2026-10-15 20:01:59,104 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:01:59,363 INFO shutdown complete; aggregate scope routes reconciled
+2026-10-15 20:02:02,577 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 20:02:02,577 WARNING aggregate scope routing OPT-IN enabled: aggregate>=85% for 3 samples, per-scope>=20%, clear<=65%; CPUWeight=80; usage/quota telemetry required
+2026-10-15 20:02:04,795 INFO aggregate scope observation status=aggregate-telemetry-unavailable active=False eligible_scopes=0 observed_scopes=0 demand_cpu=0.0% parent_quota=100.0 high_samples=0 low_samples=0 telemetry_valid=False
+2026-10-15 20:02:04,795 INFO aggregate scope state=aggregate-telemetry-unavailable active=False high_samples=0 low_samples=0 quota=None
+2026-10-15 20:02:04,796 INFO aggregate scope route not applied reason=aggregate-telemetry-unavailable
+2026-10-15 20:02:06,848 INFO aggregate scope observation status=aggregate-saturation-pending active=False eligible_scopes=2 observed_scopes=2 demand_cpu=90.0% parent_quota=100.0 high_samples=1 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:10,952 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.3% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:11,056 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog0.scope cpu=45.4% weight=80 status=aggregate-scope-weight inode=528731
+2026-10-15 20:02:13,114 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:13,230 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog1.scope cpu=45.8% weight=80 status=aggregate-scope-weight inode=528782
+2026-10-15 20:02:15,299 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=90.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:15,340 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog0.scope cpu=45.5% weight=80 status=scope-already-routed inode=528731
+2026-10-15 20:02:15,340 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:17,398 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:17,432 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog1.scope cpu=45.8% weight=80 status=scope-already-routed inode=528782
+2026-10-15 20:02:17,432 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:19,524 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.4% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:19,582 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog0.scope cpu=45.6% weight=80 status=scope-already-routed inode=528731
+2026-10-15 20:02:19,582 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:21,652 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=94.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:21,702 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog1.scope cpu=47.2% weight=80 status=scope-already-routed inode=528782
+2026-10-15 20:02:21,703 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:23,751 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:23,793 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog0.scope cpu=46.3% weight=80 status=scope-already-routed inode=528731
+2026-10-15 20:02:23,793 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:25,941 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:26,023 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog1.scope cpu=45.6% weight=80 status=scope-already-routed inode=528782
+2026-10-15 20:02:26,023 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:28,098 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=90.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:28,171 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog0.scope cpu=45.3% weight=80 status=scope-already-routed inode=528731
+2026-10-15 20:02:28,171 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:30,236 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:30,275 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog1.scope cpu=46.6% weight=80 status=scope-already-routed inode=528782
+2026-10-15 20:02:30,276 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:32,345 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:32,384 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog0.scope cpu=45.9% weight=80 status=scope-already-routed inode=528731
+2026-10-15 20:02:32,385 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:34,471 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:02:34,524 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-4-1608465-hog1.scope cpu=45.7% weight=80 status=scope-already-routed inode=528782
+2026-10-15 20:02:34,525 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:02:34,785 INFO shutdown complete; aggregate scope routes reconciled
+2026-10-15 20:03:48,268 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 20:03:48,268 WARNING aggregate scope routing OPT-IN enabled: aggregate>=85% for 3 samples, per-scope>=20%, clear<=65%; CPUWeight=80; usage/quota telemetry required
+2026-10-15 20:03:50,363 INFO aggregate scope observation status=aggregate-telemetry-unavailable active=False eligible_scopes=0 observed_scopes=0 demand_cpu=0.0% parent_quota=100.0 high_samples=0 low_samples=0 telemetry_valid=False
+2026-10-15 20:03:50,363 INFO aggregate scope state=aggregate-telemetry-unavailable active=False high_samples=0 low_samples=0 quota=None
+2026-10-15 20:03:50,363 INFO aggregate scope route not applied reason=aggregate-telemetry-unavailable
+2026-10-15 20:03:52,394 INFO aggregate scope observation status=aggregate-saturation-pending active=False eligible_scopes=2 observed_scopes=2 demand_cpu=94.2% parent_quota=100.0 high_samples=1 low_samples=0 telemetry_valid=True
+2026-10-15 20:03:56,468 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:03:56,556 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog0.scope cpu=45.6% weight=80 status=aggregate-scope-weight inode=530399
+2026-10-15 20:03:58,597 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.1% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:03:58,709 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog1.scope cpu=46.2% weight=80 status=aggregate-scope-weight inode=530450
+2026-10-15 20:04:00,761 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:00,791 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog0.scope cpu=46.8% weight=80 status=scope-already-routed inode=530399
+2026-10-15 20:04:00,791 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:02,846 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.4% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:02,890 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog1.scope cpu=46.4% weight=80 status=scope-already-routed inode=530450
+2026-10-15 20:04:02,890 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:04,940 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=93.1% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:04,971 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog0.scope cpu=46.3% weight=80 status=scope-already-routed inode=530399
+2026-10-15 20:04:04,971 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:07,029 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:07,063 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog1.scope cpu=45.9% weight=80 status=scope-already-routed inode=530450
+2026-10-15 20:04:07,063 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:09,112 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:09,145 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog0.scope cpu=45.5% weight=80 status=scope-already-routed inode=530399
+2026-10-15 20:04:09,145 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:11,194 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=91.7% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:11,229 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog1.scope cpu=45.5% weight=80 status=scope-already-routed inode=530450
+2026-10-15 20:04:11,229 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:13,326 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=92.3% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:13,367 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog0.scope cpu=46.6% weight=80 status=scope-already-routed inode=530399
+2026-10-15 20:04:13,367 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:15,489 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=90.6% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:15,568 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog1.scope cpu=45.9% weight=80 status=scope-already-routed inode=530450
+2026-10-15 20:04:15,568 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:17,719 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=88.9% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:17,791 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog0.scope cpu=44.7% weight=80 status=scope-already-routed inode=530399
+2026-10-15 20:04:17,791 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:19,935 INFO aggregate scope observation status=aggregate-saturation active=True eligible_scopes=2 observed_scopes=2 demand_cpu=90.0% parent_quota=100.0 high_samples=3 low_samples=0 telemetry_valid=True
+2026-10-15 20:04:20,018 INFO aggregate scope decision=aggregate-saturation unit=lwg-workload-lwg-router-5-1608465-hog1.scope cpu=45.2% weight=80 status=scope-already-routed inode=530450
+2026-10-15 20:04:20,018 INFO aggregate scope route not applied reason=aggregate-saturation
+2026-10-15 20:04:20,780 INFO shutdown complete; aggregate scope routes reconciled

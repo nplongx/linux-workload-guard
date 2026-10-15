@@ -1,0 +1,11 @@
+protocol=docs/aggregate-throughput-investigation-pass15.md
+block=B3
+weight=80
+required_consecutive_readings=3
+reading_interval_seconds=5
+max_wait_seconds=600
+threshold_host_psi_some_avg10_percent_le=5
+2026-10-15T19:51:54+07:00	psi_some_avg10=2.10	loadavg_1m=3.22
+2026-10-15T19:51:59+07:00	psi_some_avg10=1.15	loadavg_1m=2.96
+2026-10-15T19:52:04+07:00	psi_some_avg10=0.77	loadavg_1m=2.72
+block_preflight_status=PASS
