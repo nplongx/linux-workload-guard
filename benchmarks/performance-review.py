@@ -9,6 +9,7 @@ import csv
 import math
 import pathlib
 import random
+import re
 import statistics
 import sys
 
@@ -83,6 +84,221 @@ def acceptance_limits_error(min_pairs=MIN_PAIRS, min_samples=MIN_STEADY_SAMPLES,
 def nearest_rank(values, p):
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, max(0, math.ceil(len(ordered) * p) - 1))]
+
+
+def compare_number(actual, expected, tolerance=0.002):
+    try:
+        actual = float(actual)
+        return math.isfinite(actual) and abs(actual - expected) <= max(tolerance, abs(expected) * 1e-6)
+    except (TypeError, ValueError):
+        return False
+
+
+def validate_summary_from_raw(summary_row, raw_rows):
+    """Recompute every published probe percentile/mean from immutable raw samples."""
+    if not raw_rows:
+        return ["raw sample set is empty"]
+    errors = []
+    wake = [sample[1] for sample in raw_rows]
+    work = [sample[2] for sample in raw_rows]
+    steady = [sample for sample in raw_rows if sample[0] >= 12.0]
+    steady_wake = [sample[1] for sample in steady]
+    steady_work = [sample[2] for sample in steady]
+    expected = {
+        "all_mean_ms": statistics.mean(wake), "all_p50_ms": nearest_rank(wake, .50),
+        "all_p95_ms": nearest_rank(wake, .95), "all_p99_ms": nearest_rank(wake, .99),
+        "all_max_ms": max(wake), "work_p95_ms": nearest_rank(work, .95),
+        "steady_n": float(len(steady)),
+    }
+    if steady_wake:
+        expected.update({
+            "steady_mean_ms": statistics.mean(steady_wake),
+            "steady_p50_ms": nearest_rank(steady_wake, .50),
+            "steady_p95_ms": nearest_rank(steady_wake, .95),
+            "steady_p99_ms": nearest_rank(steady_wake, .99),
+            "steady_max_ms": max(steady_wake),
+            "steady_work_p95_ms": nearest_rank(steady_work, .95),
+        })
+    for field, value in expected.items():
+        tolerance = 0.0 if field == "steady_n" else 0.002
+        if not compare_number(summary_row.get(field), value, tolerance):
+            errors.append(f"{field} summary={summary_row.get(field)!r} raw_recomputed={value:.6f}")
+    return errors
+
+
+def validate_new_evidence(env, manifest, declared_duration, declared_repetitions, expected_workers, findings):
+    """Require interval telemetry and raw progress counters for newly instrumented runs.
+
+    Historical artifacts without these manifest keys remain readable, but are
+    explicitly reported as legacy/uninstrumented rather than silently upgraded.
+    """
+    telemetry_value = env.get("interval_telemetry", "").strip()
+    if telemetry_value:
+        telemetry_name = telemetry_value.split(";", 1)[0].strip()
+        telemetry_path = pathlib.Path(telemetry_name)
+        if not telemetry_path.is_file() and not telemetry_path.is_absolute():
+            telemetry_path = manifest.parent / telemetry_path.name
+        required = {"mode", "rep", "monotonic_s", "elapsed_s", "cgroup_kind", "unit", "cgroup_path",
+                    "cpu_weight", "usage_usec", "nr_periods", "nr_throttled", "throttled_usec",
+                    "host_psi_some_avg10", "loadavg_1m", "router_cpu_ticks", "router_rss_kib",
+                    "router_log_new_lines"}
+        groups = {}
+        errors = []
+        if not telemetry_path.is_file():
+            errors.append(f"interval telemetry file missing: {telemetry_path}")
+        else:
+            try:
+                with telemetry_path.open(newline="") as source:
+                    reader = csv.DictReader(source, delimiter="\t")
+                    if not reader.fieldnames or not required.issubset(reader.fieldnames):
+                        errors.append("interval telemetry schema missing required columns")
+                    else:
+                        seen = set()
+                        for line_no, row in enumerate(reader, 2):
+                            mode, rep = row.get("mode", ""), row.get("rep", "")
+                            if mode not in ("baseline", "router") or not rep.isdigit() or not 1 <= int(rep) <= declared_repetitions:
+                                errors.append(f"telemetry row {line_no} has invalid mode/repetition")
+                                continue
+                            try:
+                                elapsed = float(row["elapsed_s"])
+                                monotonic = float(row["monotonic_s"])
+                                if not math.isfinite(elapsed) or not math.isfinite(monotonic) or elapsed < 0 or elapsed > declared_duration + 1:
+                                    raise ValueError
+                            except (ValueError, TypeError):
+                                errors.append(f"telemetry row {line_no} has invalid time")
+                                continue
+                            kind, unit = row.get("cgroup_kind", ""), row.get("unit", "")
+                            if kind not in ("parent", "heavy", "recovery", "workload", "probe") or not unit:
+                                errors.append(f"telemetry row {line_no} has invalid cgroup identity")
+                                continue
+                            key = (mode, rep, kind, unit, round(elapsed, 3))
+                            if key in seen:
+                                errors.append(f"duplicate telemetry timestamp for {mode}/{rep}/{unit} at {elapsed:.3f}s")
+                                continue
+                            seen.add(key)
+                            for field in ("usage_usec", "nr_periods", "nr_throttled", "throttled_usec"):
+                                if not row.get(field, "").isdigit():
+                                    errors.append(f"telemetry row {line_no} missing real cpu.stat {field}")
+                                    break
+                            if not row.get("cpu_weight", "").isdigit():
+                                errors.append(f"telemetry row {line_no} missing cpu.weight readback")
+                            psi = finite_nonnegative(row.get("host_psi_some_avg10"))
+                            if psi is None:
+                                errors.append(f"telemetry row {line_no} missing host CPU PSI some avg10")
+                            if mode == "router" and (not row.get("router_cpu_ticks", "").isdigit()
+                                                      or not row.get("router_rss_kib", "").isdigit()):
+                                errors.append(f"telemetry row {line_no} missing router overhead sample")
+                            groups.setdefault((mode, rep, kind, unit), []).append((elapsed, row))
+            except (OSError, csv.Error) as exc:
+                errors.append(f"could not read interval telemetry: {exc}")
+        if not errors:
+            for rep in range(1, declared_repetitions + 1):
+                for mode in ("baseline", "router"):
+                    base = (mode, str(rep))
+                    for kind in ("parent", "heavy", "probe"):
+                        candidates = [values for (m, r, k, _), values in groups.items() if (m, r, k) == (*base, kind)]
+                        if not candidates or len(candidates[0]) < 20:
+                            errors.append(f"{mode}/{rep} {kind} telemetry has fewer than 20 intervals")
+                            continue
+                        times = sorted(item[0] for item in candidates[0])
+                        if any(b - a > 2.5 for a, b in zip(times, times[1:])):
+                            errors.append(f"{mode}/{rep} {kind} telemetry has a sampling gap >2.5s")
+                    workloads = [(unit, values) for (m, r, k, unit), values in groups.items()
+                                 if (m, r, k) == (*base, "workload")]
+                    if len(workloads) != expected_workers:
+                        errors.append(f"{mode}/{rep} telemetry workload scope count={len(workloads)}, expected={expected_workers}")
+                    for unit, values in workloads:
+                        if len(values) < 20:
+                            errors.append(f"{mode}/{rep}/{unit} workload telemetry has fewer than 20 intervals")
+                        times = sorted(item[0] for item in values)
+                        if any(b - a > 2.5 for a, b in zip(times, times[1:])):
+                            errors.append(f"{mode}/{rep}/{unit} telemetry has a sampling gap >2.5s")
+                        weights = {int(row["cpu_weight"]) for _, row in values if row.get("cpu_weight", "").isdigit()}
+                        if mode == "router":
+                            match = re.search(r"CPUWeight=(\d+) per sample", env.get("aggregate_routing", ""))
+                            target_weight = int(match.group(1)) if match else 20
+                            if target_weight not in weights:
+                                errors.append(f"{mode}/{rep}/{unit} never read back candidate cpu.weight={target_weight}")
+                        elif weights != {100}:
+                            errors.append(f"{mode}/{rep}/{unit} baseline cpu.weight readback was not stable at 100: {sorted(weights)}")
+                    if mode == "router":
+                        decision_lines = [row.get("router_log_new_lines", "") for (m, r, k, _), values in groups.items()
+                                          if (m, r, k) == (*base, "parent") for _, row in values]
+                        if not any("aggregate scope decision=" in line for line in decision_lines):
+                            errors.append(f"router/{rep} telemetry captured no aggregate routing decision log")
+        if errors:
+            findings.extend("INCOMPLETE: interval telemetry: " + error for error in errors)
+        else:
+            findings.append(f"PASS: interval telemetry validated ({telemetry_path}, per-scope cpu.stat/weight/PSI/router coverage)")
+    else:
+        findings.append("INFO: legacy evidence has no interval telemetry; no per-interval CPU/throttling causal analysis is possible")
+
+    throughput_value = env.get("throughput_raw", "").strip()
+    if throughput_value:
+        throughput_name = throughput_value.split(";", 1)[0].strip()
+        throughput_path = pathlib.Path(throughput_name)
+        if not throughput_path.is_file() and not throughput_path.is_absolute():
+            throughput_path = manifest.parent / throughput_path.name
+        errors = []
+        progress = {}
+        required = {"mode", "rep", "worker", "elapsed_s", "counter", "metric_kind"}
+        if not throughput_path.is_file():
+            errors.append(f"throughput raw file missing: {throughput_path}")
+        else:
+            try:
+                with throughput_path.open(newline="") as source:
+                    reader = csv.DictReader(source, delimiter="\t")
+                    if not reader.fieldnames or not required.issubset(reader.fieldnames):
+                        errors.append("throughput raw schema missing required columns")
+                    else:
+                        for line_no, row in enumerate(reader, 2):
+                            key = (row.get("mode", ""), row.get("rep", ""), row.get("worker", ""))
+                            try:
+                                elapsed, counter = float(row["elapsed_s"]), float(row["counter"])
+                                if (key[0] not in ("baseline", "router") or not key[1].isdigit()
+                                        or not key[2].isdigit() or not math.isfinite(elapsed)
+                                        or not math.isfinite(counter) or elapsed < 0 or elapsed > declared_duration + 1
+                                        or counter < 0):
+                                    raise ValueError
+                            except (TypeError, ValueError):
+                                errors.append(f"throughput raw row {line_no} has invalid data")
+                                continue
+                            progress.setdefault(key, []).append((elapsed, counter, row.get("metric_kind", "")))
+            except (OSError, csv.Error) as exc:
+                errors.append(f"could not read throughput raw: {exc}")
+        if not errors:
+            summary_rows = {}
+            with pathlib.Path(str(manifest).removesuffix(".environment.txt") + ".tsv").open(newline="") as source:
+                for row in csv.DictReader(source, delimiter="\t"):
+                    summary_rows[(row["mode"], row["rep"])] = row
+            for rep in range(1, declared_repetitions + 1):
+                for mode in ("baseline", "router"):
+                    worker_rates = []
+                    for worker in range(1, expected_workers + 1):
+                        values = sorted(progress.get((mode, str(rep), str(worker)), []))
+                        if not values:
+                            errors.append(f"{mode}/{rep}/worker{worker} has no raw throughput samples")
+                            continue
+                        if values[-1][2] == "final_reported_rate":
+                            worker_rates.append(values[-1][1])
+                        else:
+                            values = [item for item in values if item[0] >= 12.0]
+                            if len(values) < 2 or values[-1][0] <= values[0][0] or values[-1][1] < values[0][1]:
+                                errors.append(f"{mode}/{rep}/worker{worker} lacks valid steady-window cumulative counters")
+                                continue
+                            worker_rates.append((values[-1][1] - values[0][1]) / (values[-1][0] - values[0][0]))
+                    summary = summary_rows.get((mode, str(rep)))
+                    if summary and len(worker_rates) == expected_workers:
+                        expected_rate = sum(worker_rates)
+                        if not compare_number(summary.get("worker_throughput_per_sec"), expected_rate,
+                                              max(0.5, abs(expected_rate) * 0.005)):
+                            errors.append(f"{mode}/{rep} summary throughput={summary.get('worker_throughput_per_sec')} raw recomputed={expected_rate:.3f}")
+        if errors:
+            findings.extend("INCOMPLETE: throughput raw: " + error for error in errors)
+        else:
+            findings.append(f"PASS: throughput summary recomputed from raw per-worker counters ({throughput_path})")
+    else:
+        findings.append("INFO: legacy evidence has no raw per-worker throughput counters; throughput summary cannot be independently recomputed")
 
 
 def ratio_variation(values):
@@ -186,6 +402,9 @@ def main():
             expected_workers = None
             malformed = True
             findings.append("INCOMPLETE: manifest has missing/invalid worker count")
+        if expected_workers is not None:
+            validate_new_evidence(env, manifest, declared_duration, declared_repetitions,
+                                  expected_workers, findings)
         if reps and reps != list(range(1, len(reps) + 1)):
             malformed = True
             findings.append("INCOMPLETE: repetition identifiers must be contiguous starting at 1")
@@ -230,6 +449,14 @@ def main():
                     if int(summary_row["samples"]) != len(raw_rows):
                         malformed = True
                         findings.append(f"INCOMPLETE: repetition {rep} {summary_row['mode']} summary/raw sample counts differ")
+                    if raw_rows and env.get("raw_summary_validation", "false").lower() in ("1", "true", "yes", "on"):
+                        raw_errors = validate_summary_from_raw(summary_row, raw_rows)
+                        if raw_errors:
+                            malformed = True
+                            findings.append(
+                                f"INCOMPLETE: repetition {rep} {summary_row['mode']} summary is inconsistent with raw samples: "
+                                + "; ".join(raw_errors)
+                            )
                     for metric in ("all_mean_ms", "all_p50_ms", "all_p95_ms", "all_p99_ms", "all_max_ms",
                                    "work_p95_ms", "steady_mean_ms", "steady_p50_ms", "steady_p95_ms",
                                    "steady_p99_ms", "steady_max_ms", "steady_work_p95_ms"):

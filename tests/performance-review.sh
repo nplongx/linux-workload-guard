@@ -85,6 +85,30 @@ else
 fi
 grep -q '^acceptance_status=INCOMPLETE$' "$TMP/malformed.out"
 
+# New manifests opt in to independent recomputation; summary values that do
+# not match the raw probe samples must never be accepted as complete evidence.
+cp "$pass" "$TMP/raw-summary-mismatch.tsv"
+cp "$TMP/pass.samples.tsv" "$TMP/raw-summary-mismatch.samples.tsv"
+cp "$TMP/pass.environment.txt" "$TMP/raw-summary-mismatch.environment.txt"
+printf 'raw_summary_validation=true\n' >> "$TMP/raw-summary-mismatch.environment.txt"
+if python3 "$REVIEW" "$TMP/raw-summary-mismatch.tsv" > "$TMP/raw-summary-mismatch.out" 2>&1; then
+  echo 'performance reviewer accepted summary values inconsistent with raw samples' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/raw-summary-mismatch.out"
+grep -q 'summary is inconsistent with raw samples' "$TMP/raw-summary-mismatch.out"
+
+# New interval telemetry is fail-closed: a manifest reference to missing
+# cpu.stat/weight/PSI evidence cannot silently retain a PASS verdict.
+cp "$pass" "$TMP/missing-telemetry.tsv"
+cp "$TMP/pass.samples.tsv" "$TMP/missing-telemetry.samples.tsv"
+cp "$TMP/pass.environment.txt" "$TMP/missing-telemetry.environment.txt"
+printf 'interval_telemetry=%s; test fixture\n' "$TMP/missing-telemetry.telemetry.tsv" >> "$TMP/missing-telemetry.environment.txt"
+if python3 "$REVIEW" "$TMP/missing-telemetry.tsv" > "$TMP/missing-telemetry.out" 2>&1; then
+  echo 'performance reviewer accepted missing interval telemetry' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/missing-telemetry.out"
+grep -q 'interval telemetry file missing' "$TMP/missing-telemetry.out"
+
 # Summary data cannot pass when raw samples are missing, malformed, non-finite,
 # duplicated/out of order, or inconsistent with summary counts/steady windows.
 cp "$pass" "$TMP/no-raw.tsv"

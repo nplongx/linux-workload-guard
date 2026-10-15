@@ -14,6 +14,7 @@ import statistics
 import subprocess
 import shutil
 import sys
+import threading
 import tempfile
 import time
 
@@ -34,6 +35,8 @@ ROUTER_PROCESS = None
 ROUTER_LOG_PATH = None
 ROUTER_STATE_PATH = None
 ROUTER_ENV = None
+TELEMETRY_PATH = None
+THROUGHPUT_PATH = None
 CREATED_UNIT_FILES = []
 SCOPE_CGROUP_CACHE = {}
 
@@ -66,6 +69,127 @@ def scope_weight(unit):
         return int((path / "cpu.weight").read_text().strip())
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
+
+def read_cpu_stat(path):
+    """Read real cgroup-v2 cumulative counters; missing keys stay unavailable."""
+    try:
+        values = {}
+        for line in (path / "cpu.stat").read_text().splitlines():
+            fields = line.split()
+            if len(fields) == 2:
+                try:
+                    values[fields[0]] = int(fields[1])
+                except ValueError:
+                    continue
+        return values
+    except OSError:
+        return {}
+
+def read_pressure(path):
+    """Return actual PSI some/full averages and cumulative stall time when available."""
+    values = {}
+    try:
+        lines = (path / "cpu.pressure").read_text().splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        fields = line.split()
+        if not fields or fields[0] not in ("some", "full"):
+            continue
+        prefix = "psi_" + fields[0] + "_"
+        for field in fields[1:]:
+            if "=" not in field:
+                continue
+            key, value = field.split("=", 1)
+            try:
+                values[prefix + key] = float(value) if key.startswith("avg") else int(value)
+            except ValueError:
+                pass
+    return values
+
+def read_host_psi():
+    values = {}
+    try:
+        lines = pathlib.Path("/proc/pressure/cpu").read_text().splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        fields = line.split()
+        if not fields or fields[0] not in ("some", "full"):
+            continue
+        for field in fields[1:]:
+            if "=" not in field:
+                continue
+            key, value = field.split("=", 1)
+            try:
+                values[f"host_psi_{fields[0]}_{key}"] = float(value) if key.startswith("avg") else int(value)
+            except ValueError:
+                pass
+    return values
+
+def telemetry_loop(mode, rep, trial_start, stop_event, units, telemetry_path):
+    """Sample cgroup counters, weights, PSI, router overhead and new decisions on one monotonic timebase."""
+    next_sample = trial_start
+    try:
+        log_offset = ROUTER_LOG_PATH.stat().st_size if ROUTER_LOG_PATH and ROUTER_LOG_PATH.exists() else 0
+    except OSError:
+        log_offset = 0
+    while not stop_event.is_set():
+        now = time.monotonic()
+        # Avoid a final sample racing systemd's removal of the completed probe
+        # scope; the last complete interval is still within one second of end.
+        if now - trial_start >= max(0.0, DURATION - 0.25):
+            break
+        if now < next_sample:
+            stop_event.wait(next_sample - now)
+            continue
+        try:
+            log_bytes = ROUTER_LOG_PATH.read_bytes() if ROUTER_LOG_PATH and ROUTER_LOG_PATH.exists() else b""
+            if len(log_bytes) < log_offset:
+                log_offset = 0
+            new_log = log_bytes[log_offset:].decode("utf-8", errors="replace")
+            log_offset = len(log_bytes)
+        except OSError:
+            new_log = ""
+        host_pressure = read_host_psi()
+        load = read_loadavg()
+        router_ticks, router_rss = router_process_metrics()
+        wall_time = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        with telemetry_path.open("a", newline="") as output:
+            writer = csv.writer(output, delimiter="\t", lineterminator="\n")
+            for kind, unit, path in units:
+                stat = read_cpu_stat(path)
+                if kind in ("workload", "probe") and not stat:
+                    # A vanished scope is a real coverage gap, not a row of
+                    # fabricated zero counters. The evaluator will detect it.
+                    continue
+                pressure = read_pressure(path)
+                try:
+                    weight = (path / "cpu.weight").read_text().strip()
+                except OSError:
+                    weight = ""
+                writer.writerow([
+                    mode, rep, wall_time, f"{now:.6f}", f"{now-trial_start:.6f}", kind, unit,
+                    str(path), weight, stat.get("usage_usec", ""), stat.get("user_usec", ""),
+                    stat.get("system_usec", ""), stat.get("nr_periods", ""),
+                    stat.get("nr_throttled", ""), stat.get("throttled_usec", ""),
+                    pressure.get("psi_some_avg10", ""), pressure.get("psi_some_avg60", ""),
+                    pressure.get("psi_some_avg300", ""), pressure.get("psi_some_total", ""),
+                    pressure.get("psi_full_avg10", ""), pressure.get("psi_full_total", ""),
+                    host_pressure.get("host_psi_some_avg10", ""),
+                    host_pressure.get("host_psi_some_avg60", ""),
+                    host_pressure.get("host_psi_some_avg300", ""),
+                    host_pressure.get("host_psi_some_total", ""),
+                    host_pressure.get("host_psi_full_avg10", ""),
+                    host_pressure.get("host_psi_full_total", ""), load,
+                    "" if router_ticks is None else router_ticks,
+                    "" if router_rss is None else router_rss,
+                    new_log.replace("\r", " ").replace("\n", " | ") if kind == "parent" else "",
+                ])
+            output.flush()
+        next_sample += 1.0
+        if next_sample <= now:
+            next_sample = now + 1.0
 
 def pct(xs, p):
     if not xs: return float("nan")
@@ -166,6 +290,8 @@ def run_trial(mode, rep, directory, hog, probe):
         start_router()
     time.sleep(2)
     pids=[]; scopes=[]; progress_files=[]
+    telemetry_stop = None
+    telemetry_thread = None
     try:
         for i in range(WORKERS):
             pidfile=directory / f"{tag}-hog{i}.pid"
@@ -190,6 +316,21 @@ def run_trial(mode, rep, directory, hog, probe):
         trial_psi_start = read_psi()
         trial_load_start = read_loadavg()
         start=time.monotonic()
+        telemetry_units = [
+            ("parent", PARENT_UNIT, cgroup_path(PARENT_UNIT)),
+            ("heavy", HEAVY_UNIT, cgroup_path(HEAVY_UNIT)),
+            ("recovery", RECOVERY_UNIT, cgroup_path(RECOVERY_UNIT)),
+        ]
+        for scope in scopes:
+            telemetry_units.append(("probe" if "probe" in scope else "workload", scope,
+                                    cgroup_path(PARENT_UNIT) / scope))
+        telemetry_stop = threading.Event()
+        telemetry_thread = threading.Thread(
+            target=telemetry_loop,
+            args=(mode, rep, start, telemetry_stop, telemetry_units, TELEMETRY_PATH),
+            name=f"lwg-telemetry-{mode}-{rep}", daemon=True,
+        )
+        telemetry_thread.start()
         routed_at=None
         peak_workers_in_heavy=0
         peak_workers_routed=0
@@ -206,6 +347,10 @@ def run_trial(mode, rep, directory, hog, probe):
         if pp.poll() is None:
             stop_scope(f"{tag}-probe.scope")
             raise RuntimeError("probe scope timed out")
+        # Stop telemetry while all cgroups still exist so final cumulative
+        # cpu.stat/PSI counters and weight readbacks are not lost to teardown.
+        telemetry_stop.set()
+        telemetry_thread.join(timeout=3)
         for p in scopes:
             if "probe" not in p: stop_scope(p)
         for _,p in pids:
@@ -229,7 +374,7 @@ def run_trial(mode, rep, directory, hog, probe):
         steady_work_ms=[work for _,_,work in steady_rows]
         steady_start = trial_start + 12.0
         worker_rates=[]
-        for progressfile in progress_files:
+        for worker_index, progressfile in enumerate(progress_files):
             samples=[]
             if progressfile.exists():
                 for line in progressfile.read_text().splitlines():
@@ -244,6 +389,11 @@ def run_trial(mode, rep, directory, hog, probe):
                 worker_rates.append(float(samples[-1][1]))
             elif len(samples) >= 2 and samples[-1][0] > samples[0][0]:
                 worker_rates.append((samples[-1][1] - samples[0][1]) / (samples[-1][0] - samples[0][0]))
+            with THROUGHPUT_PATH.open("a", newline="") as output:
+                writer = csv.writer(output, delimiter="\t", lineterminator="\n")
+                for sample_time, counter in samples:
+                    writer.writerow([mode, rep, worker_index + 1, f"{sample_time-trial_start:.6f}",
+                                     counter, "final_reported_rate" if WORKLOAD_KIND == "terminal-openssl" else "cumulative_counter"])
         worker_throughput_per_sec = sum(worker_rates) if len(worker_rates) == WORKERS else float("nan")
         worker_iterations_per_sec = worker_throughput_per_sec if WORKLOAD_KIND == "synthetic" else float("nan")
         router_ticks_end, router_peak_rss_kib = router_process_metrics()
@@ -284,6 +434,10 @@ def run_trial(mode, rep, directory, hog, probe):
                 "loadavg_1m_start":trial_load_start,"loadavg_1m_end":read_loadavg(),
                 "router_enabled_during_trial":int(mode == "router")}
     finally:
+        if telemetry_stop is not None:
+            telemetry_stop.set()
+        if telemetry_thread is not None:
+            telemetry_thread.join(timeout=3)
         for unit in scopes: stop_scope(unit)
         stop_router()
 
@@ -334,7 +488,7 @@ def git_source_state():
         return "unavailable", "unavailable", -1
 
 def main():
-    global ROUTER_LOG_PATH, ROUTER_STATE_PATH, ROUTER_ENV
+    global ROUTER_LOG_PATH, ROUTER_STATE_PATH, ROUTER_ENV, TELEMETRY_PATH, THROUGHPUT_PATH
     global CREATED_UNIT_FILES
     if REPS < 1 or WORKERS < 1 or DURATION < 20:
         raise SystemExit("REPS and WORKERS must be positive; DURATION must be >=20s for comparable steady windows")
@@ -351,7 +505,9 @@ def main():
     sample_path = RESULT.with_suffix(".samples.tsv")
     environment_path = RESULT.with_suffix(".environment.txt")
     ROUTER_LOG_PATH = RESULT.with_suffix(".router.log")
-    output_paths = (RESULT, sample_path, environment_path, ROUTER_LOG_PATH)
+    TELEMETRY_PATH = RESULT.with_suffix(".telemetry.tsv")
+    THROUGHPUT_PATH = RESULT.with_suffix(".throughput.tsv")
+    output_paths = (RESULT, sample_path, environment_path, ROUTER_LOG_PATH, TELEMETRY_PATH, THROUGHPUT_PATH)
     for path in output_paths:
         if path.exists():
             raise SystemExit(f"refusing to overwrite existing benchmark evidence: {path}")
@@ -378,6 +534,20 @@ def main():
             writer=csv.DictWriter(f,fieldnames=fields,delimiter="\t",lineterminator="\n"); writer.writeheader(); f.flush()
         with sample_path.open("x") as f:
             f.write("mode\trep\trelative_s\twakeup_lateness_ms\twork_duration_ms\n")
+        with TELEMETRY_PATH.open("x", newline="") as f:
+            csv.writer(f, delimiter="\t", lineterminator="\n").writerow([
+                "mode", "rep", "wall_time", "monotonic_s", "elapsed_s", "cgroup_kind", "unit",
+                "cgroup_path", "cpu_weight", "usage_usec", "user_usec", "system_usec",
+                "nr_periods", "nr_throttled", "throttled_usec", "psi_some_avg10", "psi_some_avg60",
+                "psi_some_avg300", "psi_some_total", "psi_full_avg10", "psi_full_total",
+                "host_psi_some_avg10", "host_psi_some_avg60", "host_psi_some_avg300",
+                "host_psi_some_total", "host_psi_full_avg10", "host_psi_full_total", "loadavg_1m",
+                "router_cpu_ticks", "router_rss_kib", "router_log_new_lines",
+            ])
+        with THROUGHPUT_PATH.open("x", newline="") as f:
+            csv.writer(f, delimiter="\t", lineterminator="\n").writerow([
+                "mode", "rep", "worker", "elapsed_s", "counter", "metric_kind",
+            ])
         with environment_path.open("x") as f:
             f.write(f"started_at={time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n")
             f.write(f"host={os.uname()}\npython={sys.version.replace(chr(10), ' ')}\nlogical_cpus={os.cpu_count()}\n")
@@ -403,7 +573,10 @@ def main():
             f.write("percentile_method=nearest-rank ceil(p*n)-1\n")
             f.write("worker_throughput=worker_throughput_per_sec; synthetic mode is Python integer-mixing iterations/s; terminal-openssl mode is OpenSSL SHA-256 throughput (kB/s at largest reported block); terminal-gzip mode is compressed output bytes/s; terminal-build mode is completed generated C translation-unit compile/link steps per second\n")
             f.write("steady_state_window=common elapsed time >=12s after probe start in both modes; routing must have converged before window for a valid router trial\n")
+            f.write("raw_summary_validation=true; evaluator independently recomputes probe summary statistics and per-worker throughput from the raw files\n")
             f.write("noise_diagnostics=host CPU PSI some avg10 and /proc/loadavg 1m sampled at each trial start/end; diagnostic only, no post-hoc exclusion\n")
+            f.write(f"interval_telemetry={TELEMETRY_PATH}; 1s monotonic samples of parent/heavy/recovery/workload/probe cgroup cpu.stat cumulative counters, cpu.weight readback, cgroup+host CPU PSI, loadavg, router CPU ticks/RSS and newly emitted router decisions; derive deltas within each (mode,rep,unit), never across trials\n")
+            f.write(f"throughput_raw={THROUGHPUT_PATH}; raw per-worker progress counters from the same steady-window selection used by the summary; synthetic/gzip/build rates are recomputable; OpenSSL stores its final reported CLI rate\n")
             f.write("router_overhead=isolated router process CPU percentage of one logical CPU and VmHWM peak RSS\n")
             f.write("candidate_acceptance=5 valid pairs; >=500 steady samples per mode; identical >=12s elapsed steady window; route convergence at least 2s before window; median paired wakeup p95/p99 and wall-work p95 ratios <=1.10; throughput ratio >=0.90; router CPU <=5% of one logical CPU; peak RSS <=32768 KiB\n")
             f.write("workload_seed=0x123456789abcdef0; probe_period_seconds=0.020; probe_integer_operations=5000\n")

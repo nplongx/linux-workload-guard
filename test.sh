@@ -6,6 +6,7 @@ python3 -m py_compile "$ROOT/bin/workload-profile"
 python3 -m py_compile "$ROOT/benchmarks/routing-contention.py"
 python3 -m py_compile "$ROOT/benchmarks/live-psi-observe.py"
 python3 -m py_compile "$ROOT/benchmarks/performance-review.py"
+python3 -m py_compile "$ROOT/tests/routing-telemetry.py"
 python3 -m py_compile "$ROOT/benchmarks/shadow-policy-replay.py"
 python3 -m py_compile "$ROOT/benchmarks/controller-replay.py"
 python3 -m py_compile "$ROOT/benchmarks/quota-pressure-replay.py"
@@ -28,6 +29,7 @@ fi
 "$ROOT/tests/soak-monitor.sh"
 "$ROOT/tests/live-psi-observe-safety.sh"
 "$ROOT/tests/performance-review.sh"
+python3 "$ROOT/tests/routing-telemetry.py"
 "$ROOT/tests/run-workload-scope.sh"
 python3 - "$ROOT/bin/workload-router.py" <<'PY'
 import importlib.util, sys
