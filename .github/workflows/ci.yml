@@ -17,6 +17,8 @@ jobs:
         run: ./test.sh
       - name: Soak monitor fail-closed acceptance regression
         run: ./tests/soak-monitor.sh
+      - name: RC gate preflight evidence safety (read-only)
+        run: ./tests/rc-gate-preflight-safety.sh
       - name: Python compile checks
         run: python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py
       - name: Strict benchmark telemetry parser regressions
