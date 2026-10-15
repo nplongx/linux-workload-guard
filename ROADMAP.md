@@ -4,6 +4,15 @@ This roadmap describes the project's intended path from the current `v0.6.5-rc.1
 
 ## Current status
 
+### RC validation pass 21 — live PSI evidence integrity and external-gate execution protocol
+
+- Repository re-audit confirmed `HEAD=origin/main=0b62218c2747cf5ef6747935a65572a8bd2886e0`, version `0.6.5-rc.1`, tracked tree clean before this pass, no `v1.0.0` tag, and 254 untracked historical artifact entries. Historical artifacts were not cleaned, overwritten, or staged.
+- Hardened `benchmarks/live-psi-observe.py`: an observation is now `INCOMPLETE` with nonzero exit when critical PSI/service/quota telemetry is unavailable, a sample is malformed, monotonic sample cadence/order has a gap, or the requested duration/sample minimum is not met. Interruption remains exit 130 with an explicit incomplete manifest. `COMPLETE` remains collection integrity only, not PSI gate acceptance.
+- Added regression coverage for unavailable runtime telemetry in `tests/live-psi-observe-safety.sh`.
+- Added [`docs/rc-gate-execution-pass21.md`](docs/rc-gate-execution-pass21.md) with host preflight, strict Ubuntu 22.04 delegated-controller execution, preregistered ABBA/PSI rules, dedicated-host rollback, passive PSI observation, soak execution, evidence capture and release decision procedure.
+- Local full-suite, Python compilation, shell/Bash syntax, systemd unit verification, whitespace checks, and live-PSI collector safety tests all passed (exit status 0) in this pass. New outputs are in [`pass21-validation-2026-10-15-r1`](benchmarks/results/pass21-validation-2026-10-15-r1/) with 10 verified SHA-256 entries. This is local validation, not hosted CI or external runtime evidence. No production quota, policy, controller threshold, service lifecycle or production workload was changed.
+- **All mandatory external gates remain open until fresh qualifying evidence exists:** Ubuntu 22.04 delegated CPU telemetry/quota readback; independent-host ABBA; throughput acceptance at `0.90`; dedicated-host rollback; natural production PSI crossing at `0.40`; continuous RC soak >=24 h (72 h target). Stable release remains **NO-GO**; no `v1.0.0` tag.
+
 - **Current release:** [`v0.6.5-rc.1`](https://github.com/nplongx/linux-workload-guard/releases/tag/v0.6.5-rc.1) (pre-release)
 - **Hosted CI:** Pass 19 [run 38758494375](https://github.com/nplongx/linux-workload-guard/actions/runs/38758494375) passed both Ubuntu 22.04/24.04 jobs at `f957bfb`. The delegated CPU runtime step remains explicitly `SKIP / OPEN` on Ubuntu 22.04 because the delegated test cgroup lacks `nr_periods`/`nr_throttled`; a green matrix is not evidence that a skipped runtime gate passed. Pass 19 adds a read-only gate-preflight evidence tool and CI safety regression; see [`docs/rc-validation-pass19.md`](docs/rc-validation-pass19.md) and [`pass19-validation-2026-10-15-r1`](benchmarks/results/pass19-validation-2026-10-15-r1/).
 - **Scope:** Dynamic quota control is opt-in. AIMD remains a log-only shadow experiment; experimental replay results are not production controller behavior.

@@ -29,6 +29,7 @@ fi
 mkdir "$TMP/mockbin"
 cat > "$TMP/mockbin/systemctl" <<'SH'
 #!/bin/sh
+if [ "${MOCK_UNAVAILABLE:-0}" = 1 ]; then echo UNAVAILABLE; exit 0; fi
 case "$*" in
   *ActiveState*) echo active;;
   *MainPID*) echo 123;;
@@ -55,4 +56,17 @@ grep -q '^collection_status=INCOMPLETE$' "$TMP/interrupted/manifest.txt"
 grep -q '^acceptance_status=NOT_RUN$' "$TMP/interrupted/manifest.txt"
 [ -s "$TMP/interrupted/samples.tsv" ]
 
-printf '%s\n' 'live PSI collector safety: ok (arguments, no-overwrite, passive-only, interrupted run finalized INCOMPLETE)'
+# Unavailable runtime identity/quota must invalidate a nominally completed
+# observation. A zero exit here would let missing telemetry masquerade as a
+# valid collection even when no PSI crossing occurred.
+set +e
+MOCK_UNAVAILABLE=1 PATH="$TMP/mockbin:$PATH" python3 "$COLLECTOR" "$TMP/unavailable" 1 0.2 > "$TMP/unavailable.stdout" 2>&1
+rc=$?
+set -e
+[ "$rc" -eq 1 ] || { echo "collector accepted unavailable runtime telemetry (exit $rc)" >&2; exit 1; }
+grep -q '^collection_status=INCOMPLETE$' "$TMP/unavailable/manifest.txt"
+grep -q '^acceptance_status=NOT_RUN$' "$TMP/unavailable/manifest.txt"
+grep -q '^integrity_error_count=' "$TMP/unavailable/manifest.txt"
+grep -q '^integrity_error=missing critical PSI/service/quota telemetry$' "$TMP/unavailable/manifest.txt"
+
+printf '%s\n' 'live PSI collector safety: ok (arguments, no-overwrite, passive-only, interruption, missing-runtime telemetry fail-closed)'

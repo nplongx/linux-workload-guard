@@ -119,33 +119,60 @@ def main():
     (out / "controller-journal.log").write_text(journal.stdout if journal_ok else "journal capture unavailable\n")
     rows = sample_path.read_text().splitlines()[1:]
     crossings = []
+    sample_times = []
+    integrity_errors = []
     for row in rows:
         columns = row.split("\t")
         try:
+            sample_times.append(float(columns[1]))
+            # Missing PSI or runtime identity is a telemetry gap, not a zero.
+            if (any(not value for value in columns[2:8]) or
+                    any(value == "UNAVAILABLE" for value in columns[8:12]) or
+                    columns[8] != "active"):
+                integrity_errors.append("missing critical PSI/service/quota telemetry")
             if float(columns[2]) >= 40.0:
                 crossings.append((columns[0], columns[2], columns[11]))
         except (ValueError, IndexError):
-            continue
+            integrity_errors.append("malformed sample row or PSI value")
+    # The collector is passive, but it must not certify a trace with missed
+    # sampling deadlines or an observation window shorter than requested.
+    max_gap = max(interval * 2.0, interval + 1.0)
+    for previous, current in zip(sample_times, sample_times[1:]):
+        if current <= previous or current - previous > max_gap:
+            integrity_errors.append("sample cadence gap or monotonic ordering violation")
+            break
+    observed_duration = time.monotonic() - start_mono
+    if not stop_requested["value"] and observed_duration < duration:
+        integrity_errors.append("observation ended before requested duration")
+    minimum_samples = max(1, int(duration / interval))
+    if not stop_requested["value"] and len(rows) < minimum_samples:
+        integrity_errors.append("sample count below duration/interval minimum")
     journal_text = (out / "controller-journal.log").read_text()
     matching_decisions = [line for line in journal_text.splitlines()
                           if "quota changed unit=" in line and "pressure=" in line]
     status = "NOT_RUN"
-    if not stop_requested["value"] and crossings and matching_decisions and journal_ok:
+    collection_complete = not stop_requested["value"] and not integrity_errors and journal_ok
+    if collection_complete and crossings and matching_decisions:
         status = "REVIEW_REQUIRED"
     with (out / "manifest.txt").open("x") as manifest:
         manifest.write(f"started_at={start_wall}\nended_at={end_wall}\nrequested_duration_seconds={duration}\n")
-        manifest.write(f"observed_duration_seconds={time.monotonic()-start_mono:.3f}\nsample_count={len(rows)}\n")
+        manifest.write(f"observed_duration_seconds={observed_duration:.3f}\nsample_count={len(rows)}\n")
         manifest.write(f"service_mainpid_start={start_pid}\nservice_mainpid_end={end_pid}\n")
         manifest.write(f"service_nrestarts_start={start_restarts}\nservice_nrestarts_end={end_restarts}\n")
         manifest.write(f"quota_effective_start={start_quota}\nquota_effective_end={end_quota}\n")
         manifest.write(f"psi_some_avg10_ge_40_percent_samples={len(crossings)}\n")
         manifest.write(f"controller_quota_change_lines={len(matching_decisions)}\njournal_capture={'PASS' if journal_ok else 'FAIL'}\n")
-        manifest.write(f"collection_status={'INCOMPLETE' if stop_requested['value'] else 'COMPLETE'}\nacceptance_status={status}\n")
+        manifest.write(f"collection_status={'COMPLETE' if collection_complete else 'INCOMPLETE'}\nacceptance_status={status}\n")
+        manifest.write(f"integrity_error_count={len(integrity_errors)}\n")
+        for error in sorted(set(integrity_errors)):
+            manifest.write(f"integrity_error={error}\n")
         manifest.write("note=Passive observation only; correlate crossing timestamp, controller decision, and effective quota transition manually. No workload/config/quota changes made.\n")
     print(f"evidence_dir={out}\nsamples={len(rows)}\npsi_high_samples={len(crossings)}\ncontroller_quota_change_lines={len(matching_decisions)}\nacceptance_status={status}")
-    if not journal_ok:
+    if stop_requested["value"]:
+        return 130
+    if not journal_ok or not collection_complete:
         return 1
-    return 130 if stop_requested["value"] else 0
+    return 0
 
 
 if __name__ == "__main__":

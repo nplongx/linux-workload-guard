@@ -1,0 +1,8 @@
+command	exit_status
+full-test-suite	0
+python-compile	0
+shell-syntax	0
+bash-syntax	0
+systemd-verify	0
+diff-check	0
+live-psi-safety	0
