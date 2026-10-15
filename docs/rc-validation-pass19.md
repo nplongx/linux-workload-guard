@@ -5,7 +5,7 @@ Date: 2026-10-15 (UTC+07:00). Version remains `0.6.5-rc.1`.
 ## Baseline audit
 
 - Repository started at `8b870b8d61352e6a8ede166cbc77443f790768ac`, with `origin/main` equal to HEAD and no tracked modifications. There are 136 untracked historical evidence/artifact entries; they were preserved and not included in cleanup or overwritten.
-- Latest hosted CI before this pass was [run 38754112534](https://github.com/nplongx/linux-workload-guard/actions/runs/38754112534), conclusion `success`, commit `8b870b8d61352e6a8ede166cbc77443f790768ac`. Ubuntu 22.04 delegated CPU runtime integration remains `SKIP / OPEN`; the matrix success is not quota actuation proof.
+- Hosted CI [run 38758494375](https://github.com/nplongx/linux-workload-guard/actions/runs/38758494375) passed both Ubuntu 22.04 and Ubuntu 24.04 at `f957bfbe4e234bc6f40295370b312f3c50d5cbb8`; the new preflight safety step passed in both jobs. Ubuntu 22.04 delegated CPU runtime integration remains `SKIP / OPEN`, so the matrix result is compatibility evidence only.
 - The current connected execution environment reports `workload-router.service` **inactive**, `MainPID=0`, `NRestarts=0`, and `heavy-workload.slice` quota property `infinity`. This differs from the Pass 18 host observation. It is recorded as an environment observation only: no service, slice, quota, or production configuration was started or changed. Do not infer production host state from this connected environment.
 - cgroup v2 is present and the current process resides in a user app scope. Root or current-process counters do not prove CPU controller delegation or quota actuation/readback on the actual benchmark test slice.
 
@@ -17,16 +17,16 @@ Date: 2026-10-15 (UTC+07:00). Version remains `0.6.5-rc.1`.
 
 ## Validation and evidence
 
-- The preflight safety regression passed on this environment. Full local validation for the final revision is recorded in the new pass-19 evidence bundle.
+- The full local test suite, Python compilation, shell/Bash syntax, systemd verification, strict telemetry parser, aggregate evidence regression, soak fail-closed regression, preflight safety regression, version smoke and whitespace checks all passed. Command/status/log records and SHA-256 manifest are in [`benchmarks/results/pass19-validation-2026-10-15-r1/`](../benchmarks/results/pass19-validation-2026-10-15-r1/).
 - This preflight is only a repeatable preparation/provenance improvement; it is not a substitute for a privileged delegated runtime test, an independent host, a rollback drill, natural production PSI event, throughput acceptance, or a 24-hour/72-hour soak.
 
 ## Gate status (unchanged)
 
 | Gate | Status | Required evidence to close |
 |---|---|---|
-| Local test/compile/syntax/systemd/evidence checks | To be recorded for final revision | Pass-19 bundle and hosted CI |
+| Local test/compile/syntax/systemd/evidence checks | PASS — `pass19-validation-2026-10-15-r1` | Final bundle SHA-256 verification |
 | Ubuntu 22.04 delegated CPU telemetry + quota actuation/readback | SKIP / OPEN | Real delegated test slice exposes `usage_usec`, `nr_periods`, `nr_throttled`; bounded quota write and effective readback verified |
-| Ubuntu 24.04 compatibility | PASS on prior CI | New CI run confirms code compatibility only |
+| Ubuntu 24.04 compatibility | PASS — [run 38758494375](https://github.com/nplongx/linux-workload-guard/actions/runs/38758494375) | Compatibility only, not independent-host evidence |
 | Independent-host preregistered ABBA | NOT RUN | Authorized independent host, unchanged Pass 15 protocol, all pairs retained, PSI controls satisfied |
 | Throughput acceptance | OPEN / `CONFOUNDED_INCONCLUSIVE`, threshold `0.90` | Preregistered valid pairs on suitably quiet host; no sample exclusions; all acceptance limits satisfied |
 | Dedicated-host rollback | NOT RUN / OPEN | Approved host/window; capture and verify exact config, quota, service, route, ownership and permissions restoration |

@@ -1,0 +1,4 @@
+command=./benchmarks/rc-gate-preflight.sh benchmarks/results/pass19-validation-2026-10-15-r1/preflight
+exit_status=0
+scope=read-only host/repository discovery; no quota writes, service lifecycle actions, or workload generation
+recorded_at=2026-10-15T22:15:49+07:00

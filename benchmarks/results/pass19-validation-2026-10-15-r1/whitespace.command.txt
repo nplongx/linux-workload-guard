@@ -1,0 +1,2 @@
+recorded_at=2026-10-15T22:20:02+07:00
+command= <git> <diff> <--check>

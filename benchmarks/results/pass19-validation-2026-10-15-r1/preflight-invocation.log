@@ -1,0 +1,13 @@
+RC gate preflight collected (not acceptance evidence): /home/long/linux-workload-guard/benchmarks/results/pass19-validation-2026-10-15-r1/preflight
+Gate preflight classification (not release acceptance):
+cgroup_v2_cpu_controller=OBSERVED
+user_systemd_manager=OBSERVED
+delegated_cpu_stat_counters=NOT PROVEN (requires the actual delegated test slice)
+quota_actuation_and_readback=NOT RUN (this script is read-only)
+independent_host_ABBA=NOT RUN
+throughput_acceptance=OPEN / CONFOUNDED_INCONCLUSIVE; threshold=0.90
+dedicated_host_rollback=NOT RUN / OPEN
+natural_production_PSI_crossing_0.40=NOT RUN
+continuous_RC_soak_24h_min_72h_target=NOT RUN
+stable_release=NO-GO; version must remain 0.6.5-rc.1; no v1.0.0 tag
+WARNING: compatibility CI, root-cgroup counters, synthetic tests, and this preflight do not close host-dependent gates.

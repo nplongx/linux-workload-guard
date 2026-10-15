@@ -1,0 +1,19 @@
+recorded_at=2026-10-15T22:14:39+07:00
+source_commit=f957bfbe4e234bc6f40295370b312f3c50d5cbb8
+remote_main=f957bfbe4e234bc6f40295370b312f3c50d5cbb8
+branch=main
+version=0.6.5-rc.1
+hostname=bougainvillean
+os_release=PRETTY_NAME="Ubuntu 26.04.1 LTS"
+kernel=Linux 7.0.0-38-generic x86_64 GNU/Linux
+architecture=x86_64
+cgroup_mode=v2
+process_cgroup=0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-com.chatonsteroids.app-1708596.scope;
+user_systemd_manager=available
+router_system_service=ActiveState=inactive;SubState=dead;MainPID=0;NRestarts=0;
+heavy_slice_quota_observation=CPUQuotaPerSecUSec=infinity;
+host_cpu_psi=some avg10=0.80 avg60=0.78 avg300=0.80 total=2923606820;full avg10=0.00 avg60=0.00 avg300=0.00 total=0;
+tracked_worktree_before_bundle=clean
+untracked_historical_entries_preserved=136 as observed at baseline; not deleted or staged
+production_mutation=NONE
+cpu_bound_workload_generation=NONE

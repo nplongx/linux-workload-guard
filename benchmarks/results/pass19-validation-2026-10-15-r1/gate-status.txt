@@ -1,0 +1,9 @@
+Ubuntu 22.04 delegated CPU telemetry + quota actuation/readback: SKIP / OPEN (latest CI must show actual job annotation; preflight is not proof)
+Ubuntu 24.04 compatibility: PASS only if current hosted CI matrix passes; not independent-host evidence
+Independent-host preregistered ABBA: NOT RUN (no authorized independent host)
+Throughput acceptance: OPEN / CONFOUNDED_INCONCLUSIVE; threshold=0.90; historical Pass 15 confounded by host PSI 27-30%, retain all samples
+Dedicated-host operator rollback: NOT RUN / OPEN
+Natural production PSI crossing at 0.40: NOT RUN
+Continuous RC soak: NOT RUN; minimum 24 hours, target 72 hours
+Stable release: NO-GO; version 0.6.5-rc.1; no v1.0.0 tag
+Current connected environment reports workload-router.service inactive and heavy-workload.slice CPUQuotaPerSecUSec=infinity. This is an observation of this environment only; no runtime mutation was made.

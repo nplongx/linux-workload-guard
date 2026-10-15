@@ -1,0 +1,2 @@
+recorded_at=2026-10-15T22:19:32+07:00
+command= <sh> <-c> <python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py>

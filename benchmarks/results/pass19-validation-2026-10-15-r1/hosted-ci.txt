@@ -1,0 +1,12 @@
+run_id=38758494375
+url=https://github.com/nplongx/linux-workload-guard/actions/runs/38758494375
+source_commit=f957bfbe4e234bc6f40295370b312f3c50d5cbb8
+conclusion=success
+ubuntu_22_04_job=PASS (compatibility matrix)
+ubuntu_24_04_job=PASS (compatibility matrix)
+new_rc_gate_preflight_safety_step=PASS on both matrix jobs
+dedicated_soak_fail_closed_regression=PASS on both matrix jobs
+ubuntu_22_04_delegated_cpu_runtime_gate=SKIP / OPEN
+skip_reason=delegated cpu.stat missing usage_usec/nr_periods/nr_throttled; available keys usage_usec,user_usec,system_usec,core_sched.force_idle_usec
+ubuntu_24_04_controller_integration=PASS in ephemeral CI test slice; not independent-host evidence and not a 24/72h soak
+interpretation=CI success is not evidence that the skipped Ubuntu 22.04 runtime gate passed

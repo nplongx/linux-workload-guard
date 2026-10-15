@@ -1,0 +1,20 @@
+recorded_at=2026-10-15T22:15:49+07:00
+hostname=bougainvillean
+kernel=Linux 7.0.0-38-generic x86_64 GNU/Linux
+os_release=PRETTY_NAME="Ubuntu 26.04.1 LTS"
+architecture=x86_64
+uid=1000
+version=0.6.5-rc.1
+head=f957bfbe4e234bc6f40295370b312f3c50d5cbb8
+branch=main
+tracked_worktree=clean
+cgroup_v2=present
+cgroup_controllers=cpuset cpu io memory hugetlb pids rdma misc dmem
+process_cgroup=0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-com.chatonsteroids.app-1708596.scope;
+systemd_user_manager=available
+router_system_service=ActiveState=inactive;SubState=dead;MainPID=0;NRestarts=0;
+heavy_slice_quota_observation=CPUQuotaPerSecUSec=infinity;
+host_cpu_psi=some avg10=0.31 avg60=0.61 avg300=0.73 total=2924263907;full avg10=0.00 avg60=0.00 avg300=0.00 total=0;
+loadavg=0.72 1.13 1.48 1/1466 1922603
+quota_or_policy_mutations=NONE
+load_generation=NONE
