@@ -24,16 +24,16 @@ Version remains `0.6.5-rc.1`.
 
 The current implementation passed `./test.sh`, Python byte-compilation, shell and Bash syntax checks, `systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice`, telemetry parser, aggregate integrity, soak fail-closed regression, version smoke, and `git diff --check`. The soak regression specifically proves incomplete outcomes exit 1. Full command logs and SHA-256 manifest are stored in `benchmarks/results/pass18-validation-2026-10-15-r1/`; each command has a timestamped status record, and the bundle records OS/kernel/systemd/Python/cgroup mode, source commit, and final revision. `actionlint` is not installed in the local environment; workflow syntax/behavior is therefore subject to the post-push GitHub Actions result.
 
-The live controller integration was not forced on this development host: it can create CPU-bound workers, and the host is not an approved dedicated benchmark machine. The runtime capability test remains the hosted CI's responsibility when provisioned, and the independent-host ABBA/rollback/soak gates remain open.
+The live controller integration was not forced on this development host: it can create CPU-bound workers, and the host is not an approved dedicated benchmark machine. Hosted CI run 38753681218 passed both OS jobs but explicitly skipped the Ubuntu 22.04 delegated-counter integration; the independent-host ABBA/rollback/soak gates remain open.
 
 ## Gate status
 
 | Gate | Status | Closure condition |
 |---|---|---|
 | Local tests, compile, syntax, systemd, diff | PASS | Final commit evidence bundle and CI run |
-| Ubuntu 22.04/24.04 compatibility | Pending after push until final CI completes | Both matrix jobs succeed |
-| Ubuntu 22.04 delegated CPU telemetry | SKIP / OPEN | Real test cgroup exposes required counters and quota actuation/readback works |
-| Ubuntu 24.04 delegated runtime | Prior CI PASS; final matrix recheck pending | Runtime result must be read separately from job compatibility status |
+| Ubuntu 22.04/24.04 compatibility | PASS — [run 38753681218](https://github.com/nplongx/linux-workload-guard/actions/runs/38753681218), commit `5e7375d7c108a676eb11dbeea80203318b27baa4` | Both matrix jobs passed, including the dedicated soak fail-closed step and checkout v5 |
+| Ubuntu 22.04 delegated CPU telemetry | SKIP / OPEN — same run, job annotation | Test cgroup missing `nr_periods` and `nr_throttled`; available keys `usage_usec,user_usec,system_usec,core_sched.force_idle_usec`. Requires a runner with real delegated counters and successful quota actuation/readback |
+| Ubuntu 24.04 compatibility | PASS — same run | All CI steps passed; compatibility is not independent-host or soak evidence |
 | Independent-host preregistered ABBA | NOT RUN | Approved independent host; unchanged Pass 15 protocol, all pairs and host-PSI controls retained |
 | Throughput acceptance | OPEN / `CONFOUNDED_INCONCLUSIVE` | Threshold `0.90`; no sample exclusion; quieter host and preregistered paired replication required |
 | Dedicated-host rollback | NOT RUN / OPEN | Authorized test host and maintenance window; exact config/mode/ownership/quota/service/route restoration verified |
