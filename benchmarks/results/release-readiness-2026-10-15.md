@@ -38,6 +38,7 @@
 | systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice | PASS | |
 | git diff --check | PASS | |
 | Soak monitor smoke | PASS | Two-second monitor-only check; expected schema/metrics present. Not a soak. |
+| Hosted CI run 38671055102 | PASS | Ubuntu 22.04 and 24.04 jobs succeeded. Ubuntu 22.04 explicitly skipped dynamic-quota integration for missing cgroup CPU counters; Ubuntu 24.04 executed and passed it. |
 
 After the first suite, workload-router.service was active/running with NRestarts=0 and PID 88584. After the final repeated suite, it remained active/running with NRestarts=0 and PID 96788. Integration scripts intentionally stop/start it to isolate routing tests; no service crash/restart was observed. The live heavy-slice CPUQuotaPerSecUSec property remained 1s (100%). No live configuration or production threshold was edited.
 
@@ -74,6 +75,6 @@ A final full-suite rerun also passed the same isolated controller integration. I
 2. **Representative repeated performance comparisons:** existing short synthetic runs are diagnostic. Needed: repeated paired runs with actual worker route validity, representative routed workloads, p50/p95/p99, throughput, quota transitions, detection/recovery, CPU/RSS, PSI, and limitations.
 3. **Cross-environment evidence:** no separate second-host run is recorded. Ubuntu 22.04 hosted CI explicitly skips dynamic-quota integration because delegated CPU cgroup counters are unavailable; Ubuntu 24.04 executed and passed it. Needed: capable Ubuntu 22.04 delegation/runner or an explicit supported-environment limitation.
 4. **RC3 soak:** no 24-hour soak (72-hour target where practical). Needed: uninterrupted timestamps, environment, service journal/errors/restarts, pressure, quota transitions/oscillation, workload phases and route validity, resource overhead, and recovery events.
-5. **Release hygiene:** rerun hosted CI on the resulting code commit and review all roadmap gates before any version/tag decision.
+5. **Release hygiene:** hosted CI passed on commit 2bd431f in [run 38671055102](https://github.com/nplongx/linux-workload-guard/actions/runs/38671055102). Ubuntu 22.04's dynamic-quota stage was explicitly skipped for missing required cgroup CPU counters, not functionally passed. Review all roadmap gates again before any version/tag decision.
 
 No release tag was created. VERSION remains 0.6.5-rc.1.
