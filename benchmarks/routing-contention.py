@@ -71,60 +71,103 @@ def scope_weight(unit):
         return None
 
 def read_cpu_stat(path):
-    """Read real cgroup-v2 cumulative counters; missing keys stay unavailable."""
+    """Read a complete, internally valid cgroup-v2 CPU counter snapshot.
+
+    A partial/malformed snapshot is unusable for paired telemetry. Do not
+    silently retain a subset: the evaluator needs the three core counters to
+    distinguish a real sample from missing delegated-controller capability.
+    """
     try:
         values = {}
         for line in (path / "cpu.stat").read_text().splitlines():
             fields = line.split()
-            if len(fields) == 2:
-                try:
-                    values[fields[0]] = int(fields[1])
-                except ValueError:
-                    continue
+            if len(fields) != 2 or not fields[0] or not fields[1].isascii() or not fields[1].isdecimal():
+                return {}
+            if fields[0] in values:
+                return {}
+            values[fields[0]] = int(fields[1])
+        if not {"usage_usec", "nr_periods", "nr_throttled"}.issubset(values):
+            return {}
+        if values["nr_throttled"] > values["nr_periods"]:
+            return {}
         return values
-    except OSError:
+    except (OSError, ValueError, TypeError):
         return {}
 
 def read_pressure(path):
-    """Return actual PSI some/full averages and cumulative stall time when available."""
+    """Return PSI only when its required `some` row is complete and valid."""
     values = {}
     try:
         lines = (path / "cpu.pressure").read_text().splitlines()
     except OSError:
-        lines = []
+        return {}
+    seen = set()
     for line in lines:
         fields = line.split()
-        if not fields or fields[0] not in ("some", "full"):
+        if not fields:
             continue
+        if fields[0] not in ("some", "full") or fields[0] in seen:
+            return {}
+        seen.add(fields[0])
         prefix = "psi_" + fields[0] + "_"
+        row = {}
         for field in fields[1:]:
             if "=" not in field:
-                continue
+                return {}
             key, value = field.split("=", 1)
+            if key in row or key not in ("avg10", "avg60", "avg300", "total"):
+                return {}
             try:
-                values[prefix + key] = float(value) if key.startswith("avg") else int(value)
-            except ValueError:
-                pass
+                parsed = float(value) if key.startswith("avg") else int(value)
+            except (ValueError, OverflowError):
+                return {}
+            if not (parsed >= 0 and (not key.startswith("avg") or parsed <= 100)):
+                return {}
+            row[key] = parsed
+        if not {"avg10", "avg60", "avg300", "total"}.issubset(row):
+            return {}
+        values.update({prefix + key: value for key, value in row.items()})
+    if "some" not in seen:
+        return {}
     return values
 
 def read_host_psi():
-    values = {}
+    """Return host PSI only if the complete required `some` row is available."""
     try:
         lines = pathlib.Path("/proc/pressure/cpu").read_text().splitlines()
     except OSError:
-        lines = []
+        return {}
+    values = {}
+    some = None
+    seen = set()
     for line in lines:
         fields = line.split()
-        if not fields or fields[0] not in ("some", "full"):
+        if not fields:
             continue
+        if fields[0] not in ("some", "full") or fields[0] in seen:
+            return {}
+        seen.add(fields[0])
+        row = {}
         for field in fields[1:]:
             if "=" not in field:
-                continue
+                return {}
             key, value = field.split("=", 1)
+            if key in row or key not in ("avg10", "avg60", "avg300", "total"):
+                return {}
             try:
-                values[f"host_psi_{fields[0]}_{key}"] = float(value) if key.startswith("avg") else int(value)
-            except ValueError:
-                pass
+                parsed = float(value) if key.startswith("avg") else int(value)
+            except (ValueError, OverflowError):
+                return {}
+            if not (parsed >= 0 and (not key.startswith("avg") or parsed <= 100)):
+                return {}
+            row[key] = parsed
+        if not {"avg10", "avg60", "avg300", "total"}.issubset(row):
+            return {}
+        values.update({f"host_psi_{fields[0]}_{key}": value for key, value in row.items()})
+        if fields[0] == "some":
+            some = row
+    if some is None:
+        return {}
     return values
 
 def telemetry_loop(mode, rep, trial_start, stop_event, units, telemetry_path):

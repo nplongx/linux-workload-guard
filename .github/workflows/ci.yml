@@ -12,11 +12,13 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Test
         run: ./test.sh
       - name: Python compile checks
         run: python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py
+      - name: Strict benchmark telemetry parser regressions
+        run: python3 tests/routing-telemetry.py
       - name: Stage installed helpers for systemd validation
         run: |
           mkdir -p "$HOME/.local/bin"
@@ -44,3 +46,5 @@ jobs:
         run: ./tests/controller-integration.sh
       - name: Aggregate scope integration
         run: ./tests/aggregate-scope-integration.sh
+      - name: Aggregate benchmark evidence integrity regressions
+        run: ./tests/analyze-aggregate-routing.sh

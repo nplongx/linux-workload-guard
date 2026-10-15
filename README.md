@@ -29,6 +29,10 @@ The design is workload-oriented, not application-oriented. A workload can be a b
 - Experimental opt-in aggregate-saturation routing by stable workload scope and cgroup `usage_usec`; uses verified `CPUWeight` changes without PID moves, is disabled by default, and documents explicit hysteresis/fairness limits.
 - cgroup v2 resource enforcement.
 
+## Release-candidate validation
+
+The current release candidate remains `0.6.5-rc.1`. The latest telemetry-integrity and CI hardening pass is documented in [`docs/rc-validation-pass17.md`](docs/rc-validation-pass17.md), with timestamped command logs and SHA-256 evidence under `benchmarks/results/pass17-validation-2026-10-15-r3/`. CI success on Ubuntu 22.04/24.04 does not imply that a runner's delegated cgroup exposes working quota counters. The independent-host ABBA repeat, Ubuntu 22.04 delegated-counter runtime gate, dedicated-host rollback, natural production PSI crossing, and continuous 24-hour minimum / 72-hour target soak remain separate release gates.
+
 ## Architecture
 
 ```text

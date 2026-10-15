@@ -1,0 +1,1 @@
+python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/analyze-aggregate-routing.py benchmarks/controller-replay.py benchmarks/live-psi-observe.py benchmarks/performance-review.py benchmarks/quota-pressure-replay.py benchmarks/routing-contention.py benchmarks/shadow-policy-replay.py tests/controller-hardening.py tests/routing-telemetry.py

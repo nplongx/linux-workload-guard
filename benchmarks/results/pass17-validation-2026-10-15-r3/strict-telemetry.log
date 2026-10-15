@@ -1,0 +1,1 @@
+routing interval telemetry parsing: ok (required counters, malformed/reset-safe snapshots, strict PSI, missing-data fail-closed)

@@ -1,0 +1,3 @@
+root_cgroup_required_counters= ['nr_periods', 'nr_throttled', 'usage_usec']
+root_cgroup_nr_periods= 0
+host_psi_some_avg10= 0.88

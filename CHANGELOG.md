@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- The isolated routing benchmark now treats `cpu.stat` as a complete snapshot: required delegated counters, duplicate/malformed/negative values, and impossible throttling are checked before a row can be used. cgroup/host PSI telemetry is unavailable rather than partially accepted when required fields are malformed, duplicated, non-finite, or out of range.
 - Core routing environment values are now parsed into explicit invalid sentinels and validated before the routing loop. Malformed/non-finite values, invalid sample intervals/counts, and unsafe thresholds no longer crash module import or enter an unsafe loop; invalid core routing configuration logs an error and leaves routing disabled until corrected.
 - Positive-but-tiny sample, statistics, history, and quota intervals are now rejected below explicit lower bounds, preventing valid-looking numeric settings from creating busy loops. The quota decision path also refuses actuation when the observed quota is outside its configured bounds.
 - PSI parsing now rejects incomplete `some` rows, duplicate `some` rows/fields, malformed averages, and invalid cumulative counters rather than accepting a partial line as a complete observation.
@@ -31,6 +32,7 @@
 
 ### Added
 
+- Strict benchmark counter/PSI regression coverage and explicit CI steps for telemetry parser and aggregate evidence-integrity tests; upgraded `actions/checkout` to v5 (Node.js 24) to remove the Node.js 20 deprecation warning. Pass 17 evidence and open release gates are indexed in `docs/rc-validation-pass17.md`.
 - CPU-100% diagnosis runbook explaining PSI, cgroup quota throttling, read-only telemetry capture, and safe rollback boundaries; hosted CI now explicitly byte-compiles Python sources and checks patch whitespace on Ubuntu 22.04/24.04.
 - Deterministic controller hardening tests for PSI threshold boundaries, counter resets/anomalies, stale windows, PID identity, legacy state, service timeouts, and the quota/AIMD/recovery decision sequence.
 - Mocked quota-benchmark safety tests cover argument validation, immutable existing output, isolated temporary-slice targeting, cgroup counter/schema collection, and the absence of calls targeting the installed service or production heavy slice.

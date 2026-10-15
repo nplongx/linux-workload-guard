@@ -1,0 +1,1 @@
+./bin/workload-guard version
