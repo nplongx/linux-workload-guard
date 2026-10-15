@@ -1,0 +1,5 @@
+5ebde4667a0c271b4be4293082a5078efbacb322414338414d48f51ff2342d55  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-5rep30-pass13-2026-10-15.tsv
+9f1a24f6c1f2dbd1185849c4317a0ea6d648ef10fb4c05167538239ce5cb5cbe  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-5rep30-pass13-2026-10-15.samples.tsv
+99327387f1eff32eb3244d712b2be1517a43279058d2b21459401892b2136501  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-5rep30-pass13-2026-10-15.environment.txt
+9c2cf48652546872733680af47ddb34dd5423610bd767b805d563a80f5af4245  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-5rep30-pass13-2026-10-15.router.log
+94086fd611c000d4582b85c569bfd3fe1b6b3a1e2b7f1271d9ea637698c6a4e1  benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-5rep30-pass13-2026-10-15.acceptance.txt
