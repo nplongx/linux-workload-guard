@@ -143,6 +143,7 @@ def main():
             return 2
     pair_rows = []
     block_data = {}
+    block_status = {}
     for result in args.results:
         if not result.is_file():
             print(f"missing result TSV: {result}", file=sys.stderr)
@@ -158,6 +159,8 @@ def main():
         weight = int(match.group(1)) if match else None
         block_match = re.search(r"weight(20|80)-block(A2?|B2?)", result.name)
         block = block_match.group(2) if block_match else ("historical" if weight is None else "weight" + str(weight))
+        if weight in (20, 80) and block in ("A", "A2", "B", "B2"):
+            block_status[(block, weight)] = acceptance_status
         rows = read_tsv(result)
         by_mode_rep = {(row.get("mode"), row.get("rep")): row for row in rows}
         reps = sorted({int(row["rep"]) for row in rows if row.get("rep", "").isdigit()})
@@ -248,6 +251,21 @@ def main():
             lines.append(f"pooled_weight={weight} n={len(vals)} median={statistics.median(vals):.3f} "
                          f"range=[{min(vals):.3f},{max(vals):.3f}] below_0.90={sum(value < .90 for value in vals)} "
                          f"bootstrap95CI_median=[{low:.3f},{high:.3f}]")
+    abba_values = {
+        20: [value for key in (("A", 20), ("A2", 20)) for value in block_data.get(key, []) if value is not None],
+        80: [value for key in (("B", 80), ("B2", 80)) for value in block_data.get(key, []) if value is not None],
+    }
+    abba_medians = {weight: statistics.median(values) for weight, values in abba_values.items() if values}
+    if len(abba_medians) == 2:
+        delta = abba_medians[80] - abba_medians[20]
+        lines.append(f"ABBA_pooled_weight20_n={len(abba_values[20])} median={abba_medians[20]:.3f}")
+        lines.append(f"ABBA_pooled_weight80_n={len(abba_values[80])} median={abba_medians[80]:.3f}")
+        lines.append(f"ABBA_weight80_minus_weight20_median_delta={delta:.3f} required_for_H1>=0.050")
+    contrast_a = statistics.median(block_data.get(("B", 80), [])) - statistics.median(block_data.get(("A", 20), [])) if block_data.get(("B", 80)) and block_data.get(("A", 20)) else None
+    contrast_b2 = statistics.median(block_data.get(("B2", 80), [])) - statistics.median(block_data.get(("A2", 20), [])) if block_data.get(("B2", 80)) and block_data.get(("A2", 20)) else None
+    if contrast_a is not None and contrast_b2 is not None:
+        lines.append(f"ABBA_contrast_B_minus_A={contrast_a:.3f} (must be >0 for weight80 to favor throughput)")
+        lines.append(f"ABBA_contrast_B2_minus_A2={contrast_b2:.3f} (must be >0 for weight80 to favor throughput)")
     lines.extend(["", "Telemetry interpretation:"])
     for block, weight in (("A", 20), ("B", 80), ("B2", 80), ("A2", 20)):
         values = [row for row in pair_rows if row["block"] == block and row["weight"] == weight]
@@ -263,6 +281,36 @@ def main():
             lines.append(f"block={block} weight={weight} baseline_host_psi_mean_avg10={psi_base_mean} "
                          f"router_host_psi_mean_avg10={psi_router_mean} samples_gt5pct_mean={psi_high_mean} "
                          f"cpu_normalized_efficiency_median={efficiency_median}")
+    abba_rows = [row for row in pair_rows if row["block"] in ("A", "A2", "B", "B2")
+                 and row["acceptance_status"] in ("PASS", "FAIL")]
+    psi_means = {}
+    psi_exceed = []
+    for weight in (20, 80):
+        rows = [row for row in abba_rows if row["weight"] == weight]
+        values = [row[key] for row in rows for key in ("baseline_host_psi_avg10_mean", "router_host_psi_avg10_mean") if row[key] is not None]
+        high = [row[key] for row in rows for key in ("baseline_host_psi_gt5_pct", "host_psi_router_gt5_pct") if row[key] is not None]
+        if values:
+            psi_means[weight] = statistics.median(values)
+            lines.append(f"ABBA_weight{weight}_median_host_psi_avg10={psi_means[weight]:.2f}")
+        if high:
+            psi_exceed.append(statistics.mean(high))
+            lines.append(f"ABBA_weight{weight}_mean_sample_percent_host_psi_gt5={statistics.mean(high):.1f}")
+    psi_confounded = (any(value > 20 for value in psi_exceed)
+                      or (len(psi_means) == 2 and abs(psi_means[80] - psi_means[20]) > 5))
+    weight80_pass = all(block_status.get((block, 80)) == "PASS" for block in ("B", "B2"))
+    weight80_medians_pass = all(block_data.get((block, 80)) and statistics.median(block_data[(block, 80)]) >= .90
+                                for block in ("B", "B2"))
+    weight80_no_severe_pair = all(value >= .80 for value in abba_values.get(80, []))
+    effect_size_pass = len(abba_medians) == 2 and abba_medians[80] - abba_medians[20] >= .05
+    contrasts_pass = contrast_a is not None and contrast_b2 is not None and contrast_a > 0 and contrast_b2 > 0
+    criteria_pass = weight80_pass and weight80_medians_pass and weight80_no_severe_pair and effect_size_pass and contrasts_pass
+    interpretation = "CONFOUNDED_INCONCLUSIVE" if psi_confounded else ("CONSISTENT_WITH_H1" if criteria_pass else "H1_NOT_SUPPORTED_BY_PREDECLARED_CRITERIA")
+    lines.append(f"predeclared_weight_effect_interpretation={interpretation}")
+    lines.append(f"predeclared_weight80_blocks_both_pass={weight80_pass}")
+    lines.append(f"predeclared_weight80_both_medians_ge_0.90={weight80_medians_pass}")
+    lines.append(f"predeclared_weight80_no_pair_below_0.80={weight80_no_severe_pair}")
+    lines.append(f"predeclared_median_delta_ge_0.05={effect_size_pass}")
+    lines.append(f"predeclared_both_ABBA_contrasts_favor_weight80={contrasts_pass}")
     lines.extend([
         "",
         "Decision rule: weight effect is not causal unless both weight-80 blocks independently pass, pooled weight-80 median exceeds pooled weight-20 median by >=0.05, both ABBA contrasts favor weight 80, no weight-80 pair is <0.80, latency/overhead gates pass, and host PSI confounding rule is satisfied.",
