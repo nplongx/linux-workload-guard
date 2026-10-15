@@ -8,6 +8,7 @@ only to this synthetic probe; it does not close representative-workload gates.
 import csv
 import math
 import pathlib
+import random
 import statistics
 import sys
 
@@ -17,6 +18,8 @@ MAX_LATENCY_RATIO = 1.10
 MIN_THROUGHPUT_RATIO = 0.90
 MAX_ROUTER_CPU_PERCENT_ONE_CORE = 5.0
 MAX_ROUTER_RSS_KIB = 32768
+BOOTSTRAP_RESAMPLES = 10000
+BOOTSTRAP_SEED = 20261015
 
 
 def finite_positive(row, key):
@@ -75,6 +78,25 @@ def acceptance_limits_error(min_pairs=MIN_PAIRS, min_samples=MIN_STEADY_SAMPLES,
     if max_latency <= 0 or min_throughput <= 0 or max_cpu <= 0 or max_rss <= 0:
         return "acceptance numeric limits must be positive"
     return None
+
+
+def nearest_rank(values, p):
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, max(0, math.ceil(len(ordered) * p) - 1))]
+
+
+def ratio_variation(values):
+    """Descriptive uncertainty only; the predeclared decision remains median-based."""
+    rng = random.Random(BOOTSTRAP_SEED)
+    medians = [statistics.median(rng.choice(values) for _ in values) for _ in range(BOOTSTRAP_RESAMPLES)]
+    return {
+        "minimum": min(values),
+        "q1": nearest_rank(values, 0.25),
+        "q3": nearest_rank(values, 0.75),
+        "maximum": max(values),
+        "ci_low": nearest_rank(medians, 0.025),
+        "ci_high": nearest_rank(medians, 0.975),
+    }
 
 
 def main():
@@ -264,6 +286,13 @@ def main():
                 limit = MIN_THROUGHPUT_RATIO if metric == "worker_throughput_per_sec" else MAX_LATENCY_RATIO
                 passed = median_ratio >= limit if metric == "worker_throughput_per_sec" else median_ratio <= limit
                 findings.append(f"{'PASS' if passed else 'FAIL'}: median paired {metric} ratio={median_ratio:.3f} limit={'≥' if metric == 'worker_throughput_per_sec' else '≤'}{limit:.2f}")
+                spread = ratio_variation([pair[1][metric] for pair in pairs])
+                findings.append(
+                    f"VARIATION: {metric} ratio min={spread['minimum']:.3f} q1={spread['q1']:.3f} "
+                    f"median={median_ratio:.3f} q3={spread['q3']:.3f} max={spread['maximum']:.3f}; "
+                    f"bootstrap95CI=[{spread['ci_low']:.3f},{spread['ci_high']:.3f}] "
+                    f"(resamples={BOOTSTRAP_RESAMPLES}, seed={BOOTSTRAP_SEED}; descriptive, not a gate override)"
+                )
         has_fail = any(line.startswith("FAIL:") for line in findings)
         has_incomplete = any(line.startswith("INCOMPLETE:") for line in findings)
         status = "INCOMPLETE" if has_incomplete else ("FAIL" if has_fail else "PASS")
@@ -283,7 +312,10 @@ def main():
         f"min_median_paired_throughput_ratio={MIN_THROUGHPUT_RATIO:.2f}",
         f"max_router_cpu_pct_one_core={MAX_ROUTER_CPU_PERCENT_ONE_CORE:.1f}",
         f"max_router_peak_rss_kib={MAX_ROUTER_RSS_KIB}",
-        "scope=synthetic routing probe only; PASS does not close representative terminal-workload release gate",
+        ("scope=synthetic Python integer-mixing workload and periodic probe only; PASS does not close terminal-workload release gate"
+         if env.get("workload_kind") == "synthetic" else
+         "scope=OpenSSL SHA-256 CLI throughput workload and periodic probe only; PASS does not generalize to compiler builds or all terminal workloads"),
+        f"variation_method=paired-ratio range/IQR plus deterministic bootstrap percentile interval; resamples={BOOTSTRAP_RESAMPLES}; seed={BOOTSTRAP_SEED}; descriptive only",
         *findings,
     ]
     try:

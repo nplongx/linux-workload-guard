@@ -25,6 +25,7 @@
 - Added a passive live-PSI evidence collector for timestamped host PSI, service identity/restarts, effective quota, and matching service journal, plus safety tests. Added operator rollback, Ubuntu/cgroup prerequisite, second-host manifest, and soak acceptance instructions. Collection alone never claims a live PSI threshold pass.
 - The paired routing benchmark now uses the same 12-second elapsed steady window in both modes, rejects late route convergence, records per-trial host PSI/load and effective temporary cgroup quota/weight metadata, and includes a CPU-bound `terminal-openssl` CLI workload alongside the synthetic loop. The evaluator validates raw sample schema/order/counts, exact summary/raw pair coverage, steady-window membership, manifest completeness, and finite positive acceptance limits; malformed evidence remains `INCOMPLETE`.
 - Controller integration capability skips now report the specific missing prerequisite, kernel/cgroup/controller context, and available `cpu.stat` keys. `WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1` makes a skip fatal on runners explicitly provisioned for live CPU-controller integration.
+- The performance evaluator now includes paired-ratio range/quartiles and a deterministic bootstrap 95% interval as descriptive uncertainty, while preserving the original median-based acceptance thresholds. Its report scopes PASS to the declared workload kind rather than calling terminal CLI results synthetic or generalizing them to compiler builds.
 
 ### Added
 

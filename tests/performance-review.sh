@@ -44,7 +44,8 @@ PY
 pass=$(make_fixture pass COMPLETE 1.05 1050)
 python3 "$REVIEW" "$pass" > "$TMP/pass.out"
 grep -q '^acceptance_status=PASS$' "$TMP/pass.out"
-grep -q '^scope=synthetic routing probe only' "$TMP/pass.out"
+grep -q '^scope=synthetic Python integer-mixing workload' "$TMP/pass.out"
+grep -q '^VARIATION: steady_p95_ms ratio min=' "$TMP/pass.out"
 if python3 "$REVIEW" "$pass" > "$TMP/overwrite.out" 2>&1; then
   echo 'performance reviewer overwrote an existing report' >&2; exit 1
 else
