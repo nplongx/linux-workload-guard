@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Compare interactive-task latency with the router off/on under CPU contention.
+"""Compare interactive-task latency with a dedicated router off/on under CPU load.
 
-Requires a working systemd user manager, cgroup v2, and the installed workload-guard
-slice/router units. This test temporarily stops/restarts the user router and changes
-runtime slice quotas; it restores the quotas observed at startup on exit.
+Only unique temporary user slices and a directly spawned test router are used.
+The installed workload-router.service, production configuration, and production
+slice quotas are never stopped, rewritten, or changed.
 """
 import csv
+import math
 import os
 import pathlib
 import statistics
@@ -17,9 +18,20 @@ import time
 REPS = int(os.getenv("REPS", "3"))
 DURATION = float(os.getenv("DURATION", "30"))
 WORKERS = int(os.getenv("WORKERS", "1"))
-REQUIRE_ROUTED = os.getenv("REQUIRE_ROUTED", "false").lower() in ("1", "true", "yes", "on")
+REQUIRE_ROUTED = os.getenv("REQUIRE_ROUTED", "true").lower() in ("1", "true", "yes", "on")
 RESULT = pathlib.Path(os.getenv("RESULT", "/tmp/routing-contention.tsv"))
 CGROOT = pathlib.Path("/sys/fs/cgroup")
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+TAG = f"lwgb{os.getuid()}x{os.getpid()}"
+PARENT_UNIT = f"{TAG}parent.slice"
+HEAVY_UNIT = f"{TAG}heavy.slice"
+RECOVERY_UNIT = f"{PARENT_UNIT[:-6]}-recovery.slice"
+UNIT_DIR = pathlib.Path(os.getenv("XDG_CONFIG_HOME", pathlib.Path.home() / ".config")) / "systemd/user"
+ROUTER_PROCESS = None
+ROUTER_LOG_PATH = None
+ROUTER_STATE_PATH = None
+ROUTER_ENV = None
+CREATED_UNIT_FILES = []
 
 def ctl(*args, check=True):
     return subprocess.run(["systemctl", "--user", *args], stdout=subprocess.PIPE,
@@ -44,7 +56,7 @@ def pid_in(unit, pid):
 def pct(xs, p):
     if not xs: return float("nan")
     ys = sorted(xs)
-    return ys[min(len(ys)-1, int((len(ys)-1)*p))]
+    return ys[min(len(ys)-1, max(0, math.ceil(len(ys)*p)-1))]
 def write_worker_files(directory):
     hog = directory / "hog.py"
     hog.write_text('''import os,sys,time\npidfile=sys.argv[1]\nopen(pidfile,"w").write(str(os.getpid()))\nx=0x123456789abcdef0\nwhile True:\n x ^= (x << 7) & ((1<<64)-1); x ^= x >> 9; x=(x*0x9e3779b97f4a7c15)&((1<<64)-1)\n''')
@@ -54,21 +66,40 @@ def write_worker_files(directory):
 
 def launch_scope(unit, command):
     return subprocess.Popen(["systemd-run", "--user", "--scope", "--quiet", f"--unit={unit}",
-                             "--slice=protected-workload.slice", "--", *command],
+                             f"--slice={PARENT_UNIT}", "--", *command],
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
 def stop_scope(unit):
     ctl("stop", unit, check=False)
 
+def stop_router():
+    global ROUTER_PROCESS
+    if ROUTER_PROCESS is not None:
+        if ROUTER_PROCESS.poll() is None:
+            ROUTER_PROCESS.terminate()
+            try:
+                ROUTER_PROCESS.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                ROUTER_PROCESS.kill()
+                ROUTER_PROCESS.wait(timeout=2)
+        ROUTER_PROCESS = None
+
+def start_router():
+    global ROUTER_PROCESS
+    stop_router()
+    with open(ROUTER_LOG_PATH, "a") as log:
+        ROUTER_PROCESS = subprocess.Popen(
+            [sys.executable, str(ROOT / "bin" / "workload-router.py")],
+            stdout=log, stderr=subprocess.STDOUT, env=ROUTER_ENV,
+        )
+
 def run_trial(mode, rep, directory, hog, probe):
     tag=f"lwg-{mode}-{rep}-{os.getpid()}"
-    router_was = ctl("is-active", "workload-router.service", check=False).returncode == 0
-    if mode == "baseline":
-        ctl("stop", "workload-router.service", check=False)
-    else:
-        ctl("start", "workload-router.service")
-    # Restore fixed slice budgets before each comparison. Dynamic quota may adapt in router mode.
-    ctl("set-property", "protected-workload.slice", "CPUQuota=100%")
-    ctl("set-property", "heavy-workload.slice", "CPUQuota=400%")
+    stop_router()
+    # Both protected and heavy slices have a 100% ceiling in every mode.
+    # Baseline worker+probe share the protected budget; router mode separates
+    # them into equal-budget slices, matching the routing feature's intent.
+    if mode == "router":
+        start_router()
     time.sleep(2)
     pids=[]; scopes=[]
     try:
@@ -88,7 +119,7 @@ def run_trial(mode, rep, directory, hog, probe):
         routed_at=None
         peak_workers_in_heavy=0
         while pp.poll() is None and time.monotonic()-start < DURATION+20:
-            in_heavy=sum(pid_in("heavy-workload.slice", pid) for pid in worker_pids)
+            in_heavy=sum(pid_in(HEAVY_UNIT, pid) for pid in worker_pids)
             peak_workers_in_heavy=max(peak_workers_in_heavy,in_heavy)
             if mode == "router" and routed_at is None and in_heavy == WORKERS:
                 routed_at=time.monotonic()-start
@@ -133,10 +164,10 @@ def run_trial(mode, rep, directory, hog, probe):
                 "steady_p50_ms":pct(steady_ms,.50),"steady_p95_ms":pct(steady_ms,.95),
                 "steady_p99_ms":pct(steady_ms,.99),"steady_max_ms":max(steady_ms) if steady_ms else float('nan'),
                 "steady_work_p95_ms":pct(steady_work_ms,.95),
-                "psi_some_avg10":read_psi(),"router_was_active":int(router_was)}
+                "psi_some_avg10":read_psi(),"router_enabled_during_trial":int(mode == "router")}
     finally:
         for unit in scopes: stop_scope(unit)
-        if router_was: ctl("start", "workload-router.service", check=False)
+        stop_router()
 
 def read_psi():
     try:
@@ -147,21 +178,84 @@ def read_psi():
     return float("nan")
 
 def main():
-    if not pathlib.Path("/sys/fs/cgroup/cgroup.controllers").exists(): raise SystemExit("cgroup v2 required")
-    if ctl("is-active", "protected-workload.slice", check=False).returncode != 0: ctl("start", "protected-workload.slice")
-    if ctl("is-active", "heavy-workload.slice", check=False).returncode != 0: ctl("start", "heavy-workload.slice")
-    was_active=ctl("is-active", "workload-router.service", check=False).returncode == 0
-    orig_protected=show("protected-workload.slice","CPUQuotaPerSecUSec")
-    orig_heavy=show("heavy-workload.slice","CPUQuotaPerSecUSec")
-    orig_weights=(show("protected-workload.slice","CPUWeight"),show("heavy-workload.slice","CPUWeight"))
-    RESULT.parent.mkdir(parents=True,exist_ok=True)
-    fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","worker_count","trial_valid","validity_reason","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","psi_some_avg10","router_was_active"]
+    global ROUTER_LOG_PATH, ROUTER_STATE_PATH, ROUTER_ENV
+    global CREATED_UNIT_FILES
+    if REPS < 1 or WORKERS < 1 or DURATION < 20:
+        raise SystemExit("REPS and WORKERS must be positive; DURATION must be >=20s for comparable steady windows")
+    if not pathlib.Path("/sys/fs/cgroup/cgroup.controllers").exists():
+        raise SystemExit("cgroup v2 required")
+    sample_path = RESULT.with_suffix(".samples.tsv")
+    environment_path = RESULT.with_suffix(".environment.txt")
+    ROUTER_LOG_PATH = RESULT.with_suffix(".router.log")
+    output_paths = (RESULT, sample_path, environment_path, ROUTER_LOG_PATH)
+    for path in output_paths:
+        if path.exists():
+            raise SystemExit(f"refusing to overwrite existing benchmark evidence: {path}")
+    RESULT.parent.mkdir(parents=True, exist_ok=True)
+    UNIT_DIR.mkdir(parents=True, exist_ok=True)
+    benchmark_status = "INCOMPLETE"
+    unit_specs = (
+        (PARENT_UNIT, "[Unit]\nDescription=Temporary isolated routing benchmark protected parent\n\n[Slice]\nCPUQuota=100%\nCPUWeight=1000\n"),
+        (HEAVY_UNIT, "[Unit]\nDescription=Temporary isolated routing benchmark heavy sibling\n\n[Slice]\nCPUQuota=100%\nCPUWeight=100\n"),
+        (RECOVERY_UNIT, "[Unit]\nDescription=Temporary isolated routing benchmark recovery child\n\n[Slice]\nCPUWeight=1000\n"),
+    )
+    for unit, contents in unit_specs:
+        path = UNIT_DIR / unit
+        if path.exists():
+            raise SystemExit(f"refusing to overwrite existing user unit: {path}")
     try:
+        for unit, contents in unit_specs:
+            path = UNIT_DIR / unit
+            with path.open("x") as f:
+                f.write(contents)
+            CREATED_UNIT_FILES.append(path)
+        with RESULT.open("x", newline="") as f:
+            fields=["mode","rep","samples","elapsed_s","routed_at_s","workers_in_heavy","worker_count","trial_valid","validity_reason","all_mean_ms","all_p50_ms","all_p95_ms","all_p99_ms","all_max_ms","work_p95_ms","steady_n","steady_mean_ms","steady_p50_ms","steady_p95_ms","steady_p99_ms","steady_max_ms","steady_work_p95_ms","psi_some_avg10","router_enabled_during_trial"]
+            writer=csv.DictWriter(f,fieldnames=fields,delimiter="\t",lineterminator="\n"); writer.writeheader(); f.flush()
+        with sample_path.open("x") as f:
+            f.write("mode\trep\trelative_s\twakeup_lateness_ms\twork_duration_ms\n")
+        with environment_path.open("x") as f:
+            f.write(f"started_at={time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n")
+            f.write(f"host={os.uname()}\npython={sys.version.replace(chr(10), ' ')}\nlogical_cpus={os.cpu_count()}\n")
+            f.write(f"systemd={ctl('--version').stdout.splitlines()[0]}\ncgroup_mode=v2\n")
+            f.write(f"repetitions={REPS}\nworkers={WORKERS}\nduration_seconds={DURATION}\n")
+            f.write(f"parent_unit={PARENT_UNIT}\nheavy_unit={HEAVY_UNIT}\nrecovery_unit={RECOVERY_UNIT}\n")
+            f.write("parent_protected_quota=100%; heavy_quota=100%; equal per-slice ceilings in both modes\n")
+            f.write("dynamic_quota=false; production user service/configuration/quotas untouched\n")
+            f.write(f"router_sample_seconds={os.getenv('BENCH_ROUTER_SAMPLE_SEC', '2')}\n")
+            f.write(f"router_sustained_samples={os.getenv('BENCH_ROUTER_SUSTAINED_SAMPLES', '4')}\n")
+            f.write(f"router_cpu_threshold_percent={os.getenv('BENCH_ROUTER_CPU_THRESHOLD', '70')}\n")
+            f.write("percentile_method=nearest-rank ceil(p*n)-1\n")
+            f.write(f"command=REPS={REPS} DURATION={DURATION} WORKERS={WORKERS} RESULT={RESULT} python3 benchmarks/routing-contention.py\n")
+        with ROUTER_LOG_PATH.open("x"):
+            pass
+        ctl("daemon-reload")
+        ctl("start", PARENT_UNIT, HEAVY_UNIT, RECOVERY_UNIT)
         with tempfile.TemporaryDirectory(prefix="lwg-routing-bench-") as td:
             directory=pathlib.Path(td); hog,probe=write_worker_files(directory); results=[]
-            RESULT.with_suffix(".samples.tsv").write_text("mode\trep\trelative_s\twakeup_lateness_ms\twork_duration_ms\n")
-            with RESULT.open("w",newline="") as f:
-                writer=csv.DictWriter(f,fieldnames=fields,delimiter="\t"); writer.writeheader(); f.flush()
+            ROUTER_STATE_PATH = directory / "routes.tsv"
+            # Do not inherit ambient policy overrides from a developer shell;
+            # the isolated run must be reproducible and independent of the
+            # installed service's EnvironmentFile.
+            ROUTER_ENV = {k: v for k, v in os.environ.items()
+                          if not k.startswith("WORKLOAD_GUARD_")}
+            ROUTER_ENV.update({
+                "WORKLOAD_GUARD_PARENT_UNIT": PARENT_UNIT,
+                "WORKLOAD_GUARD_HEAVY_UNIT": HEAVY_UNIT,
+                "WORKLOAD_GUARD_RECOVERY_UNIT": RECOVERY_UNIT,
+                "WORKLOAD_GUARD_STATE_FILE": str(ROUTER_STATE_PATH),
+                "WORKLOAD_GUARD_DYNAMIC_QUOTA": "false",
+                "WORKLOAD_GUARD_AIMD_SHADOW": "false",
+                "WORKLOAD_GUARD_SHADOW": "false",
+                "WORKLOAD_GUARD_SAMPLE_SEC": os.getenv("BENCH_ROUTER_SAMPLE_SEC", "2"),
+                "WORKLOAD_GUARD_SUSTAINED_SAMPLES": os.getenv("BENCH_ROUTER_SUSTAINED_SAMPLES", "4"),
+                "WORKLOAD_GUARD_CPU_THRESHOLD": os.getenv("BENCH_ROUTER_CPU_THRESHOLD", "70"),
+                "WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD": "35",
+                "WORKLOAD_GUARD_RECOVERY_SAMPLES": "10",
+                "WORKLOAD_GUARD_RECOVERY_DWELL_SEC": "20",
+            })
+            with RESULT.open("a", newline="") as f:
+                writer=csv.DictWriter(f,fieldnames=fields,delimiter="\t",lineterminator="\n");
                 for rep in range(1,REPS+1):
                     modes=("baseline","router") if rep%2 else ("router","baseline")
                     for mode in modes:
@@ -182,21 +276,35 @@ def main():
             invalid=[r for r in results if not r["trial_valid"]]
             if REQUIRE_ROUTED and invalid:
                 raise SystemExit(f"benchmark invalid: {len(invalid)} router trial(s) failed to route all workers; see {RESULT}")
+        benchmark_status = "COMPLETE"
     finally:
-        # Always restore quotas as they were observed, and restore the service's initial state.
-        ctl("stop","workload-router.service",check=False)
-        ctl("set-property","protected-workload.slice",f"CPUQuota={quota_string(orig_protected)}",check=False)
-        ctl("set-property","heavy-workload.slice",f"CPUQuota={quota_string(orig_heavy)}",check=False)
-        ctl("set-property","protected-workload.slice",f"CPUWeight={orig_weights[0]}",check=False)
-        ctl("set-property","heavy-workload.slice",f"CPUWeight={orig_weights[1]}",check=False)
-        if was_active: ctl("start","workload-router.service",check=False)
-        else: ctl("stop","workload-router.service",check=False)
-
-def quota_string(value):
-    # systemd show CPUQuotaPerSecUSec is e.g. 1.5s or 400ms. Convert CPU time per second to percent.
-    if value == "infinity": return "infinity"
-    if value.endswith("s"): return f"{float(value[:-1])*100:g}%"
-    if value.endswith("ms"): return f"{float(value[:-2])*0.1:g}%"
-    return "400%"
+        cleanup_ok = True
+        try:
+            stop_router()
+        except Exception as exc:
+            cleanup_ok = False
+            print(f"warning: isolated router cleanup failed: {exc}", file=sys.stderr)
+        for unit in (PARENT_UNIT, HEAVY_UNIT, RECOVERY_UNIT):
+            try:
+                ctl("stop", unit, check=False)
+            except Exception as exc:
+                cleanup_ok = False
+                print(f"warning: could not stop temporary unit {unit}: {exc}", file=sys.stderr)
+        for path in CREATED_UNIT_FILES:
+            try: path.unlink()
+            except FileNotFoundError: pass
+            except OSError as exc:
+                cleanup_ok = False
+                print(f"warning: could not remove temporary unit file {path}: {exc}", file=sys.stderr)
+        if CREATED_UNIT_FILES:
+            try:
+                ctl("daemon-reload", check=False)
+            except Exception as exc:
+                cleanup_ok = False
+                print(f"warning: systemd daemon-reload failed during cleanup: {exc}", file=sys.stderr)
+        if environment_path.exists():
+            with environment_path.open("a") as f:
+                f.write(f"result_status={'COMPLETE' if benchmark_status == 'COMPLETE' and cleanup_ok else 'INCOMPLETE'}\n")
+                f.write(f"ended_at={time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n")
 
 if __name__ == "__main__": main()

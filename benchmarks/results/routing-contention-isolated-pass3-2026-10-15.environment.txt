@@ -1,0 +1,21 @@
+started_at=2026-10-15T10:13:18+0700
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+python=3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]
+logical_cpus=8
+systemd=systemd 259 (259.5-0ubuntu3.4)
+cgroup_mode=v2
+repetitions=3
+workers=1
+duration_seconds=20.0
+parent_unit=lwg-bench-1000-186619-parent.slice
+heavy_unit=lwg-bench-1000-186619-heavy.slice
+recovery_unit=lwg-bench-1000-186619-parent-recovery.slice
+parent_protected_quota=100%; heavy_quota=100%; equal per-slice ceilings in both modes
+dynamic_quota=false; production user service/configuration/quotas untouched
+router_sample_seconds=2
+router_sustained_samples=4
+router_cpu_threshold_percent=70
+percentile_method=nearest-rank ceil(p*n)-1
+command=REPS=3 DURATION=20.0 WORKERS=1 RESULT=benchmarks/results/routing-contention-isolated-pass3-2026-10-15.tsv python3 benchmarks/routing-contention.py
+result_status=COMPLETE
+ended_at=2026-10-15T10:15:57+0700

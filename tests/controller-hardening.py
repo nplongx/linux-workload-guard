@@ -81,6 +81,8 @@ check(router.QUOTA_PRESSURE_LOW == 0.10, "production PSI low threshold drifted")
 check(router.routing_config_error() is None, "checked-in core routing defaults are invalid")
 check(router.dynamic_quota_target(300, 0.40, 0.9, sched_delay_ms=1.0) == 250,
       "PSI at the default threshold did not request a bounded decrease")
+check(router.dynamic_quota_target(300, 0.4001, 0.9, sched_delay_ms=1.0) == 250,
+      "PSI above the production high threshold did not request a bounded decrease")
 check(router.dynamic_quota_target(300, 0.3999, 0.9, sched_delay_ms=1.0) == 300,
       "PSI below the high threshold changed quota unexpectedly")
 check(router.dynamic_quota_target(200, None, 0.9, sched_delay_ms=0.0) == 200,
@@ -118,6 +120,9 @@ check(reason == "ok" and decision["target"] == 300,
 decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, 0.40, 0.0, 0.8)
 check(reason == "ok" and decision["target"] == 250,
       "integrated production-threshold path must decrease quota at exactly 0.40")
+decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, 0.4001, 0.0, 0.8)
+check(reason == "ok" and decision["target"] == 250,
+      "integrated production-threshold path must decrease quota above 0.40")
 decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, None, None, 0.8)
 check(decision is None and reason == "pressure-signals-unavailable",
       "unavailable PSI and scheduler telemetry must not authorize quota changes")

@@ -12,13 +12,28 @@ cat > "$MOCKBIN/systemctl" <<'SH'
 #!/bin/sh
 case "$*" in
   *"-p ActiveState"*)
+    n=0; [ ! -r "${MOCK_SERVICE_COUNT:-/nonexistent}" ] || n=$(cat "$MOCK_SERVICE_COUNT")
+    n=$((n+1)); [ -z "${MOCK_SERVICE_COUNT:-}" ] || printf '%s\n' "$n" > "$MOCK_SERVICE_COUNT"
+    [ "${MOCK_SLOW_SAMPLE:-0}" != 1 ] || sleep 2
     if [ "${MOCK_ACTIVE:-active}" = active ]; then
-      printf 'active\nrunning\n%s\n0\n0\n' "${MOCK_MAINPID:-0}"
+      restarts=0; pid=${MOCK_MAINPID:-0}
+      if [ "${MOCK_SERVICE_RESTART:-0}" = 1 ] && [ "$n" -ge 2 ]; then restarts=1; pid=$((pid+1)); fi
+      if [ "${MOCK_SERVICE_RESET:-0}" = 1 ] && [ "$n" -lt 2 ]; then restarts=1; fi
+      if [ "${MOCK_PID_CHANGE:-0}" = 1 ] && [ "$n" -ge 2 ]; then pid=$((pid+1)); fi
+      printf 'active\nrunning\n%s\n%s\n0\n' "$pid" "$restarts"
     else
       printf 'inactive\ndead\n0\n0\n1\n'
     fi;;
-  *"-p MainPID"*) printf '%s\n' "${MOCK_MAINPID:-0}";;
-  *"-p NRestarts"*) printf '0\n';;
+  *"-p MainPID"*)
+    pid=${MOCK_MAINPID:-0}; n=0; [ ! -r "${MOCK_SERVICE_COUNT:-/nonexistent}" ] || n=$(cat "$MOCK_SERVICE_COUNT")
+    if { [ "${MOCK_SERVICE_RESTART:-0}" = 1 ] || [ "${MOCK_PID_CHANGE:-0}" = 1 ]; } && [ "$n" -ge 2 ]; then pid=$((pid+1)); fi
+    printf '%s\n' "$pid";;
+  *"-p NRestarts"*)
+    n=0; [ ! -r "${MOCK_SERVICE_COUNT:-/nonexistent}" ] || n=$(cat "$MOCK_SERVICE_COUNT")
+    if [ "${MOCK_SERVICE_RESTART:-0}" = 1 ] && [ "$n" -ge 2 ]; then printf '1\n';
+    elif [ "${MOCK_SERVICE_RESET:-0}" = 1 ] && [ "$n" -lt 1 ]; then printf '1\n';
+    elif [ "${MOCK_RESTARTS_UNKNOWN_START:-0}" = 1 ] && [ "$n" -lt 1 ]; then printf 'unknown\n';
+    else printf '0\n'; fi;;
   *"-p CPUQuotaPerSecUSec"*)
     if [ "${MOCK_QUOTA_SEQUENCE:-0}" = 1 ]; then
       n=0; [ ! -r "$MOCK_QUOTA_COUNT" ] || n=$(cat "$MOCK_QUOTA_COUNT")
@@ -31,6 +46,7 @@ esac
 SH
 cat > "$MOCKBIN/journalctl" <<'SH'
 #!/bin/sh
+[ "${MOCK_JOURNAL_FAIL:-0}" = 1 ] && exit 1
 printf 'mock journal capture\n'
 SH
 chmod 0755 "$MOCKBIN/systemctl" "$MOCKBIN/journalctl"
@@ -69,6 +85,49 @@ grep -q '^quota_transitions_observed=2$' "$TMP/quota-changes/environment.txt"
 grep -q '^quota_direction_reversals_observed=1$' "$TMP/quota-changes/environment.txt"
 unset MOCK_QUOTA_SEQUENCE MOCK_QUOTA_COUNT
 
+# A router restart during the observation window must invalidate continuous
+# soak acceptance, even if the service is active again at the next sample.
+export MOCK_SERVICE_RESTART=1 MOCK_SERVICE_COUNT="$TMP/service-count"
+"$MONITOR" "$TMP/restarted" 2 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/restarted/environment.txt"
+grep -q 'ERROR.*service restart count increased' "$TMP/restarted/errors.tsv"
+unset MOCK_SERVICE_RESTART MOCK_SERVICE_COUNT
+
+# A manual service restart can change MainPID without increasing NRestarts;
+# process identity continuity must still fail the soak acceptance check.
+export MOCK_PID_CHANGE=1 MOCK_SERVICE_COUNT="$TMP/pid-change-count"
+"$MONITOR" "$TMP/pid-changed" 2 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/pid-changed/environment.txt"
+grep -q 'ERROR.*service MainPID changed' "$TMP/pid-changed/errors.tsv"
+unset MOCK_PID_CHANGE MOCK_SERVICE_COUNT
+
+# A restart counter reset is discontinuous telemetry and must not be treated
+# as evidence that the service remained stable.
+export MOCK_SERVICE_RESET=1 MOCK_SERVICE_COUNT="$TMP/service-reset-count"
+"$MONITOR" "$TMP/restart-counter-reset" 2 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/restart-counter-reset/environment.txt"
+grep -q 'ERROR.*service restart counter reset' "$TMP/restart-counter-reset/errors.tsv"
+unset MOCK_SERVICE_RESET MOCK_SERVICE_COUNT
+
+# Missing initial restart-counter baseline must not be silently replaced by a
+# later numeric value and accepted as a continuous soak.
+export MOCK_RESTARTS_UNKNOWN_START=1
+"$MONITOR" "$TMP/unknown-restart-baseline" 1 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/unknown-restart-baseline/environment.txt"
+grep -q 'ERROR.*service restart counter baseline unavailable/invalid' "$TMP/unknown-restart-baseline/errors.tsv"
+unset MOCK_RESTARTS_UNKNOWN_START
+
+# Simulate a delayed sampling command crossing a deadline. The monitor must
+# count the missed deadline and reject continuous-soak acceptance.
+MOCK_SLOW_SAMPLE=1 "$MONITOR" "$TMP/missed-sample" 3 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/missed-sample/environment.txt"
+awk -F= '$1=="missed_intervals_estimate" {if ($2+0<1) exit 1; found=1} END {if(!found) exit 1}' "$TMP/missed-sample/environment.txt"
+
+# If journal collection fails, the report must not claim a complete soak.
+MOCK_JOURNAL_FAIL=1 "$MONITOR" "$TMP/no-journal" 1 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/no-journal/environment.txt"
+grep -q 'ERROR.*service journal capture failed' "$TMP/no-journal/errors.tsv"
+
 # Missing service state is a recorded monitoring failure, not a successful soak.
 MOCK_ACTIVE=inactive "$MONITOR" "$TMP/inactive" 1 1 >/dev/null
 grep -q '^run_status=INCOMPLETE$' "$TMP/inactive/environment.txt"
@@ -87,4 +146,4 @@ set -e
 grep -q '^run_status=INCOMPLETE$' "$TMP/interrupted/environment.txt"
 grep -q '^exit_code=143$' "$TMP/interrupted/environment.txt"
 
-printf '%s\n' 'soak monitor tests: ok (arguments, no-overwrite, schema, permissions, missing service, interruption/completeness)'
+printf '%s\n' 'soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overrun, journal failure, missing service, interruption/completeness)'

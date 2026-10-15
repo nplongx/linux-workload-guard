@@ -1,0 +1,6 @@
+2026-10-15 10:13:44,463 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 10:13:54,782 INFO route decision=accepted pid=187366 cpu=87.4% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-ipxamgm2/hog.py /tmp/lwg-routing-bench-ipxamgm2/lwg-router-1-186619-hog0.pid
+2026-10-15 10:14:11,557 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 10:14:21,942 INFO route decision=accepted pid=188144 cpu=90.9% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-ipxamgm2/hog.py /tmp/lwg-routing-bench-ipxamgm2/lwg-router-2-186619-hog0.pid
+2026-10-15 10:15:29,107 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 10:15:39,396 INFO route decision=accepted pid=190381 cpu=89.7% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-ipxamgm2/hog.py /tmp/lwg-routing-bench-ipxamgm2/lwg-router-3-186619-hog0.pid

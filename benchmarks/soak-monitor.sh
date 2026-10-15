@@ -146,18 +146,26 @@ PY
     printf '%s\tERROR\tservice state %s/%s pid=%s status=%s\n' "$ts" "${active:-n/a}" "${sub:-n/a}" "${pid:-n/a}" "${status:-n/a}" >> "$OUT/errors.tsv"
     SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
   fi
-  case "$restarts:$PREV_RESTARTS" in *[!0-9:]*|:*|*:) ;; *)
-    if [ "$restarts" -gt "$PREV_RESTARTS" ]; then
-      printf '%s\tERROR\tservice restart count increased %s -> %s\n' "$ts" "$PREV_RESTARTS" "$restarts" >> "$OUT/errors.tsv"
-    elif [ "$restarts" -lt "$PREV_RESTARTS" ]; then
-      printf '%s\tWARN\tservice restart counter reset %s -> %s\n' "$ts" "$PREV_RESTARTS" "$restarts" >> "$OUT/errors.tsv"
-    fi;;
+  case "$restarts" in ''|*[!0-9]*) ;; *)
+    case "$PREV_RESTARTS" in ''|*[!0-9]*)
+      printf '%s\tERROR\tservice restart counter baseline unavailable/invalid: %s\n' "$ts" "$PREV_RESTARTS" >> "$OUT/errors.tsv"
+      SAMPLING_FAILURES=$((SAMPLING_FAILURES+1));;
+      *) if [ "$restarts" -gt "$PREV_RESTARTS" ]; then
+           printf '%s\tERROR\tservice restart count increased %s -> %s\n' "$ts" "$PREV_RESTARTS" "$restarts" >> "$OUT/errors.tsv"
+           SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+         elif [ "$restarts" -lt "$PREV_RESTARTS" ]; then
+           printf '%s\tERROR\tservice restart counter reset %s -> %s\n' "$ts" "$PREV_RESTARTS" "$restarts" >> "$OUT/errors.tsv"
+           SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+         fi;;
+    esac;;
   esac
   if [ -n "$PREV_SERVICE_PID" ] && [ "$pid" != "$PREV_SERVICE_PID" ] && [ "${active:-unknown}" = active ] && [ -n "$pid" ] && [ "$pid" != 0 ]; then
-    printf '%s\tINFO\tservice MainPID changed %s -> %s\n' "$ts" "$PREV_SERVICE_PID" "$pid" >> "$OUT/errors.tsv"
+    printf '%s\tERROR\tservice MainPID changed %s -> %s while active\n' "$ts" "$PREV_SERVICE_PID" "$pid" >> "$OUT/errors.tsv"
+    SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
   fi
   PREV_RESTARTS=$restarts; PREV_SERVICE_PID=$pid
-  if [ "$psi10" = n/a ] || [ "$quota" = n/a ] || [ "$cpu" = n/a ] || [ "$rss" = n/a ] || [ "$routes" = n/a ] || { [ "$SAMPLE_COUNT" -gt 1 ] && [ "$sched_delta" = n/a ]; }; then
+  case "$restarts" in ''|*[!0-9]*) restart_metric=n/a;; *) restart_metric=ok;; esac
+  if [ "$psi10" = n/a ] || [ "$quota" = n/a ] || [ "$cpu" = n/a ] || [ "$rss" = n/a ] || [ "$routes" = n/a ] || [ "$restart_metric" = n/a ] || { [ "$SAMPLE_COUNT" -gt 1 ] && [ "$sched_delta" = n/a ]; }; then
     printf '%s\tWARN\tmissing metric(s): psi_avg10=%s quota=%s router_cpu=%s router_rss_kib=%s scheduler_delta_ms=%s verified_routes=%s\n' "$ts" "$psi10" "$quota" "$cpu" "$rss" "$sched_delta" "$routes" >> "$OUT/errors.tsv"
     SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
   fi
@@ -167,11 +175,41 @@ finish() {
   END_ISO=$(date --iso-8601=seconds)
   END_EPOCH=$(date +%s)
   restarts_end=$(systemctl --user show workload-router.service -p NRestarts --value 2>/dev/null || echo unknown)
+  final_pid=$(systemctl --user show workload-router.service -p MainPID --value 2>/dev/null || echo unknown)
+  case "$restarts_end:$PREV_RESTARTS" in *[!0-9:]*|:*|*:)
+    printf '%s\tERROR\tfinal service restart count unavailable or invalid: %s\n' "$END_ISO" "$restarts_end" >> "$OUT/errors.tsv"
+    SAMPLING_FAILURES=$((SAMPLING_FAILURES+1));;
+    *) if [ "$restarts_end" -gt "$PREV_RESTARTS" ]; then
+         printf '%s\tERROR\tservice restart occurred after last sample %s -> %s\n' "$END_ISO" "$PREV_RESTARTS" "$restarts_end" >> "$OUT/errors.tsv"
+         SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+       elif [ "$restarts_end" -lt "$PREV_RESTARTS" ]; then
+         printf '%s\tERROR\tfinal service restart counter reset %s -> %s\n' "$END_ISO" "$PREV_RESTARTS" "$restarts_end" >> "$OUT/errors.tsv"
+         SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+       fi;;
+  esac
+  case "$final_pid" in ''|*[!0-9]*|0|unknown)
+    printf '%s\tERROR\tfinal service MainPID unavailable or invalid: %s\n' "$END_ISO" "$final_pid" >> "$OUT/errors.tsv"
+    SAMPLING_FAILURES=$((SAMPLING_FAILURES+1));;
+    *) if [ -n "$PREV_SERVICE_PID" ] && [ "$final_pid" != "$PREV_SERVICE_PID" ]; then
+         printf '%s\tERROR\tservice MainPID changed after last sample %s -> %s\n' "$END_ISO" "$PREV_SERVICE_PID" "$final_pid" >> "$OUT/errors.tsv"
+         SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+       fi;;
+  esac
+  if command -v journalctl >/dev/null 2>&1; then
+    if ! journalctl --user -u workload-router.service --since "$START_ISO" --no-pager > "$OUT/service-journal.log" 2>&1; then
+      printf '%s\tERROR\tservice journal capture failed; journal evidence is incomplete\n' "$END_ISO" >> "$OUT/errors.tsv"
+      SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+    fi
+  else
+    printf '%s\tERROR\tjournalctl unavailable; service journal evidence is missing\n' "$END_ISO" >> "$OUT/errors.tsv"
+    SAMPLING_FAILURES=$((SAMPLING_FAILURES+1))
+  fi
   {
     printf 'ended_at=%s\n' "$END_ISO"
     printf 'elapsed_seconds=%s\n' "$((END_EPOCH-START_EPOCH))"
     printf 'exit_code=%s\n' "$rc"
     printf 'service_final_restarts=%s\n' "$restarts_end"
+    printf 'service_final_pid=%s\n' "$final_pid"
     expected_samples=$(((DURATION+INTERVAL-1)/INTERVAL+1))
     coverage=$(awk -v got="$SAMPLE_COUNT" -v want="$expected_samples" 'BEGIN {if(want>0) printf "%.4f",got/want; else print "n/a"}')
     if [ "$RUN_STATUS" = COMPLETE ] && [ "$SAMPLE_COUNT" -eq "$expected_samples" ] && [ "$MISSED_INTERVALS" -eq 0 ] && [ "$SAMPLING_FAILURES" -eq 0 ] && [ "$((END_EPOCH-START_EPOCH))" -ge "$DURATION" ]; then
@@ -184,9 +222,6 @@ finish() {
     printf 'missed_intervals_estimate=%s\nsampling_failures=%s\n' "$MISSED_INTERVALS" "$SAMPLING_FAILURES"
     printf 'quota_transitions_observed=%s\nquota_direction_reversals_observed=%s\n' "$QUOTA_TRANSITIONS" "$QUOTA_REVERSALS"
   } >> "$OUT/environment.txt"
-  if command -v journalctl >/dev/null 2>&1; then
-    journalctl --user -u workload-router.service --since "$START_ISO" --no-pager > "$OUT/service-journal.log" 2>&1 || true
-  fi
   exit "$rc"
 }
 trap finish EXIT
@@ -202,8 +237,11 @@ while :; do
   now=$(date +%s)
   if [ "$now" -lt "$NEXT_SAMPLE_EPOCH" ]; then
     sleep "$((NEXT_SAMPLE_EPOCH-now))"
+    NEXT_SAMPLE_EPOCH=$((NEXT_SAMPLE_EPOCH+INTERVAL))
+  elif [ "$now" -le "$((NEXT_SAMPLE_EPOCH+1))" ]; then
+    NEXT_SAMPLE_EPOCH=$((NEXT_SAMPLE_EPOCH+INTERVAL))
   else
-    while [ "$NEXT_SAMPLE_EPOCH" -lt "$now" ]; do
+    while [ "$NEXT_SAMPLE_EPOCH" -lt "$((now-1))" ]; do
       NEXT_SAMPLE_EPOCH=$((NEXT_SAMPLE_EPOCH+INTERVAL))
       MISSED_INTERVALS=$((MISSED_INTERVALS+1))
     done
@@ -211,7 +249,6 @@ while :; do
       printf '%s\tWARN\tmonitor collection overran one or more sample deadlines\n' "$(date --iso-8601=seconds)" >> "$OUT/errors.tsv"
     fi
   fi
-  NEXT_SAMPLE_EPOCH=$((NEXT_SAMPLE_EPOCH+INTERVAL))
 done
 sample
 RUN_STATUS=COMPLETE

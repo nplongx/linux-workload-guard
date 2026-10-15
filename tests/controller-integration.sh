@@ -52,6 +52,9 @@ cleanup() {
   [ -n "$WORK_PID_2" ] && kill "$WORK_PID_2" 2>/dev/null
   [ -n "$PROBE_PID" ] && kill "$PROBE_PID" 2>/dev/null
   systemctl --user stop "$SCOPE_1" "$SCOPE_2" "$PROBE_SCOPE" "$PARENT_UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT" >/dev/null 2>&1
+  # systemd synthesizes the tag's ancestor slice from the hyphenated unit
+  # names. Stop that per-run ancestor too, but never stop shared parent slices.
+  systemctl --user stop "$TAG.slice" >/dev/null 2>&1
   if [ "$UNITS_CREATED" -eq 1 ]; then
     rm -f "$PARENT_FILE" "$RECOVERY_FILE" "$HEAVY_FILE"
     systemctl --user daemon-reload >/dev/null 2>&1
@@ -201,13 +204,14 @@ pid = sys.argv[1]
 text = open(f"/proc/{pid}/stat").read()
 fields = text[text.rfind(")") + 2:].split()
 ticks = int(fields[11]) + int(fields[12])
+starttime = int(fields[19])
 with open(f"/proc/{pid}/status") as f:
     status = {row.split(":", 1)[0]: row.split(":", 1)[1].strip() for row in f if ":" in row}
 with open(f"/proc/{pid}/schedstat") as f:
     sched_ns = int(f.read().split()[1])
 rss = int(status.get("VmRSS", "0 kB").split()[0])
 hwm = int(status.get("VmHWM", "0 kB").split()[0])
-print(ticks, rss, hwm, sched_ns)
+print(ticks, rss, hwm, sched_ns, starttime)
 PY
 }
 
@@ -225,35 +229,38 @@ sleep 0.25
 
 # Test-only pressure thresholds make this a bounded low-pressure quota/recovery
 # exercise. Production defaults are independently pinned by controller-hardening.py.
+start_router() {
+  env \
+    WORKLOAD_GUARD_PARENT_UNIT="$PARENT_UNIT" \
+    WORKLOAD_GUARD_RECOVERY_UNIT="$RECOVERY_UNIT" \
+    WORKLOAD_GUARD_HEAVY_UNIT="$HEAVY_UNIT" \
+    WORKLOAD_GUARD_STATE_FILE="$STATE" \
+    WORKLOAD_GUARD_SAMPLE_SEC=0.25 \
+    WORKLOAD_GUARD_SUSTAINED_SAMPLES=3 \
+    WORKLOAD_GUARD_CPU_THRESHOLD=10 \
+    WORKLOAD_GUARD_COOLDOWN_SEC=1 \
+    WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD=35 \
+    WORKLOAD_GUARD_RECOVERY_SAMPLES=2 \
+    WORKLOAD_GUARD_RECOVERY_DWELL_SEC=1 \
+    WORKLOAD_GUARD_SHADOW=true \
+    WORKLOAD_GUARD_SHADOW_ROUTE_THRESHOLD=10 \
+    WORKLOAD_GUARD_SHADOW_CLEAR_THRESHOLD=5 \
+    WORKLOAD_GUARD_SHADOW_SUSTAINED_SAMPLES=3 \
+    WORKLOAD_GUARD_SHADOW_RECOVERY_SAMPLES=2 \
+    WORKLOAD_GUARD_SHADOW_RECOVERY_DWELL_SEC=1 \
+    WORKLOAD_GUARD_DYNAMIC_QUOTA=true \
+    WORKLOAD_GUARD_AIMD_SHADOW=true \
+    WORKLOAD_GUARD_QUOTA_INTERVAL_SEC=1 \
+    WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC=2 \
+    WORKLOAD_GUARD_QUOTA_PRESSURE_LOW=0.99 \
+    WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH=1.0 \
+    WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS=99999 \
+    WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS=100000 \
+    python3 "$ROOT/bin/workload-router.py" >>"$LOG" 2>&1 &
+  ROUTER_PID=$!
+}
 : > "$LOG"
-env \
-  WORKLOAD_GUARD_PARENT_UNIT="$PARENT_UNIT" \
-  WORKLOAD_GUARD_RECOVERY_UNIT="$RECOVERY_UNIT" \
-  WORKLOAD_GUARD_HEAVY_UNIT="$HEAVY_UNIT" \
-  WORKLOAD_GUARD_STATE_FILE="$STATE" \
-  WORKLOAD_GUARD_SAMPLE_SEC=0.25 \
-  WORKLOAD_GUARD_SUSTAINED_SAMPLES=3 \
-  WORKLOAD_GUARD_CPU_THRESHOLD=10 \
-  WORKLOAD_GUARD_COOLDOWN_SEC=1 \
-  WORKLOAD_GUARD_RECOVERY_CPU_THRESHOLD=35 \
-  WORKLOAD_GUARD_RECOVERY_SAMPLES=2 \
-  WORKLOAD_GUARD_RECOVERY_DWELL_SEC=1 \
-  WORKLOAD_GUARD_SHADOW=true \
-  WORKLOAD_GUARD_SHADOW_ROUTE_THRESHOLD=10 \
-  WORKLOAD_GUARD_SHADOW_CLEAR_THRESHOLD=5 \
-  WORKLOAD_GUARD_SHADOW_SUSTAINED_SAMPLES=3 \
-  WORKLOAD_GUARD_SHADOW_RECOVERY_SAMPLES=2 \
-  WORKLOAD_GUARD_SHADOW_RECOVERY_DWELL_SEC=1 \
-  WORKLOAD_GUARD_DYNAMIC_QUOTA=true \
-  WORKLOAD_GUARD_AIMD_SHADOW=true \
-  WORKLOAD_GUARD_QUOTA_INTERVAL_SEC=1 \
-  WORKLOAD_GUARD_QUOTA_MIN_DWELL_SEC=2 \
-  WORKLOAD_GUARD_QUOTA_PRESSURE_LOW=0.99 \
-  WORKLOAD_GUARD_QUOTA_PRESSURE_HIGH=1.0 \
-  WORKLOAD_GUARD_QUOTA_SCHED_DELAY_LOW_MS=99999 \
-  WORKLOAD_GUARD_QUOTA_SCHED_DELAY_HIGH_MS=100000 \
-  python3 "$ROOT/bin/workload-router.py" >>"$LOG" 2>&1 &
-ROUTER_PID=$!
+start_router
 for _ in $(seq 1 30); do grep -q 'started threshold=' "$LOG" && break; sleep 0.1; done
 grep -q 'started threshold=' "$LOG"
 
@@ -315,7 +322,7 @@ if grep -Eq "^($WORK_PID_1|$WORK_PID_2)$" "$HEAVY_CGROUP/cgroup.procs" 2>/dev/nu
 fi
 
 set -- $(read_router_stats)
-ROUTER_START_TICKS=$1; ROUTER_START_RSS_KIB=$2; ROUTER_START_HWM_KIB=$3; ROUTER_START_SCHED_NS=$4
+ROUTER_START_TICKS=$1; ROUTER_START_RSS_KIB=$2; ROUTER_START_HWM_KIB=$3; ROUTER_START_SCHED_NS=$4; ROUTER_START_STARTTIME=$5
 ENABLED_PSI_START=$(read_psi_avg10)
 ENABLED_START_NS=$(mono_ns)
 printf enabled_hot > "$PHASE_FILE"
@@ -350,10 +357,43 @@ fi
 # Match baseline window length for a useful, intentionally short paired probe.
 while awk -v s="$ENABLED_START_NS" -v n="$(mono_ns)" 'BEGIN { exit !((n-s)/1000000000 < 5.0) }'; do sleep 0.1; done
 set -- $(read_router_stats)
-ROUTER_END_TICKS=$1; ROUTER_END_RSS_KIB=$2; ROUTER_END_HWM_KIB=$3; ROUTER_END_SCHED_NS=$4
+ROUTER_END_TICKS=$1; ROUTER_END_RSS_KIB=$2; ROUTER_END_HWM_KIB=$3; ROUTER_END_SCHED_NS=$4; ROUTER_END_STARTTIME=$5
+if [ "$ROUTER_START_STARTTIME" != "$ROUTER_END_STARTTIME" ]; then
+  echo 'controller integration: failed (router PID identity changed during overhead measurement window)' >&2
+  exit 1
+fi
+ROUTER_PEAK_RSS_KIB=$(awk -v r0="$ROUTER_START_RSS_KIB" -v h0="$ROUTER_START_HWM_KIB" \
+  -v r1="$ROUTER_END_RSS_KIB" -v h1="$ROUTER_END_HWM_KIB" \
+  'BEGIN {m=r0; if(h0>m)m=h0; if(r1>m)m=r1; if(h1>m)m=h1; printf "%d",m}')
 ENABLED_PSI_END=$(read_psi_avg10)
 ENABLED_END_NS=$(mono_ns)
 ENABLED_DURATION_SEC=$(awk -v s="$ENABLED_START_NS" -v e="$ENABLED_END_NS" 'BEGIN { printf "%.6f", (e-s)/1000000000 }')
+
+# After collecting start/end CPU, RSS, and scheduler counters from the same
+# router PID, restart the isolated controller while both workers remain routed.
+# Persisted starttime identity must reattach them; then idle demand must recover.
+STARTED_COUNT_BEFORE=$(grep -c 'started threshold=' "$LOG" || true)
+kill "$ROUTER_PID"
+wait "$ROUTER_PID" 2>/dev/null || true
+ROUTER_PID=''
+start_router
+RESTARTED=0
+for _ in $(seq 1 30); do
+  STARTED_COUNT_NOW=$(grep -c 'started threshold=' "$LOG" || true)
+  if [ "$STARTED_COUNT_NOW" -gt "$STARTED_COUNT_BEFORE" ] && \
+     awk -F '\t' -v pid="$WORK_PID_1" '$1==pid {found=1} END {exit !found}' "$STATE" && \
+     awk -F '\t' -v pid="$WORK_PID_2" '$1==pid {found=1} END {exit !found}' "$STATE"; then
+    RESTARTED=1; break
+  fi
+  sleep 0.1
+done
+if [ "$RESTARTED" -ne 1 ] || ! grep -qx "$WORK_PID_1" "$HEAVY_CGROUP/cgroup.procs" || ! grep -qx "$WORK_PID_2" "$HEAVY_CGROUP/cgroup.procs"; then
+  echo 'controller integration: failed (router restart did not preserve active routed worker identity/state)' >&2
+  sed -n '1,220p' "$LOG" >&2
+  exit 1
+fi
+LIFECYCLE_RESULT='router restart with active routes recovered'
+
 ROUTE_DETECTION_SEC=$(awk -v s="$ENABLED_START_NS" -v e="$ROUTE_DETECTION_END_NS" 'BEGIN { printf "%.3f", (e-s)/1000000000 }')
 QUOTA_CHANGE_SEC=$(awk -v s="$ENABLED_START_NS" -v e="$QUOTA_CHANGE_NS" 'BEGIN { printf "%.3f", (e-s)/1000000000 }')
 
@@ -453,10 +493,10 @@ if [ "$CGROUP_REMOVED" -eq 1 ]; then
     sed -n '1,280p' "$LOG" >&2
     exit 1
   fi
-  LIFECYCLE_RESULT='cgroup recreated and routing/recovery resumed'
+  LIFECYCLE_RESULT="$LIFECYCLE_RESULT; cgroup recreated and routing/recovery resumed"
 else
   systemctl --user start "$HEAVY_UNIT"
-  LIFECYCLE_RESULT='cgroup removal/recreation SKIP (systemd retained empty cgroup)'
+  LIFECYCLE_RESULT="$LIFECYCLE_RESULT; cgroup removal/recreation SKIP (systemd retained empty cgroup)"
 fi
 if [ -n "$RESULT_DIR" ]; then
   cp "$PROBE_SAMPLES" "$RESULT_DIR/probe-samples.tsv"
@@ -485,14 +525,16 @@ if [ -n "$RESULT_DIR" ]; then
 fi
 METRICS=$(python3 - "$PROBE_SAMPLES" "$PID_FILE_1.throughput.tsv" "$PID_FILE_2.throughput.tsv" "$LOG" "$HEAVY_UNIT" \
   "$BASELINE_DURATION_SEC" "$ENABLED_DURATION_SEC" "$ROUTER_START_TICKS" "$ROUTER_END_TICKS" \
-  "$ROUTER_START_SCHED_NS" "$ROUTER_END_SCHED_NS" "$ROUTER_START_RSS_KIB" "$ROUTER_END_RSS_KIB" "$ROUTER_END_HWM_KIB" \
+  "$ROUTER_START_SCHED_NS" "$ROUTER_END_SCHED_NS" "$ROUTER_START_STARTTIME" "$ROUTER_END_STARTTIME" \
+  "$ROUTER_START_RSS_KIB" "$ROUTER_END_RSS_KIB" "$ROUTER_PEAK_RSS_KIB" \
   "$BASELINE_PSI_START" "$BASELINE_PSI_END" "$ENABLED_PSI_START" "$ENABLED_PSI_END" \
   "$ROUTE_DETECTION_SEC" "$QUOTA_CHANGE_SEC" "$RECOVERY_SEC" <<'PY'
 import math, os, re, sys
 from collections import defaultdict
 
 (probe_path, throughput_a, throughput_b, log_path, heavy_unit, baseline_duration,
- enabled_duration, start_ticks, end_ticks, start_sched, end_sched, start_rss,
+ enabled_duration, start_ticks, end_ticks, start_sched, end_sched, start_identity,
+ end_identity, start_rss,
  end_rss, peak_rss, baseline_psi_start, baseline_psi_end, enabled_psi_start,
  enabled_psi_end, route_detection, quota_change, recovery) = sys.argv[1:]
 baseline_duration, enabled_duration = float(baseline_duration), float(enabled_duration)
@@ -549,12 +591,23 @@ for mode in ("baseline", "enabled"):
     print(f"cpu_bound_{mode}: workers=2 aggregate_python_loop_iterations_per_second={fmt(rate)}")
 
 ticks_per_second = os.sysconf("SC_CLK_TCK")
-cpu_seconds = max(0, int(end_ticks) - int(start_ticks)) / ticks_per_second
-cpu_pct = cpu_seconds / enabled_duration * 100.0 if enabled_duration > 0 else float("nan")
-sched_ms = (int(end_sched) - int(start_sched)) / 1e6
-print(f"guard_enabled_window: wall_s={enabled_duration:.3f} cpu_s={cpu_seconds:.3f} "
+cpu_delta = int(end_ticks) - int(start_ticks)
+cpu_status = "valid"
+if start_identity != end_identity or cpu_delta < 0:
+    cpu_seconds = float("nan"); cpu_pct = float("nan"); cpu_status = "invalid-identity-or-counter-regression"
+else:
+    cpu_seconds = cpu_delta / ticks_per_second
+    cpu_pct = cpu_seconds / enabled_duration * 100.0 if enabled_duration > 0 else float("nan")
+sched_delta = int(end_sched) - int(start_sched)
+sched_status = "valid"
+if start_identity != end_identity or sched_delta < 0:
+    sched_ms = float("nan"); sched_status = "invalid-identity-or-counter-regression"
+else:
+    sched_ms = sched_delta / 1e6
+print(f"guard_enabled_window: wall_s={enabled_duration:.3f} cpu_s={fmt(cpu_seconds)} "
       f"one_core_cpu_pct={cpu_pct:.2f} rss_start/end_kib={start_rss}/{end_rss} "
-      f"peak_rss_kib={peak_rss} router_process_runqueue_delay_delta_ms={sched_ms:.3f}")
+      f"peak_rss_kib={peak_rss} router_process_runqueue_delay_delta_ms={fmt(sched_ms)} "
+      f"cpu_counter_status={cpu_status} scheduler_counter_status={sched_status}")
 print(f"host_cpu_psi_some_avg10_pct: baseline_start/end={baseline_psi_start}/{baseline_psi_end}; "
       f"enabled_start/end={enabled_psi_start}/{enabled_psi_end}")
 print(f"transition_timing_s: both_workers_routed={route_detection}; first_quota_increase={quota_change}; "
