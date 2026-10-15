@@ -140,16 +140,28 @@ with tempfile.TemporaryDirectory() as tempdir:
     open(os.path.join(spoof, "cgroup.procs"), "w").close()
     with open(os.path.join(spoof, "cpu.stat"), "w") as f:
         f.write("usage_usec 99999999\n")
-    def fake_scope_property(unit, prop):
-        path = scope if unit == "lwg-workload-test-worker.scope" else spoof
-        return {"Description": router.AGGREGATE_SCOPE_DESCRIPTION if unit.endswith("worker.scope") else "unrelated scope",
-                "ActiveState": "active", "ControlGroup": path}.get(prop)
-    with patch.object(router, "unit_property", side_effect=fake_scope_property):
+    def fake_scope_properties(units, properties):
+        result = {}
+        for unit in units:
+            path = scope if unit == "lwg-workload-test-worker.scope" else spoof
+            result[unit] = {"Description": router.AGGREGATE_SCOPE_DESCRIPTION if unit.endswith("worker.scope") else "unrelated scope",
+                            "ActiveState": "active", "ControlGroup": path}
+        return result
+    with patch.object(router, "unit_properties", side_effect=fake_scope_properties) as property_batch:
         candidates = router.workload_scope_candidates(parent)
+        check(property_batch.call_count == 1, "uncached scope identities should use one batched systemd query")
     check(set(candidates) == {"lwg-workload-test-worker.scope"},
           "scope discovery must include only explicitly named direct workload scopes")
     check(candidates["lwg-workload-test-worker.scope"]["usage_usec"] == 1000000,
           "scope usage parser should not require quota-only cpu.stat counters")
+    router.SCOPE_IDENTITY_CACHE.clear()
+    with patch.object(router, "unit_properties", return_value=None):
+        candidates = router.workload_scope_candidates(parent)
+    check(router.SCOPE_DISCOVERY_ERROR and not candidates,
+          "failed batched systemd scope query must fail closed without routing candidates")
+    router.SCOPE_IDENTITY_CACHE.clear()
+    with patch.object(router, "unit_properties", side_effect=fake_scope_properties):
+        candidates = router.workload_scope_candidates(parent)
     previous = {"lwg-workload-test-worker.scope": (candidates["lwg-workload-test-worker.scope"]["inode"], 500000, 10.0)}
     measured, next_previous, valid = router.scope_cpu_samples(candidates, previous, 11.0, 10.0)
     check(valid and abs(measured["lwg-workload-test-worker.scope"] - 50.0) < 1e-9,

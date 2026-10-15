@@ -270,6 +270,7 @@ def workload_scope_candidates(parent_cgroup, tracked_units=()):
             SCOPE_DISCOVERY_OVERFLOW = True
             tracked = set(tracked_units)
             entries = [entry for entry in entries if entry.name in tracked]
+        pending = []
         for entry in entries:
             seen_units.add(entry.name)
             path = entry.path
@@ -283,16 +284,36 @@ def workload_scope_candidates(parent_cgroup, tracked_units=()):
             cached_identity = SCOPE_IDENTITY_CACHE.get(entry.name)
             if cached_identity == (info.st_ino, path, "rejected"):
                 continue
-            if cached_identity != identity:
+            if cached_identity == identity:
+                candidates[entry.name] = {"path": path, "inode": info.st_ino,
+                                          "usage_usec": read_cgroup_usage_usec(path)}
+                continue
+            pending.append((entry, path, info, identity))
+        if pending:
+            # Query all uncached units in one bounded systemd round trip. A
+            # per-property/per-scope loop can block the controller for minutes
+            # at the configured 64-scope ceiling when D-Bus is degraded.
+            properties = unit_properties([entry.name for entry, _, _, _ in pending],
+                                         ("Description", "ActiveState", "ControlGroup"))
+            if properties is None:
+                SCOPE_DISCOVERY_ERROR = True
+                return {}
+            for entry, path, info, identity in pending:
+                observed = properties.get(entry.name)
+                if observed is None:
+                    # A scope may have exited while systemd was answering. It
+                    # is not a candidate for this sample; retry discovery next
+                    # cycle rather than trusting stale unit identity.
+                    continue
                 expected_control_group = path[len(SYSTEMD_PREFIX):] if path.startswith(SYSTEMD_PREFIX) else path
-                if (unit_property(entry.name, "Description") != AGGREGATE_SCOPE_DESCRIPTION or
-                        unit_property(entry.name, "ActiveState") != "active" or
-                        (unit_property(entry.name, "ControlGroup") or "").rstrip("/") != expected_control_group.rstrip("/")):
+                if (observed.get("Description") != AGGREGATE_SCOPE_DESCRIPTION or
+                        observed.get("ActiveState") != "active" or
+                        (observed.get("ControlGroup") or "").rstrip("/") != expected_control_group.rstrip("/")):
                     SCOPE_IDENTITY_CACHE[entry.name] = (info.st_ino, path, "rejected")
                     continue
                 SCOPE_IDENTITY_CACHE[entry.name] = identity
-            candidates[entry.name] = {"path": path, "inode": info.st_ino,
-                                      "usage_usec": read_cgroup_usage_usec(path)}
+                candidates[entry.name] = {"path": path, "inode": info.st_ino,
+                                          "usage_usec": read_cgroup_usage_usec(path)}
     except OSError:
         SCOPE_DISCOVERY_ERROR = True
         return {}
@@ -309,6 +330,32 @@ def unit_property(unit, prop):
         return value if value and value != "-" else None
     except (OSError, subprocess.SubprocessError):
         return None
+
+def unit_properties(units, properties):
+    """Read selected properties for many units in one bounded systemctl call."""
+    if not units:
+        return {}
+    command = ["systemctl", "--user", "show", *units, "--property=Id"]
+    command.extend(f"--property={prop}" for prop in properties)
+    command.append("--no-pager")
+    try:
+        result = subprocess.run(command, check=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    parsed = {}
+    record = {}
+    for line in result.stdout.splitlines() + [""]:
+        if not line.strip():
+            unit = record.get("Id")
+            if unit:
+                parsed[unit] = record
+            record = {}
+            continue
+        key, separator, value = line.partition("=")
+        if separator:
+            record[key] = value
+    return parsed
 
 def unit_cpu_weight(unit):
     value = unit_property(unit, "CPUWeight")
