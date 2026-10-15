@@ -1,0 +1,1 @@
+Local regression/compile/syntax/systemd/analyzer checks all exited 0. Process audit is observational only; no acceptance benchmark run in this pass.

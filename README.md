@@ -334,6 +334,8 @@ Predeclared candidate acceptance limits for the RC performance review are: at le
 
 For controlled operator rollback, Ubuntu/cgroup prerequisite evidence, second-host manifests, and the exact PASS/FAIL/SKIP/NOT RUN vocabulary, see [the operator rollback and cross-host acceptance checklist](docs/operator-rollback.md).
 
+For read-only diagnosis of CPU saturation, PSI versus quota throttling, telemetry gaps, and safe rollback boundaries, see [CPU 100% diagnosis and safe recovery](docs/cpu-100-diagnostics.md). Current RC validation gate status is tracked in [pass 16](docs/rc-validation-pass16.md).
+
 ## Benchmark
 
 ### Historical CPU quota scaling (2026-10-09)

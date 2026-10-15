@@ -236,6 +236,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [CHANGELOG.
 
 ## Operational rollback and release checklist
 
+### RC validation pass 16 — CI hardening and CPU diagnostics (2026-10-15)
+
+- Added Python byte-compilation and `git diff --check` as explicit hosted CI steps on Ubuntu 22.04 and 24.04. This supplements `./test.sh`, shell syntax, systemd verification, and integration tests; it does not imply privileged delegated-controller integration ran on hosted runners.
+- Added a CPU-100% diagnosis runbook distinguishing cgroup quota throttling, host PSI, host capacity, router overhead, and verified process placement. The procedure is read-only by default and explicitly forbids forcing PSI events or modifying production quota/service during diagnosis.
+- Added [`docs/rc-validation-pass16.md`](docs/rc-validation-pass16.md) as a traceable gate snapshot. The current environment has no configured SSH host alias and no available Ubuntu 22.04/24.04 container image; existing Docker containers are shared application/database services and were left untouched. Therefore independent-host ABBA, Ubuntu 22.04 delegated telemetry, dedicated-host rollback, and 24/72-hour soak remain open rather than simulated.
+- Pass 15 remains `CONFOUNDED_INCONCLUSIVE`; throughput threshold `0.90`, production config/quota and `0.6.5-rc.1` remain unchanged. No stable release/tag until mandatory gates pass.
+
 For an operator rollback of the experimental adaptive quota path, edit `~/.config/linux-workload-guard/workload-guard.env` and set `WORKLOAD_GUARD_DYNAMIC_QUOTA=false`; set `WORKLOAD_GUARD_AIMD_SHADOW=false` if its diagnostic logs are also unwanted, then run `systemctl --user restart workload-router.service`. Verify the service is active, check its journal for configuration/telemetry errors, and inspect `CPUQuotaPerSecUSec` on `heavy-workload.slice`. If quota was changed before the rollback, restore only the previously recorded/known quota value; do not assume `400%` is the correct runtime restoration value. The router does not automatically reset the heavy slice quota merely because dynamic control is disabled.
 
 Before promoting a candidate, verify every item below with fresh evidence:

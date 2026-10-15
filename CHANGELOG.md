@@ -31,6 +31,7 @@
 
 ### Added
 
+- CPU-100% diagnosis runbook explaining PSI, cgroup quota throttling, read-only telemetry capture, and safe rollback boundaries; hosted CI now explicitly byte-compiles Python sources and checks patch whitespace on Ubuntu 22.04/24.04.
 - Deterministic controller hardening tests for PSI threshold boundaries, counter resets/anomalies, stale windows, PID identity, legacy state, service timeouts, and the quota/AIMD/recovery decision sequence.
 - Mocked quota-benchmark safety tests cover argument validation, immutable existing output, isolated temporary-slice targeting, cgroup counter/schema collection, and the absence of calls targeting the installed service or production heavy slice.
 - Routing, recovery, and shadow integration tests now use uniquely named temporary parent/heavy/recovery slices and no longer stop/restart `workload-router.service` or write production slice quotas. A static regression guard rejects reintroducing those production-unit operations.

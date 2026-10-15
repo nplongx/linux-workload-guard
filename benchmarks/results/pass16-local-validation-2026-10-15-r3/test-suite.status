@@ -1,0 +1,2 @@
+command=./test.sh
+exit_code=0

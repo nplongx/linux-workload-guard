@@ -1,0 +1,2 @@
+command=./tests/analyze-aggregate-routing.sh
+exit_code=0

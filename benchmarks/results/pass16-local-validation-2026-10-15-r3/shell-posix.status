@@ -1,0 +1,2 @@
+command=sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/aggregate-scope-integration.sh tests/analyze-aggregate-routing.sh tests/controller-integration.sh tests/install-uninstall.sh tests/integration-routing.sh tests/live-psi-observe-safety.sh tests/performance-review.sh tests/quota-benchmark-safety.sh tests/recovery-routing.sh tests/recovery-unit.sh tests/routing-benchmark-safety.sh tests/run-workload-scope.sh tests/shadow-routing.sh tests/soak-monitor.sh benchmarks/soak-monitor.sh
+exit_code=0
