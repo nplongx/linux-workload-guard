@@ -1,0 +1,23 @@
+kernel=7.0.0-38-generic
+cgroup_fs=cgroup2fs
+controllers=cpuset cpu io memory hugetlb pids rdma misc dmem
+root_cpu_stat_keys:
+burst_usec
+core_sched.force_idle_usec
+nice_usec
+nr_bursts
+nr_periods
+nr_throttled
+system_usec
+throttled_usec
+usage_usec
+user_usec
+user_manager:
+available
+production_router:
+ActiveState=active
+SubState=running
+MainPID=358400
+NRestarts=0
+production_quota:
+CPUQuotaPerSecUSec=1s

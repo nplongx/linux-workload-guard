@@ -8,6 +8,13 @@ report_skip() {
   kernel=$(uname -r 2>/dev/null || echo unavailable)
   printf 'controller integration: SKIP reason=%s kernel=%s cgroup_mode=%s available_controllers="%s"\n' "$reason" "$kernel" "$mode" "$controllers"
   printf '::notice title=controller integration SKIP::%s; kernel=%s; cgroup_mode=%s; controllers=%s\n' "$reason" "$kernel" "$mode" "$controllers"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+      printf '### Delegated CPU runtime gate: **SKIP / OPEN**\n\n'
+      printf -- '- Reason: `%s`\n- Kernel: `%s`\n- cgroup mode: `%s`\n- available controllers: `%s`\n' "$reason" "$kernel" "$mode" "$controllers"
+      printf '\nA successful compatibility job does not close this runtime gate. Re-run with `WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1` on a runner provisioned for delegated CPU quota telemetry.\n'
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
   if [ "${WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER:-0}" = 1 ]; then
     printf '%s\n' 'controller integration: strict live-capability mode converts SKIP to failure' >&2
     exit 1
@@ -770,3 +777,9 @@ if [ -n "$RESULT_DIR" ]; then
   printf 'results_dir=%s\n' "$RESULT_DIR"
 fi
 printf '%s\n' "controller integration: ok (burst rejected; two competing workers routed; dynamic quota applied/decreased; AIMD log-only; both recovered; $LIFECYCLE_RESULT)"
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    printf '### Delegated CPU runtime gate: **PASS**\n\n'
+    printf 'The isolated test cgroup exposed the required real `cpu.stat` counters, and quota actuation/readback plus controller assertions completed. This result applies only to this runner/commit.\n'
+  } >> "$GITHUB_STEP_SUMMARY"
+fi

@@ -1,0 +1,1 @@
+command=systemd-analyze --no-pager verify systemd/browser-automation-budget.service systemd/workload-router.service systemd/browser-automation-budget.timer systemd/browser-automation.slice systemd/heavy-workload.slice systemd/protected-workload-recovery.slice systemd/protected-workload.slice

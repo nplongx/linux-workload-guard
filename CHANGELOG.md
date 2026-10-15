@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- The soak monitor now exits nonzero whenever its final acceptance verdict is `INCOMPLETE`, including telemetry gaps, service identity/restart discontinuities, deadline/clock failures, or missing journal evidence. Its completion message no longer implies success before the final verdict is evaluated; regression tests assert exit status for incomplete runs.
 - The isolated routing benchmark now treats `cpu.stat` as a complete snapshot: required delegated counters, duplicate/malformed/negative values, and impossible throttling are checked before a row can be used. cgroup/host PSI telemetry is unavailable rather than partially accepted when required fields are malformed, duplicated, non-finite, or out of range.
 - Core routing environment values are now parsed into explicit invalid sentinels and validated before the routing loop. Malformed/non-finite values, invalid sample intervals/counts, and unsafe thresholds no longer crash module import or enter an unsafe loop; invalid core routing configuration logs an error and leaves routing disabled until corrected.
 - Positive-but-tiny sample, statistics, history, and quota intervals are now rejected below explicit lower bounds, preventing valid-looking numeric settings from creating busy loops. The quota decision path also refuses actuation when the observed quota is outside its configured bounds.
@@ -32,6 +33,7 @@
 
 ### Added
 
+- The delegated CPU controller integration writes an explicit GitHub step summary (`PASS` or `SKIP / OPEN`) with capability context; CI names the step so a green compatibility job cannot be confused with a runtime gate. Pass 18 validation evidence and outstanding host-dependent gates are indexed in `docs/rc-validation-pass18.md`.
 - Strict benchmark counter/PSI regression coverage and explicit CI steps for telemetry parser and aggregate evidence-integrity tests; upgraded `actions/checkout` to v5 (Node.js 24) to remove the Node.js 20 deprecation warning. Pass 17 evidence and open release gates are indexed in `docs/rc-validation-pass17.md`.
 - CPU-100% diagnosis runbook explaining PSI, cgroup quota throttling, read-only telemetry capture, and safe rollback boundaries; hosted CI now explicitly byte-compiles Python sources and checks patch whitespace on Ubuntu 22.04/24.04.
 - Deterministic controller hardening tests for PSI threshold boundaries, counter resets/anomalies, stale windows, PID identity, legacy state, service timeouts, and the quota/AIMD/recovery decision sequence.

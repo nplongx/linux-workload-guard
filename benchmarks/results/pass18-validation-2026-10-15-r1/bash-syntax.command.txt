@@ -1,0 +1,1 @@
+command=bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh

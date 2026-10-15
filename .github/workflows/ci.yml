@@ -15,6 +15,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Test
         run: ./test.sh
+      - name: Soak monitor fail-closed acceptance regression
+        run: ./tests/soak-monitor.sh
       - name: Python compile checks
         run: python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py
       - name: Strict benchmark telemetry parser regressions
@@ -42,7 +44,7 @@ jobs:
         run: ./tests/recovery-routing.sh
       - name: Shadow routing
         run: ./tests/shadow-routing.sh
-      - name: Controller integration
+      - name: Delegated CPU runtime gate (SKIP is not PASS)
         run: ./tests/controller-integration.sh
       - name: Aggregate scope integration
         run: ./tests/aggregate-scope-integration.sh

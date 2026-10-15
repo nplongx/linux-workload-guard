@@ -1,0 +1,5 @@
+command=read-only cgroup capability preflight
+started_at=2026-10-15T21:40:09+07:00
+exit_status=0
+finished_at=2026-10-15T21:40:09+07:00
+conclusion=OBSERVATION_ONLY_NOT_RUNTIME_ACTUATION

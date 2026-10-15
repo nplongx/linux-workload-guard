@@ -81,6 +81,16 @@ chmod 0755 "$MOCKBIN/date"
 export REAL_PYTHON REAL_DATE
 export PATH="$MOCKBIN:$PATH" XDG_RUNTIME_DIR="$TMP/runtime" MOCK_MAINPID="$$"
 
+# A full-duration run with any failed acceptance invariant must exit 1, not
+# merely write run_status=INCOMPLETE while returning a misleading zero status.
+run_incomplete() {
+  set +e
+  "$MONITOR" "$@" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || { echo "expected INCOMPLETE monitor exit 1, got $rc: $*" >&2; exit 1; }
+}
+
 # Argument errors must not create an output directory.
 if "$MONITOR" "$TMP/bad-args" 0 1 >/dev/null 2>&1; then
   echo 'soak monitor accepted zero duration' >&2; exit 1
@@ -100,6 +110,7 @@ fi
 
 # A complete short run must have a rectangular schema and explicit coverage.
 "$MONITOR" "$TMP/complete" 2 1 > "$TMP/complete.stdout"
+grep -q 'soak monitor collection loop exited:.*acceptance verdict is in' "$TMP/complete.stdout"
 awk -F '\t' 'NR==1 {n=NF; if(n!=14) exit 1} NR>1 && NF!=n {exit 1} END {if(NR<3) exit 1}' "$TMP/complete/samples.tsv"
 grep -q '^run_status=COMPLETE$' "$TMP/complete/environment.txt"
 grep -q '^coverage_ratio=1.0000$' "$TMP/complete/environment.txt"
@@ -117,7 +128,7 @@ unset MOCK_QUOTA_SEQUENCE MOCK_QUOTA_COUNT
 # A router restart during the observation window must invalidate continuous
 # soak acceptance, even if the service is active again at the next sample.
 export MOCK_SERVICE_RESTART=1 MOCK_SERVICE_COUNT="$TMP/service-count"
-"$MONITOR" "$TMP/restarted" 2 1 >/dev/null
+run_incomplete "$TMP/restarted" 2 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/restarted/environment.txt"
 grep -q 'ERROR.*service restart count increased' "$TMP/restarted/errors.tsv"
 unset MOCK_SERVICE_RESTART MOCK_SERVICE_COUNT
@@ -125,7 +136,7 @@ unset MOCK_SERVICE_RESTART MOCK_SERVICE_COUNT
 # A manual service restart can change MainPID without increasing NRestarts;
 # process identity continuity must still fail the soak acceptance check.
 export MOCK_PID_CHANGE=1 MOCK_SERVICE_COUNT="$TMP/pid-change-count"
-"$MONITOR" "$TMP/pid-changed" 2 1 >/dev/null
+run_incomplete "$TMP/pid-changed" 2 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/pid-changed/environment.txt"
 grep -q 'ERROR.*service MainPID changed' "$TMP/pid-changed/errors.tsv"
 unset MOCK_PID_CHANGE MOCK_SERVICE_COUNT
@@ -133,7 +144,7 @@ unset MOCK_PID_CHANGE MOCK_SERVICE_COUNT
 # A restart counter reset is discontinuous telemetry and must not be treated
 # as evidence that the service remained stable.
 export MOCK_SERVICE_RESET=1 MOCK_SERVICE_COUNT="$TMP/service-reset-count"
-"$MONITOR" "$TMP/restart-counter-reset" 2 1 >/dev/null
+run_incomplete "$TMP/restart-counter-reset" 2 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/restart-counter-reset/environment.txt"
 grep -q 'ERROR.*service restart counter reset' "$TMP/restart-counter-reset/errors.tsv"
 unset MOCK_SERVICE_RESET MOCK_SERVICE_COUNT
@@ -141,24 +152,24 @@ unset MOCK_SERVICE_RESET MOCK_SERVICE_COUNT
 # Missing initial restart-counter baseline must not be silently replaced by a
 # later numeric value and accepted as a continuous soak.
 export MOCK_RESTARTS_UNKNOWN_START=1
-"$MONITOR" "$TMP/unknown-restart-baseline" 1 1 >/dev/null
+run_incomplete "$TMP/unknown-restart-baseline" 1 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/unknown-restart-baseline/environment.txt"
 grep -q 'ERROR.*service restart counter baseline unavailable/invalid' "$TMP/unknown-restart-baseline/errors.tsv"
 unset MOCK_RESTARTS_UNKNOWN_START
 
 # Simulate a delayed sampling command crossing a deadline. The monitor must
 # count the missed deadline and reject continuous-soak acceptance.
-MOCK_SLOW_SAMPLE=1 "$MONITOR" "$TMP/missed-sample" 3 1 >/dev/null
+MOCK_SLOW_SAMPLE=1 run_incomplete "$TMP/missed-sample" 3 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/missed-sample/environment.txt"
 awk -F= '$1=="missed_intervals_estimate" {if ($2+0<1) exit 1; found=1} END {if(!found) exit 1}' "$TMP/missed-sample/environment.txt"
 
 # If journal collection fails, the report must not claim a complete soak.
-MOCK_JOURNAL_FAIL=1 "$MONITOR" "$TMP/no-journal" 1 1 >/dev/null
+MOCK_JOURNAL_FAIL=1 run_incomplete "$TMP/no-journal" 1 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/no-journal/environment.txt"
 grep -q 'ERROR.*service journal capture failed' "$TMP/no-journal/errors.tsv"
 
 # Missing service state is a recorded monitoring failure, not a successful soak.
-MOCK_ACTIVE=inactive "$MONITOR" "$TMP/inactive" 1 1 >/dev/null
+MOCK_ACTIVE=inactive run_incomplete "$TMP/inactive" 1 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/inactive/environment.txt"
 grep -q 'ERROR.*service state inactive/dead' "$TMP/inactive/errors.tsv"
 
@@ -178,7 +189,7 @@ grep -q '^exit_code=143$' "$TMP/interrupted/environment.txt"
 # A slow final sample occurs after the scheduling loop. It must still invalidate
 # continuity rather than escape the loop's missed-deadline accounting.
 MOCK_SLOW_FINAL_SAMPLE=1 MOCK_SERVICE_COUNT="$TMP/final-sample-count" \
-  "$MONITOR" "$TMP/slow-final-sample" 1 1 >/dev/null
+  run_incomplete "$TMP/slow-final-sample" 1 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/slow-final-sample/environment.txt"
 grep -q 'WARN.*sample collection took' "$TMP/slow-final-sample/errors.tsv"
 awk -F= '$1=="sampling_failures" {if ($2+0<1) exit 1; found=1} END {if(!found) exit 1}' "$TMP/slow-final-sample/environment.txt"
@@ -186,14 +197,14 @@ awk -F= '$1=="sampling_failures" {if ($2+0<1) exit 1; found=1} END {if(!found) e
 # A missing monotonic clock must be an explicit monitoring failure, not a shell
 # arithmetic error that skips the final summary or falsely passes the run.
 MOCK_MONOTONIC_FAIL=1 MOCK_MONOTONIC_COUNT="$TMP/monotonic-count" \
-  "$MONITOR" "$TMP/no-monotonic-clock" 1 1 >/dev/null
+  run_incomplete "$TMP/no-monotonic-clock" 1 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/no-monotonic-clock/environment.txt"
 grep -q 'ERROR.*monotonic sample-collection timer unavailable' "$TMP/no-monotonic-clock/errors.tsv"
 
 # Wall-clock steps must not control duration/scheduling or silently corrupt
 # sample timestamps while the monotonic interval remains steady.
 MOCK_WALL_CLOCK_JUMP=1 MOCK_DATE_COUNT="$TMP/date-count" \
-  "$MONITOR" "$TMP/wall-clock-jump" 2 1 >/dev/null
+  run_incomplete "$TMP/wall-clock-jump" 2 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/wall-clock-jump/environment.txt"
 grep -q 'ERROR.*wall-clock sample timestamps discontinuous' "$TMP/wall-clock-jump/errors.tsv"
 

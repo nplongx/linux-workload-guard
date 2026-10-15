@@ -296,6 +296,13 @@ finish() {
     printf 'missed_intervals_estimate=%s\nsampling_failures=%s\n' "$MISSED_INTERVALS" "$SAMPLING_FAILURES"
     printf 'quota_transitions_observed=%s\nquota_direction_reversals_observed=%s\n' "$QUOTA_TRANSITIONS" "$QUOTA_REVERSALS"
   } >> "$OUT/environment.txt"
+  # A completed wall-clock interval is not a successful soak when any
+  # continuity, telemetry, service-health, or journal gate failed. Propagate
+  # that verdict through the process exit status so wrappers/CI cannot mistake
+  # an INCOMPLETE artifact for a successful run.
+  if [ "$rc" -eq 0 ] && [ "$final_status" != COMPLETE ]; then
+    rc=1
+  fi
   exit "$rc"
 }
 trap finish EXIT
@@ -339,4 +346,4 @@ while :; do
 done
 sample
 RUN_STATUS=COMPLETE
-printf 'soak monitor completed: %s\n' "$(date --iso-8601=seconds)"
+printf 'soak monitor collection loop exited: %s; acceptance verdict is in %s/environment.txt\n' "$(date --iso-8601=seconds)" "$OUT"

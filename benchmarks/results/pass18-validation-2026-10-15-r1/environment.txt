@@ -1,0 +1,12 @@
+started_at=2026-10-15T21:38:55+07:00
+source_revision=ec8f05ada0b4c3fb881d47f55a171da3991dd583
+remote_revision=ec8f05ada0b4c3fb881d47f55a171da3991dd583
+os=Ubuntu 26.04.1 LTS 26.04
+kernel=Linux 7.0.0-38-generic
+architecture=x86_64
+systemd=systemd 259 (259.5-0ubuntu3.4)
+python=Python 3.14.4
+cgroup_fs=cgroup2fs
+version=0.6.5-rc.1
+finished_at=2026-10-15T21:40:09+07:00
+final_source_revision=ec8f05ada0b4c3fb881d47f55a171da3991dd583

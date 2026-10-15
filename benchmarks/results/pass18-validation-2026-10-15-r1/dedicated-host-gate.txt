@@ -1,0 +1,6 @@
+gate=dedicated-host-controller-integration
+status=BLOCKED_NOT_RUN
+reason=development host is not an approved dedicated load-test machine; live controller integration starts CPU-bound workers
+command=WORKLOAD_GUARD_CONTROLLER_RESULTS_DIR=<unique-path> ./tests/controller-integration.sh
+condition=authorized dedicated host with cgroup-v2 CPU delegation and user systemd manager
+recorded_at=2026-10-15T21:40:09+07:00

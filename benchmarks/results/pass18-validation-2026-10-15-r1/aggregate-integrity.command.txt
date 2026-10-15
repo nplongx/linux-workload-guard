@@ -1,0 +1,1 @@
+command=./tests/analyze-aggregate-routing.sh
