@@ -30,8 +30,9 @@ Continue from Pass 15 without rerunning or rewriting accepted historical evidenc
 |---|---|---|
 | Local source/runtime preflight | PASS | Base revision, remote equality, production service and quota readback recorded during this pass |
 | Independent-host ABBA repeat | NOT RUN | No authorized second host discovered; current host has confounded prior trials |
-| Ubuntu 22.04 delegated CPU telemetry | SKIP / OPEN | Requires runner/host with actual delegated CPU counters |
-| Ubuntu 24.04 compatibility | PASS (prior CI) / rerun required for this revision | Hosted CI must be checked after commit |
+| Ubuntu 22.04 hosted CI | PASS | Run [38749178783](https://github.com/nplongx/linux-workload-guard/actions/runs/38749178783) passed; privileged delegated CPU telemetry explicitly SKIP because `usage_usec`, `nr_periods`, and `nr_throttled` were not all exposed |
+| Ubuntu 22.04 delegated CPU telemetry | SKIP / OPEN | Requires runner/host with actual delegated CPU counters; CI skip is not a telemetry PASS |
+| Ubuntu 24.04 compatibility | PASS | Run [38749178783](https://github.com/nplongx/linux-workload-guard/actions/runs/38749178783) passed all jobs |
 | Dedicated-host operator rollback | NOT RUN / OPEN | No dedicated test host available in current inventory |
 | Natural production PSI crossing at 0.40 | NOT RUN | Must occur naturally and be tied to the actual production controller decision; no forcing |
 | RC soak 24h minimum / 72h target | NOT RUN | No approved persistent host/workload window in current environment |
@@ -40,7 +41,7 @@ Continue from Pass 15 without rerunning or rewriting accepted historical evidenc
 
 ## Local validation to attach at commit time
 
-Local verification evidence is recorded under `benchmarks/results/pass16-local-validation-2026-10-15-r3/`; each check has a separate log and exit-status file. The integrity manifest is `benchmarks/results/pass16-integrity-2026-10-15-r2.txt`. Hosted CI on Ubuntu 22.04 and 24.04 must target the final pushed commit before this gate can be considered complete.
+Local verification evidence is recorded under `benchmarks/results/pass16-local-validation-2026-10-15-r3/`; each check has a separate log and exit-status file. The integrity manifest for this report revision is `benchmarks/results/pass16-integrity-2026-10-15-r4.txt`. Hosted CI run `38749178783` passed on both Ubuntu 22.04 and 24.04 at commit `e977f17`; Ubuntu 22.04's privileged delegated-counter stage remains skipped, as documented above.
 
 ## Release decision
 
