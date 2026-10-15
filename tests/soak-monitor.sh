@@ -1,0 +1,90 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+MONITOR="$ROOT/benchmarks/soak-monitor.sh"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+MOCKBIN="$TMP/bin"
+mkdir -p "$MOCKBIN" "$TMP/runtime/linux-workload-guard"
+: > "$TMP/runtime/linux-workload-guard/routes.tsv"
+
+cat > "$MOCKBIN/systemctl" <<'SH'
+#!/bin/sh
+case "$*" in
+  *"-p ActiveState"*)
+    if [ "${MOCK_ACTIVE:-active}" = active ]; then
+      printf 'active\nrunning\n%s\n0\n0\n' "${MOCK_MAINPID:-0}"
+    else
+      printf 'inactive\ndead\n0\n0\n1\n'
+    fi;;
+  *"-p MainPID"*) printf '%s\n' "${MOCK_MAINPID:-0}";;
+  *"-p NRestarts"*) printf '0\n';;
+  *"-p CPUQuotaPerSecUSec"*)
+    if [ "${MOCK_QUOTA_SEQUENCE:-0}" = 1 ]; then
+      n=0; [ ! -r "$MOCK_QUOTA_COUNT" ] || n=$(cat "$MOCK_QUOTA_COUNT")
+      n=$((n+1)); printf '%s\n' "$n" > "$MOCK_QUOTA_COUNT"
+      case "$n" in 1) printf '1s\n';; 2) printf '1.5s\n';; 3) printf '1s\n';; *) printf '1s\n';; esac
+    else printf '1s\n'; fi;;
+  *"-p ControlGroup"*) printf '/user.slice/mock-heavy.slice\n';;
+  *) echo "unexpected systemctl invocation: $*" >&2; exit 2;;
+esac
+SH
+cat > "$MOCKBIN/journalctl" <<'SH'
+#!/bin/sh
+printf 'mock journal capture\n'
+SH
+chmod 0755 "$MOCKBIN/systemctl" "$MOCKBIN/journalctl"
+export PATH="$MOCKBIN:$PATH" XDG_RUNTIME_DIR="$TMP/runtime" MOCK_MAINPID="$$"
+
+# Argument errors must not create an output directory.
+if "$MONITOR" "$TMP/bad-args" 0 1 >/dev/null 2>&1; then
+  echo 'soak monitor accepted zero duration' >&2; exit 1
+else
+  rc=$?
+  [ "$rc" -eq 2 ] || { echo "bad-argument exit code was $rc, expected 2" >&2; exit 1; }
+fi
+[ ! -e "$TMP/bad-args" ]
+
+# Existing evidence must remain untouched.
+mkdir "$TMP/existing"
+printf 'preserve-me\n' > "$TMP/existing/marker"
+if "$MONITOR" "$TMP/existing" 1 1 >/dev/null 2>&1; then
+  echo 'soak monitor accepted an existing output directory' >&2; exit 1
+fi
+[ "$(cat "$TMP/existing/marker")" = preserve-me ]
+
+# A complete short run must have a rectangular schema and explicit coverage.
+"$MONITOR" "$TMP/complete" 2 1 > "$TMP/complete.stdout"
+awk -F '\t' 'NR==1 {n=NF; if(n!=14) exit 1} NR>1 && NF!=n {exit 1} END {if(NR<3) exit 1}' "$TMP/complete/samples.tsv"
+grep -q '^run_status=COMPLETE$' "$TMP/complete/environment.txt"
+grep -q '^coverage_ratio=1.0000$' "$TMP/complete/environment.txt"
+grep -q 'mock journal capture' "$TMP/complete/service-journal.log"
+[ "$(stat -c '%a' "$TMP/complete")" = 700 ]
+[ "$(stat -c '%a' "$TMP/complete/samples.tsv")" = 600 ]
+
+# Quota property changes and a direction reversal must be summarized explicitly.
+export MOCK_QUOTA_SEQUENCE=1 MOCK_QUOTA_COUNT="$TMP/quota-count"
+"$MONITOR" "$TMP/quota-changes" 2 1 >/dev/null
+grep -q '^quota_transitions_observed=2$' "$TMP/quota-changes/environment.txt"
+grep -q '^quota_direction_reversals_observed=1$' "$TMP/quota-changes/environment.txt"
+unset MOCK_QUOTA_SEQUENCE MOCK_QUOTA_COUNT
+
+# Missing service state is a recorded monitoring failure, not a successful soak.
+MOCK_ACTIVE=inactive "$MONITOR" "$TMP/inactive" 1 1 >/dev/null
+grep -q '^run_status=INCOMPLETE$' "$TMP/inactive/environment.txt"
+grep -q 'ERROR.*service state inactive/dead' "$TMP/inactive/errors.tsv"
+
+# Graceful interruption must finalize as incomplete and preserve the signal exit.
+"$MONITOR" "$TMP/interrupted" 10 1 > "$TMP/interrupted.stdout" 2>&1 &
+monitor_pid=$!
+sleep 1.2
+kill -TERM "$monitor_pid"
+set +e
+wait "$monitor_pid"
+rc=$?
+set -e
+[ "$rc" -eq 143 ] || { echo "interrupted monitor exit code was $rc, expected 143" >&2; exit 1; }
+grep -q '^run_status=INCOMPLETE$' "$TMP/interrupted/environment.txt"
+grep -q '^exit_code=143$' "$TMP/interrupted/environment.txt"
+
+printf '%s\n' 'soak monitor tests: ok (arguments, no-overwrite, schema, permissions, missing service, interruption/completeness)'

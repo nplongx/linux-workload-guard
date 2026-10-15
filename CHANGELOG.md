@@ -5,6 +5,9 @@
 ### Fixed
 
 - Core routing environment values are now parsed into explicit invalid sentinels and validated before the routing loop. Malformed/non-finite values, invalid sample intervals/counts, and unsafe thresholds no longer crash module import or enter an unsafe loop; invalid core routing configuration logs an error and leaves routing disabled until corrected.
+- Positive-but-tiny sample, statistics, history, and quota intervals are now rejected below explicit lower bounds, preventing valid-looking numeric settings from creating busy loops. The quota decision path also refuses actuation when the observed quota is outside its configured bounds.
+- PSI parsing now rejects incomplete `some` rows, duplicate `some` rows/fields, malformed averages, and invalid cumulative counters rather than accepting a partial line as a complete observation.
+- Routing hot/shadow samples reset when a process command changes. Persisted recovery identity is based on kernel PID starttime, not command text, so a legitimate `exec(2)` does not orphan an already-routed process; PID reuse remains rejected.
 - Dynamic quota telemetry now rejects malformed, duplicate, negative, missing, reset, or impossible cgroup counters, and skips stale observation windows instead of silently converting counter regressions to zero.
 - Missing, malformed, non-finite, or out-of-range CPU PSI is reported as unavailable; unknown pressure no longer counts as low pressure for quota increases.
 - Process sampling now rejects malformed `/proc/<pid>/stat` data and measures CPU usage over real sample intervals. Recovery does not treat failed process reads, counter regressions, or stale intervals as idle CPU.
@@ -23,6 +26,7 @@
 - `protected-workload-recovery.slice` provides a stable leaf fallback inherited from the protected CPU budget; the installer, uninstaller, and service dependencies now include it.
 - The bounded integration smoke test reports synthetic probe p50/p95/p99, CPU-bound loop throughput, host PSI observations, router process CPU/RSS and scheduler-delay delta, quota transitions, and detection/recovery timings. Single-run smoke metrics are not performance acceptance evidence.
 - Added a monitor-only soak collector for service state/restarts, PSI, quota property, router CPU/RSS, route-state count, and service journal. It does not create load or alter service/configuration; it is tooling, not soak evidence.
+- Hardened soak monitoring with private output permissions, verified route-state/PID/cgroup membership, PID-starttime-safe scheduler deltas, sampling-gap and missing-metric accounting, quota transition/direction-reversal counts, service restart/PID-change logging, expected-versus-observed sample coverage, and explicit COMPLETE/INCOMPLETE final status. Added safe tests for invalid arguments, existing directories, quota reversals, missing service telemetry, and interrupted runs.
 
 ## [0.6.5-rc.1] - 2026-10-09
 

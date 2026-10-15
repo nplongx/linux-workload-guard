@@ -145,10 +145,15 @@ def proc_stat(pid):
 
 
 def route_process_matches(route, command, starttime):
-    """Persisted route identity must match both kernel starttime and command."""
+    """Persisted route identity is the kernel starttime, not the executable name.
+
+    exec(2) can legitimately change cmdline without changing PID/starttime. A
+    command change resets classification samples, but must not orphan an
+    already-routed process in the heavy cgroup and make it unrecoverable.
+    """
     if not route or len(route) < 6 or route[5] is None:
         return False
-    return route[5] == starttime and (not route[4] or command == route[4])
+    return route[5] == starttime
 
 def cmdline(pid):
     try:
@@ -389,8 +394,8 @@ def routing_config_error():
               STATS_SAVE_INTERVAL_SEC, HISTORY_INTERVAL_SEC)
     if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in floats):
         return "core routing settings must be finite numbers"
-    if not 0 < SAMPLE_SEC <= 60:
-        return "sample interval must be in (0, 60] seconds"
+    if not 0.05 <= SAMPLE_SEC <= 60:
+        return "sample interval must be in [0.05, 60] seconds"
     if not 0 < CPU_THRESHOLD <= 100 or not 0 <= RECOVERY_CPU_THRESHOLD <= 100:
         return "CPU thresholds must be in (0, 100] and [0, 100]"
     if not 0 < LEARNING_RATE <= 1:
@@ -399,8 +404,8 @@ def routing_config_error():
         return "adaptive route threshold must be in [0, 1]"
     if COOLDOWN_SEC < 0 or RECOVERY_DWELL_SEC < 0:
         return "cooldown and recovery dwell must be non-negative"
-    if STATS_SAVE_INTERVAL_SEC <= 0 or HISTORY_INTERVAL_SEC <= 0:
-        return "statistics and history intervals must be positive"
+    if STATS_SAVE_INTERVAL_SEC < 0.1 or HISTORY_INTERVAL_SEC < 1:
+        return "statistics interval must be at least 0.1s and history interval at least 1s"
     if not isinstance(SUSTAINED_SAMPLES, int) or SUSTAINED_SAMPLES < 1:
         return "sustained sample count must be a positive integer"
     if not isinstance(MIN_SAMPLES, int) or MIN_SAMPLES < 1:
@@ -410,10 +415,13 @@ def routing_config_error():
     return None
 
 def parse_cpu_pressure(text):
-    """Parse PSI some.avg10; malformed or out-of-range readings are unavailable."""
+    """Parse a complete PSI `some` row; incomplete or inconsistent rows are unavailable."""
+    found = None
     for line in text.splitlines():
         if not line.startswith("some "):
             continue
+        if found is not None:
+            return None
         parts = {}
         for field in line.split()[1:]:
             if "=" not in field:
@@ -422,16 +430,17 @@ def parse_cpu_pressure(text):
             if not key or key in parts:
                 return None
             parts[key] = value
-        if "avg10" not in parts:
+        if not {"avg10", "avg60", "avg300", "total"}.issubset(parts):
             return None
         try:
-            avg10 = float(parts["avg10"])
+            averages = [float(parts[key]) for key in ("avg10", "avg60", "avg300")]
+            total = int(parts["total"])
         except (TypeError, ValueError):
             return None
-        if not math.isfinite(avg10) or not 0.0 <= avg10 <= 100.0:
+        if total < 0 or not all(math.isfinite(value) and 0.0 <= value <= 100.0 for value in averages):
             return None
-        return avg10 / 100.0
-    return None
+        found = averages[0] / 100.0
+    return found
 
 
 def cpu_pressure():
@@ -598,8 +607,10 @@ def quota_config_error():
         return "quota controller settings must be finite numbers"
     if QUOTA_MIN <= 0 or QUOTA_MAX < QUOTA_MIN or QUOTA_STEP <= 0:
         return "quota bounds must be positive and max must be at least min"
-    if QUOTA_INTERVAL_SEC <= 0 or QUOTA_MIN_DWELL_SEC < 0:
-        return "quota interval must be positive and dwell must be non-negative"
+    if not all(float(value).is_integer() for value in (QUOTA_MIN, QUOTA_MAX, QUOTA_STEP)):
+        return "quota bounds and step must be whole percentage points"
+    if QUOTA_INTERVAL_SEC < 0.25 or QUOTA_MIN_DWELL_SEC < 0:
+        return "quota interval must be at least 0.25s and dwell must be non-negative"
     if not 0 <= QUOTA_PRESSURE_LOW < QUOTA_PRESSURE_HIGH <= 1:
         return "quota PSI thresholds must satisfy 0 <= low < high <= 1"
     if not 0 <= QUOTA_THROTTLE_HIGH <= 1:
@@ -631,6 +642,10 @@ def quota_decision_from_sample(current_quota, previous_stat, current_stat, elaps
         return None, "quota-unavailable"
     if not math.isfinite(quota_value):
         return None, "quota-unavailable"
+    if not QUOTA_MIN <= quota_value <= QUOTA_MAX:
+        return None, "quota-out-of-bounds"
+    if not quota_value.is_integer():
+        return None, "quota-not-integral"
     if current_stat is None:
         return None, "cgroup-stat-unavailable"
     if previous_stat is None:
@@ -919,9 +934,10 @@ def main():
                 sampled_at = time.monotonic()
                 now[pid]=(ut+st,cmd,starttime,sampled_at)
                 if pid in prev:
-                    if len(prev[pid]) < 3 or prev[pid][2] != starttime:
-                        # A PID can be reused while remaining visible in a
-                        # cgroup snapshot. Never carry heat/shadow state over.
+                    if len(prev[pid]) < 3 or prev[pid][2] != starttime or prev[pid][1] != cmd:
+                        # PID reuse and exec-style command changes both reset
+                        # classification state. Persisted route identity still
+                        # uses starttime, so exec cannot orphan a routed process.
                         hot.pop(pid, None)
                         shadow_policy.pop(pid, None)
                         last_move.pop(pid, None)

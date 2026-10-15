@@ -32,6 +32,9 @@ for bad_psi in (
     "some avg10=100.01 avg60=1 avg300=1 total=1\n",
     "some avg10=10 avg10=11 avg60=1 avg300=1 total=1\n",
     "some avg10=not-a-number avg60=1 avg300=1 total=1\n",
+    "some avg10=10 avg60=1 avg300=1\n",
+    "some avg10=10 avg60=1 avg300=1 total=not-a-counter\n",
+    "some avg10=10 avg60=1 avg300=1 total=1\nsome avg10=10 avg60=1 avg300=1 total=2\n",
     "full avg10=99.0 avg60=99 avg300=99 total=1\n",
 ):
     check(router.parse_cpu_pressure(bad_psi) is None, f"invalid PSI accepted: {bad_psi!r}")
@@ -45,6 +48,8 @@ check(parsed_proc == (1, 11, 12, 19), f"unexpected proc stat parse: {parsed_proc
 check(router.parse_proc_stat("malformed") is None, "malformed proc stat must be rejected")
 tracked_route = (80.0, "sustained-cpu", "/source", "/target", "python worker", 4567)
 check(router.route_process_matches(tracked_route, "python worker", 4567), "matching PID identity rejected")
+check(router.route_process_matches(tracked_route, "python new-image", 4567),
+      "exec-style command change must not invalidate a stable PID starttime")
 check(not router.route_process_matches(tracked_route, "python worker", 4568), "PID reuse with same command must be rejected")
 check(not router.route_process_matches(tracked_route[:5] + (None,), "python worker", 4567), "legacy identity-less route must not be trusted")
 with tempfile.TemporaryDirectory() as tempdir:
@@ -106,6 +111,22 @@ check(router.cgroup_cpu_delta(
 # -> re-baseline -> low-load recovery. AIMD remains a proposal only.
 base = {"usage_usec": 1_000_000, "nr_periods": 100, "nr_throttled": 5}
 high = {"usage_usec": 1_500_000, "nr_periods": 105, "nr_throttled": 7}
+below = {"usage_usec": 1_500_000, "nr_periods": 105, "nr_throttled": 7}
+decision, reason = router.quota_decision_from_sample(300, base, below, 5.0, 0.3999, 0.0, 0.8)
+check(reason == "ok" and decision["target"] == 300,
+      "integrated production-threshold path must hold quota just below 0.40")
+decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, 0.40, 0.0, 0.8)
+check(reason == "ok" and decision["target"] == 250,
+      "integrated production-threshold path must decrease quota at exactly 0.40")
+decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, None, None, 0.8)
+check(decision is None and reason == "pressure-signals-unavailable",
+      "unavailable PSI and scheduler telemetry must not authorize quota changes")
+decision, reason = router.quota_decision_from_sample(450, base, high, 5.0, 0.40, 0.0, 0.8)
+check(decision is None and reason == "quota-out-of-bounds",
+      "out-of-range observed quota must not authorize a controller step")
+decision, reason = router.quota_decision_from_sample(150.5, base, high, 5.0, 0.40, 0.0, 0.8)
+check(decision is None and reason == "quota-not-integral",
+      "quota precision the actuator cannot preserve must not authorize a controller step")
 decision, reason = router.quota_decision_from_sample(300, None, base, 5.0, 0.40, 0.0, 0.8)
 check(decision is None and reason == "counter-baseline-unavailable", "first sample must only establish baseline")
 decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, 0.40, 0.0, 0.8)
@@ -143,6 +164,19 @@ check(router.aimd_quota_target("invalid", 0.05, 0.9) is None, "invalid AIMD quot
 check(router.aimd_quota_target(200, -0.1, 0.9, sched_delay_ms=1.0) == 200,
       "negative PSI must not trigger AIMD proposal")
 
+for env, expected in (
+    ({"WORKLOAD_GUARD_QUOTA_INTERVAL_SEC": "1e-100"}, "at least 0.25s"),
+    ({"WORKLOAD_GUARD_QUOTA_MIN": "100.5"}, "whole percentage points"),
+    ({"WORKLOAD_GUARD_QUOTA_MAX": "99"}, "quota bounds"),
+):
+    with patch.dict(os.environ, env, clear=False):
+        spec = importlib.util.spec_from_file_location("router_bad_quota_env", os.path.join(ROOT, "bin", "workload-router.py"))
+        candidate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(candidate)
+        error = candidate.quota_config_error()
+        check(error is not None and expected in error,
+              f"unsafe quota config was not rejected: {env!r}, got {error!r}")
+
 # Core routing settings used to be parsed directly during module import, so a
 # malformed environment value could crash the service before fail-safe checks.
 for env, expected in (
@@ -150,6 +184,7 @@ for env, expected in (
     ({"WORKLOAD_GUARD_SAMPLE_SEC": "nan"}, "finite"),
     ({"WORKLOAD_GUARD_SAMPLE_SEC": "0"}, "interval"),
     ({"WORKLOAD_GUARD_SAMPLE_SEC": "120"}, "interval"),
+    ({"WORKLOAD_GUARD_SAMPLE_SEC": "1e-100"}, "interval"),
     ({"WORKLOAD_GUARD_SUSTAINED_SAMPLES": "bad"}, "sustained sample"),
     ({"WORKLOAD_GUARD_SUSTAINED_SAMPLES": "0"}, "sustained sample"),
     ({"WORKLOAD_GUARD_RECOVERY_SAMPLES": "-2"}, "recovery sample"),
@@ -157,7 +192,8 @@ for env, expected in (
     ({"WORKLOAD_GUARD_CPU_THRESHOLD": "101"}, "CPU thresholds"),
     ({"WORKLOAD_GUARD_COOLDOWN_SEC": "-1"}, "non-negative"),
     ({"WORKLOAD_GUARD_HISTORY_INTERVAL_SEC": "broken"}, "finite"),
-    ({"WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC": "0"}, "intervals must be positive"),
+    ({"WORKLOAD_GUARD_STATS_SAVE_INTERVAL_SEC": "0"}, "statistics interval"),
+    ({"WORKLOAD_GUARD_HISTORY_INTERVAL_SEC": "0.0001"}, "history interval"),
 ):
     with patch.dict(os.environ, env, clear=False):
         spec = importlib.util.spec_from_file_location("router_bad_core_env", os.path.join(ROOT, "bin", "workload-router.py"))
@@ -170,4 +206,4 @@ for env, expected in (
             candidate.main()
             ensure.assert_not_called()
 
-print("controller hardening: ok (PSI, counter continuity, PID identity, quota/recovery sequence, timeout fail-safe)")
+print("controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)")
