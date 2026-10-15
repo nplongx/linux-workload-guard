@@ -43,9 +43,9 @@ The first evidence attempt (`r1`) called a nonexistent `systemd` executable for 
 
 | Gate | Status | Blocker / closure condition |
 |---|---|---|
-| Ubuntu 22.04/24.04 hosted CI | Pending after this commit until push run finishes | Both matrix jobs must finish successfully; a capability skip is not a runtime PASS |
-| Ubuntu 22.04 delegated CPU telemetry | SKIP / OPEN | Need a real test cgroup exposing valid `usage_usec`, `nr_periods`, and `nr_throttled`, with quota actuation/readback on the target runner |
-| Ubuntu 24.04 compatibility | Prior PASS; revalidate on this change | Current workflow matrix must pass |
+| Ubuntu 22.04/24.04 hosted CI | PASS — [run 38751502735](https://github.com/nplongx/linux-workload-guard/actions/runs/38751502735), commit `51da479810fe4633b1c0ed78c7943adaed46276f` | Both matrix jobs completed successfully, including checkout v5, strict telemetry regressions and aggregate evidence regressions |
+| Ubuntu 22.04 delegated CPU telemetry | SKIP / OPEN — same run, Ubuntu 22.04 job annotation | Actual test cgroup lacks `nr_periods` and `nr_throttled`; available keys were `usage_usec,user_usec,system_usec,core_sched.force_idle_usec`. Need a runner with real delegated quota counters and successful quota actuation/readback |
+| Ubuntu 24.04 compatibility | PASS — same run, Ubuntu 24.04 job | All CI steps passed; this is compatibility evidence, not independent-host performance evidence |
 | Independent-host preregistered ABBA | NOT RUN | No authorized reachable independent host found; use Pass 15 protocol unchanged and a unique evidence path |
 | Throughput acceptance | OPEN / `CONFOUNDED_INCONCLUSIVE` | Keep threshold `0.90`; replicate paired ABBA on a quieter independent host, retain every pair, and satisfy predeclared host-PSI confounder controls |
 | Dedicated-host rollback drill | NOT RUN / OPEN | Requires approved dedicated host and maintenance window; record config hash/mode/ownership, quota, service/route state, then verify exact restoration and workload continuity |
