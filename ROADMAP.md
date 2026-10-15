@@ -41,6 +41,13 @@ The evidence remains host-limited. Existing repeated latency comparisons are syn
 - Corrected the isolated routing benchmark's capacity model: the temporary heavy slice is now nested beneath the temporary parent with a 100% aggregate CPU ceiling shared by baseline and routed modes. This removes the previous sibling-slice extra-capacity confound. A two-worker trial did not route either worker at the production-like per-process threshold; it was stopped early and is not a valid paired benchmark. Do not reduce the production threshold to manufacture routing.
 - The routing probe now records a synthetic Python-loop iteration rate and isolated-router CPU/RSS alongside latency. Those are instrumentation-complete but workload-specific diagnostics; the performance gate remains open until representative terminal-workload throughput and overhead are measured against the predeclared limits with at least five valid paired trials. All historical benchmark files remain preserved.
 
+### RC validation updates — pass 7
+
+- The paired routing harness now samples the same elapsed steady-state window (`>=12s`) in baseline and routed modes, rejects a route that has not converged at least two seconds before that window, and records host PSI/load diagnostics plus effective temporary quota/weight, CPU/kernel/cgroup/tool metadata and explicit run completion. Historical artifacts are not overwritten.
+- Added a bounded OpenSSL SHA-256 command-line workload next to the synthetic integer-mixing worker. Both have five valid single-worker pairs on this host and meet the predeclared median-based evaluator thresholds, but per-pair ratios show wide ranges (including p99 regressions); this is narrow, single-host evidence, not a general performance pass.
+- The evaluator validates raw/summary pair consistency, manifest fields, raw sample order/finite values/duration, route validity, thresholds, and no-overwrite behavior. It reports paired range/quartiles and a deterministic bootstrap interval as descriptive variability without changing the original median acceptance gates.
+- Current CI is green on Ubuntu 22.04/24.04, but Ubuntu 22.04's delegated-counter skip remains an open compatibility gate. The live host PSI 0.40 crossing, independent second host, operator-level rollback on a dedicated host, and 24h minimum / 72h target soak remain unrun. Keep `0.6.5-rc.1`; do not tag or release `v1.0.0`.
+
 ## v1.0.0 goal
 
 Deliver a predictable, observable, recoverable Linux workload-routing and CPU-quota controller with documented configuration and operational behavior. A stable release should prioritize correctness and safe operation over adding new algorithms or kernel-level complexity.

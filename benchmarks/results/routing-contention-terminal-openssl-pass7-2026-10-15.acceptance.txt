@@ -1,0 +1,65 @@
+acceptance_status=PASS
+result_tsv=benchmarks/results/routing-contention-terminal-openssl-pass7-2026-10-15.tsv
+raw_samples_tsv=benchmarks/results/routing-contention-terminal-openssl-pass7-2026-10-15.samples.tsv
+manifest=benchmarks/results/routing-contention-terminal-openssl-pass7-2026-10-15.environment.txt
+git_revision=446916ee0347a893e218cd82f4b2c2aa57c0401e
+workload_kind=terminal-openssl
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+duration_seconds=30.0
+workers=1
+minimum_pairs=5
+minimum_steady_samples_per_mode=500
+max_median_paired_latency_ratio=1.10
+min_median_paired_throughput_ratio=0.90
+max_router_cpu_pct_one_core=5.0
+max_router_peak_rss_kib=32768
+scope=OpenSSL SHA-256 CLI throughput workload and periodic probe only; PASS does not generalize to compiler builds or all terminal workloads
+variation_method=paired-ratio range/IQR plus deterministic bootstrap percentile interval; resamples=10000; seed=20261015; descriptive only
+PASS: repetition 1 routed all 1 intended worker(s)
+PASS: repetition 1 steady samples baseline/router=898/898
+PASS: repetition 1 router CPU=0.167% of one logical CPU
+PASS: repetition 1 router peak RSS=18484 KiB
+PAIR: repetition 1 steady_p95_ms ratio=0.991
+PAIR: repetition 1 steady_p99_ms ratio=0.500
+PAIR: repetition 1 steady_work_p95_ms ratio=0.189
+PAIR: repetition 1 worker_throughput_per_sec ratio=1.063
+PASS: repetition 2 routed all 1 intended worker(s)
+PASS: repetition 2 steady samples baseline/router=899/898
+PASS: repetition 2 router CPU=0.133% of one logical CPU
+PASS: repetition 2 router peak RSS=18416 KiB
+PAIR: repetition 2 steady_p95_ms ratio=0.655
+PAIR: repetition 2 steady_p99_ms ratio=0.614
+PAIR: repetition 2 steady_work_p95_ms ratio=0.602
+PAIR: repetition 2 worker_throughput_per_sec ratio=1.051
+PASS: repetition 3 routed all 1 intended worker(s)
+PASS: repetition 3 steady samples baseline/router=898/899
+PASS: repetition 3 router CPU=0.199% of one logical CPU
+PASS: repetition 3 router peak RSS=18496 KiB
+PAIR: repetition 3 steady_p95_ms ratio=1.913
+PAIR: repetition 3 steady_p99_ms ratio=2.571
+PAIR: repetition 3 steady_work_p95_ms ratio=1.016
+PAIR: repetition 3 worker_throughput_per_sec ratio=0.956
+PASS: repetition 4 routed all 1 intended worker(s)
+PASS: repetition 4 steady samples baseline/router=899/898
+PASS: repetition 4 router CPU=0.100% of one logical CPU
+PASS: repetition 4 router peak RSS=18504 KiB
+PAIR: repetition 4 steady_p95_ms ratio=0.569
+PAIR: repetition 4 steady_p99_ms ratio=0.394
+PAIR: repetition 4 steady_work_p95_ms ratio=2.431
+PAIR: repetition 4 worker_throughput_per_sec ratio=1.095
+PASS: repetition 5 routed all 1 intended worker(s)
+PASS: repetition 5 steady samples baseline/router=899/898
+PASS: repetition 5 router CPU=0.133% of one logical CPU
+PASS: repetition 5 router peak RSS=18400 KiB
+PAIR: repetition 5 steady_p95_ms ratio=0.995
+PAIR: repetition 5 steady_p99_ms ratio=1.538
+PAIR: repetition 5 steady_work_p95_ms ratio=2.863
+PAIR: repetition 5 worker_throughput_per_sec ratio=0.891
+PASS: median paired steady_p95_ms ratio=0.991 limit=≤1.10
+VARIATION: steady_p95_ms ratio min=0.569 q1=0.655 median=0.991 q3=0.995 max=1.913; bootstrap95CI=[0.569,1.913] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired steady_p99_ms ratio=0.614 limit=≤1.10
+VARIATION: steady_p99_ms ratio min=0.394 q1=0.500 median=0.614 q3=1.538 max=2.571; bootstrap95CI=[0.394,2.571] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired steady_work_p95_ms ratio=1.016 limit=≤1.10
+VARIATION: steady_work_p95_ms ratio min=0.189 q1=0.602 median=1.016 q3=2.431 max=2.863; bootstrap95CI=[0.189,2.863] (resamples=10000, seed=20261015; descriptive, not a gate override)
+PASS: median paired worker_throughput_per_sec ratio=1.051 limit=≥0.90
+VARIATION: worker_throughput_per_sec ratio min=0.891 q1=0.956 median=1.051 q3=1.063 max=1.095; bootstrap95CI=[0.891,1.095] (resamples=10000, seed=20261015; descriptive, not a gate override)

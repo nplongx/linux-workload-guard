@@ -1,0 +1,60 @@
+acceptance_status=PASS
+result_tsv=benchmarks/results/routing-contention-common-window-synthetic-pass7-2026-10-15.tsv
+raw_samples_tsv=benchmarks/results/routing-contention-common-window-synthetic-pass7-2026-10-15.samples.tsv
+manifest=benchmarks/results/routing-contention-common-window-synthetic-pass7-2026-10-15.environment.txt
+git_revision=6c5f198261e1401fc1e231c36da35c2e8fa2ecb6
+workload_kind=synthetic
+host=posix.uname_result(sysname='Linux', nodename='bougainvillean', release='7.0.0-38-generic', version='#38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026', machine='x86_64')
+duration_seconds=30.0
+workers=1
+minimum_pairs=5
+minimum_steady_samples_per_mode=500
+max_median_paired_latency_ratio=1.10
+min_median_paired_throughput_ratio=0.90
+max_router_cpu_pct_one_core=5.0
+max_router_peak_rss_kib=32768
+scope=synthetic routing probe only; PASS does not close representative terminal-workload release gate
+PASS: repetition 1 routed all 1 intended worker(s)
+PASS: repetition 1 steady samples baseline/router=898/899
+PASS: repetition 1 router CPU=0.156% of one logical CPU
+PASS: repetition 1 router peak RSS=18404 KiB
+PAIR: repetition 1 steady_p95_ms ratio=0.387
+PAIR: repetition 1 steady_p99_ms ratio=0.848
+PAIR: repetition 1 steady_work_p95_ms ratio=0.870
+PAIR: repetition 1 worker_throughput_per_sec ratio=1.182
+PASS: repetition 2 routed all 1 intended worker(s)
+PASS: repetition 2 steady samples baseline/router=899/898
+PASS: repetition 2 router CPU=0.155% of one logical CPU
+PASS: repetition 2 router peak RSS=18364 KiB
+PAIR: repetition 2 steady_p95_ms ratio=0.975
+PAIR: repetition 2 steady_p99_ms ratio=0.708
+PAIR: repetition 2 steady_work_p95_ms ratio=3.675
+PAIR: repetition 2 worker_throughput_per_sec ratio=1.010
+PASS: repetition 3 routed all 1 intended worker(s)
+PASS: repetition 3 steady samples baseline/router=898/898
+PASS: repetition 3 router CPU=0.187% of one logical CPU
+PASS: repetition 3 router peak RSS=18400 KiB
+PAIR: repetition 3 steady_p95_ms ratio=1.077
+PAIR: repetition 3 steady_p99_ms ratio=0.390
+PAIR: repetition 3 steady_work_p95_ms ratio=0.263
+PAIR: repetition 3 worker_throughput_per_sec ratio=0.954
+PASS: repetition 4 routed all 1 intended worker(s)
+PASS: repetition 4 steady samples baseline/router=898/899
+PASS: repetition 4 router CPU=0.187% of one logical CPU
+PASS: repetition 4 router peak RSS=18484 KiB
+PAIR: repetition 4 steady_p95_ms ratio=1.097
+PAIR: repetition 4 steady_p99_ms ratio=2.166
+PAIR: repetition 4 steady_work_p95_ms ratio=3.869
+PAIR: repetition 4 worker_throughput_per_sec ratio=0.877
+PASS: repetition 5 routed all 1 intended worker(s)
+PASS: repetition 5 steady samples baseline/router=898/898
+PASS: repetition 5 router CPU=0.155% of one logical CPU
+PASS: repetition 5 router peak RSS=18488 KiB
+PAIR: repetition 5 steady_p95_ms ratio=1.008
+PAIR: repetition 5 steady_p99_ms ratio=0.726
+PAIR: repetition 5 steady_work_p95_ms ratio=0.666
+PAIR: repetition 5 worker_throughput_per_sec ratio=1.006
+PASS: median paired steady_p95_ms ratio=1.008 limit=≤1.10
+PASS: median paired steady_p99_ms ratio=0.726 limit=≤1.10
+PASS: median paired steady_work_p95_ms ratio=0.870 limit=≤1.10
+PASS: median paired worker_throughput_per_sec ratio=1.006 limit=≥0.90

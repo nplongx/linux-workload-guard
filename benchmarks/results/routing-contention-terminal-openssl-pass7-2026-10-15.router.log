@@ -1,0 +1,10 @@
+2026-10-15 15:05:50,170 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:06:00,477 INFO route decision=accepted pid=896128 cpu=86.4% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=openssl speed -seconds 27 -bytes 16384 sha256
+2026-10-15 15:06:25,263 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:06:35,550 INFO route decision=accepted pid=897053 cpu=89.9% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=openssl speed -seconds 27 -bytes 16384 sha256
+2026-10-15 15:08:10,636 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:08:20,890 INFO route decision=accepted pid=900095 cpu=89.0% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=openssl speed -seconds 27 -bytes 16384 sha256
+2026-10-15 15:08:45,848 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:08:56,139 INFO route decision=accepted pid=901070 cpu=88.6% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=openssl speed -seconds 27 -bytes 16384 sha256
+2026-10-15 15:10:31,601 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:10:41,893 INFO route decision=accepted pid=906986 cpu=88.7% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=openssl speed -seconds 27 -bytes 16384 sha256

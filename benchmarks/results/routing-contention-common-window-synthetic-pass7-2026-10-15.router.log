@@ -1,0 +1,10 @@
+2026-10-15 14:57:57,860 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 14:58:08,189 INFO route decision=accepted pid=884045 cpu=85.9% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-a9c_d376/hog.py /tmp/lwg-routing-bench-a9c_d376/lwg-router-1-883054-hog0.pid /tmp/lwg-routing-bench-a9c_d376/lwg-router-1-883054-hog0.progre
+2026-10-15 14:58:35,056 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 14:58:45,359 INFO route decision=accepted pid=885073 cpu=90.1% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-a9c_d376/hog.py /tmp/lwg-routing-bench-a9c_d376/lwg-router-2-883054-hog0.pid /tmp/lwg-routing-bench-a9c_d376/lwg-router-2-883054-hog0.progre
+2026-10-15 15:00:22,720 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:00:33,060 INFO route decision=accepted pid=887874 cpu=87.2% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-a9c_d376/hog.py /tmp/lwg-routing-bench-a9c_d376/lwg-router-3-883054-hog0.pid /tmp/lwg-routing-bench-a9c_d376/lwg-router-3-883054-hog0.progre
+2026-10-15 15:00:59,855 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:01:10,180 INFO route decision=accepted pid=888866 cpu=88.8% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-a9c_d376/hog.py /tmp/lwg-routing-bench-a9c_d376/lwg-router-4-883054-hog0.pid /tmp/lwg-routing-bench-a9c_d376/lwg-router-4-883054-hog0.progre
+2026-10-15 15:02:47,557 INFO started threshold=70% sustained=8.0s recovery<35% adaptive=False shadow=False
+2026-10-15 15:02:57,893 INFO route decision=accepted pid=891673 cpu=89.0% reason=sustained-cpu threshold=70.0% sustained_samples=4 cmd=/usr/bin/python3 /tmp/lwg-routing-bench-a9c_d376/hog.py /tmp/lwg-routing-bench-a9c_d376/lwg-router-5-883054-hog0.pid /tmp/lwg-routing-bench-a9c_d376/lwg-router-5-883054-hog0.progre
