@@ -1,0 +1,80 @@
+===== timestamp =====
+2026-10-15T17:18:36+07:00
+===== ./test.sh =====
+2026-10-15 17:18:36,875 INFO aggregate scope restored unit=lwg-workload-test-worker.scope weight=100
+2026-10-15 17:18:36,875 INFO aggregate scope restore skipped unit=lwg-workload-test-worker.scope reason=external-weight-change current=55
+2026-10-15 17:18:36,880 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-15 17:18:36,881 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-15 17:18:36,894 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 17:18:36,903 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 17:18:36,912 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 17:18:36,921 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 17:18:36,929 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-15 17:18:36,938 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 17:18:36,947 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-15 17:18:36,955 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-15 17:18:36,966 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 17:18:36,975 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-15 17:18:36,984 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-15 17:18:36,993 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-15 17:18:37,003 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-15 17:18:37,012 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-15 17:18:37,021 ERROR routing disabled due to invalid configuration: aggregate routing thresholds and sustained sample count are invalid
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interrupted run finalized INCOMPLETE)
+performance reviewer rejects invalid acceptance limits
+performance review tests: ok (PASS/FAIL/INCOMPLETE, paired ratios, no fabricated acceptance)
+run-workload scope routing: ok (disabled default and opt-in protected scope)
+unit checks: ok
+invalid shadow configuration: safely rejected
+invalid quota configuration: safely rejected
+custom parent recovery leaf: safely derived
+tests: ok
+===== install/uninstall =====
+Linux Workload Guard installed.
+Linux Workload Guard removed.
+install/uninstall smoke: ok (systemctl mocked; user config preserved)
+===== integration routing =====
+integration routing: ok (120ms burst not routed; sustained detection 1.05s)
+===== recovery routing =====
+recovery routing: ok (idle-to-recovery 1.85s)
+===== shadow routing =====
+shadow routing: ok (120ms burst rejected; sustained route observed in 1.09s; recovery completed in 3.35s including idle phase)
+===== controller integration =====
+production PSI boundary: below/equal/above 0.40; missing/stale hold; bounded quota readback passed in temporary slice
+probe_baseline: n=251 wakeup_lateness_ms p50/p95/p99=0.081/0.297/1.092; work_duration_ms p50/p95/p99=1.315/2.764/19.868
+probe_enabled: n=270 wakeup_lateness_ms p50/p95/p99=0.081/0.143/0.787; work_duration_ms p50/p95/p99=1.318/1.712/2.420
+cpu_bound_baseline: workers=2 aggregate_python_loop_iterations_per_second=52355.962
+cpu_bound_enabled: workers=2 aggregate_python_loop_iterations_per_second=69291.310
+guard_enabled_window: wall_s=5.085 cpu_s=0.060 one_core_cpu_pct=1.18 rss_start/end_kib=19888/19984 peak_rss_kib=19984 router_process_runqueue_delay_delta_ms=22.120 cpu_counter_status=valid scheduler_counter_status=valid
+host_cpu_psi_some_avg10_pct: baseline_start/end=3.59/6.21; enabled_start/end=6.72/6.35
+transition_timing_s: both_workers_routed=0.792; first_quota_increase=1.069; idle_to_quota_decrease_and_recovery=1.606
+quota_stability: transitions=5 direction_reversals=1 values=100->150,350->300,300->250,250->200,200->150
+metrics_scope: one bounded synthetic host run; loop iterations and probe timings are workload-specific, not application SLA evidence
+controller integration: ok (burst rejected; two competing workers routed; dynamic quota applied/decreased; AIMD log-only; both recovered; external quota change reconciled; router restart with active routes recovered; cgroup recreated and routing/recovery resumed; dynamic quota disabled without changing the recorded temporary quota)
+===== aggregate scope integration =====
+aggregate scope integration: PASS (100% parent cap, both churn-safe scopes weighted, unrelated scope unchanged, original weights restored)
+===== recovery unit =====
+===== quota safety =====
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+===== routing safety =====
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+===== PSI safety =====
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interrupted run finalized INCOMPLETE)
+===== performance review tests =====
+performance reviewer rejects invalid acceptance limits
+performance review tests: ok (PASS/FAIL/INCOMPLETE, paired ratios, no fabricated acceptance)
+===== soak monitor tests =====
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+===== Python syntax =====
+===== POSIX shell syntax =====
+===== Bash syntax =====
+===== systemd verify =====
+===== diff check =====
+===== version =====
+0.6.5-rc.1
+===== finished =====
+2026-10-15T17:20:35+07:00
