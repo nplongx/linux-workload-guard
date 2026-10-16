@@ -1,0 +1,4 @@
+This bundle records local/static validation only. It is not runtime acceptance evidence.
+Generic CI and repository safety tests cannot close any host-dependent gate.
+No live runtime workflow dispatch, workload, benchmark, quota actuation, PSI-forcing activity, rollback drill, or soak was run.
+All seven mandatory gates remain OPEN; stable release NO-GO; version remains 0.6.5-rc.1; v1.0.0 tag must not be created.

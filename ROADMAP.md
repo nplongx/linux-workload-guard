@@ -4,6 +4,14 @@ This roadmap describes the project's intended path from the current `v0.6.5-rc.1
 
 ## Current status
 
+### RC validation pass 26 — approved runtime evidence retention (2026-10-16)
+
+- Reconciled current repository identity and the Pass 24/25 runbooks. `HEAD` and `origin/main` were `c99833ac92a20e2a72df44f1c285a1444f6bb6a3`; version remains `0.6.5-rc.1`; tracked worktree was clean; 254 historical untracked artifact entries were preserved; no `v1.0.0` tag exists. CI run `38858748844` remains successful, but its runtime gates are not acceptance evidence.
+- Improved the manual-only approved runtime workflow to require Ubuntu 22.04, cgroup v2/CPU controller, and user systemd before integration; create a unique per-run evidence directory; retain controller integration outputs; record source/host/OS/cgroup and step outcomes; finalize a SHA-256 manifest; verify it; and upload the bundle for 90 days even when an integration step fails. The recorded gate decision is always `OPEN_PENDING_INDEPENDENT_REVIEW`; workflow success cannot self-close a gate. Added static safety assertions for this contract.
+- Added [`docs/rc-gate-execution-pass26.md`](docs/rc-gate-execution-pass26.md) defining dispatch prerequisites, evidence expectations for G1–G7, independent review, and artifact limitations. No runtime dispatch, workload, benchmark, quota actuation, PSI-forcing activity, rollback drill, or soak was run in this pass.
+- Infrastructure remains blocked: repository API reports zero registered Actions runners and zero repository variables, so the required `lwg-approved-controller-test` runner and both approval variables are absent. The authorized repository owner must provision/approve these before manual dispatch. Ubuntu 22.04 delegated counters and effective quota readback still require actual approved-host evidence.
+- **All seven mandatory gates remain OPEN.** No release threshold or default changed. Keep `0.6.5-rc.1`, preserve historical artifacts, and do not create `v1.0.0`.
+
 ### RC validation pass 25 — soak duration cannot masquerade as release acceptance (2026-10-16)
 
 - Audit found that the soak collector's `run_status=COMPLETE` described collection integrity but could be misread as soak-gate acceptance even for the short-duration fixtures used by tests. The collector now writes a separate `soak_gate_status`: incomplete traces remain `OPEN_RUN_INCOMPLETE`; clean runs shorter than 86,400 monotonic seconds remain `OPEN_DURATION_BELOW_24H`; longer clean traces remain `REQUIRES_WORKLOAD_PHASE_LOGS_AND_HUMAN_REVIEW`. The collector never declares release-gate `PASS`.

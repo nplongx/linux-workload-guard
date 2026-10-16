@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added per-dispatch runtime evidence retention: unique run/attempt directory, host/source/step provenance, explicit OPEN pending independent review, SHA-256 manifest verification, and 90-day artifact upload that runs even after failed integration steps. This improves evidence availability; it does not close a release gate.
+- Added [Pass 26 runtime evidence-retention runbook](docs/rc-gate-execution-pass26.md) with infrastructure prerequisites, per-gate evidence contracts, and reviewer requirements.
 - Added create-only per-run SHA-256 evidence manifests for the six routing benchmark outputs (summary, raw samples, environment, router log, interval telemetry, throughput counters). The evaluator verifies hashes and refuses `PASS` without the manifest; regressions cover tampering, missing files, duplicate keys, and overwrite attempts.
 - Added controller-lock, `/proc` membership-gap, known-heavy false-positive, batched systemd-property, external `CPUWeight` override, and acceptance-report binding regressions.
 - Added graceful-stop recovery for verified routed PIDs to the quota-protected recovery slice; route state is removed only after PID starttime and destination membership readback, while unknown membership/readback preserves the recovery journal.

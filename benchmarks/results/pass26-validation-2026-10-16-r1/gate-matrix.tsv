@@ -1,0 +1,8 @@
+gate\tstatus\tblocker
+G1 Ubuntu 22.04 delegated counters and effective quota\tOPEN\tApproved Ubuntu 22.04 runner and actual delegated-cgroup evidence required
+G2 approved-runner controller integration\tOPEN\t0 registered runners; 0 repository approval variables
+G3 independent-host preregistered ABBA\tOPEN\tApproved independent host and sealed protocol execution required
+G4 throughput acceptance\tOPEN\tQualifying independent-host ABBA and PSI-valid performance evidence required
+G5 dedicated-host rollback\tOPEN\tApproved disposable host and maintenance window required
+G6 natural PSI crossing >=0.40\tOPEN\tPassive natural crossing correlated with controller decision/readback required
+G7 continuous soak >=86400s (259200s target)\tOPEN\tApproved representative workload, uninterrupted telemetry, hashes and human review required

@@ -1,0 +1,10 @@
+command	exit_status	log
+./test.sh	0	benchmarks/results/pass26-validation-2026-10-16-r1/full-test-suite.log
+./tests/ci-runtime-gate-safety.sh	0	benchmarks/results/pass26-validation-2026-10-16-r1/runtime-workflow-safety.log
+./tests/rc-gate-preflight-safety.sh	0	benchmarks/results/pass26-validation-2026-10-16-r1/preflight-safety.log
+./tests/controller-integration-safety.sh	0	benchmarks/results/pass26-validation-2026-10-16-r1/controller-skip-safety.log
+./tests/soak-monitor.sh	0	benchmarks/results/pass26-validation-2026-10-16-r1/soak-collector-regressions.log
+python3 -m py_compile benchmarks/analyze-aggregate-routing.py benchmarks/controller-replay.py benchmarks/evidence_integrity.py benchmarks/live-psi-observe.py benchmarks/performance-review.py benchmarks/preregister_abba.py benchmarks/quota-pressure-replay.py benchmarks/routing-contention.py benchmarks/shadow-policy-replay.py bin/workload-router.py tests/controller-hardening.py tests/routing-telemetry.py	0	benchmarks/results/pass26-validation-2026-10-16-r1/python-compile.log
+sh -n tests/ci-runtime-gate-safety.sh tests/rc-gate-preflight-safety.sh tests/controller-integration-safety.sh tests/soak-monitor.sh tests/controller-integration.sh benchmarks/rc-gate-preflight.sh benchmarks/soak-monitor.sh	0	benchmarks/results/pass26-validation-2026-10-16-r1/shell-syntax.log
+python3 -c import yaml; [yaml.safe_load(open(p, encoding="utf-8")) for p in (".github/workflows/ci.yml", ".github/workflows/approved-controller-runtime.yml")]; print("YAML parse OK")	0	benchmarks/results/pass26-validation-2026-10-16-r1/yaml-parse.log
+git diff --check	0	benchmarks/results/pass26-validation-2026-10-16-r1/whitespace-check.log

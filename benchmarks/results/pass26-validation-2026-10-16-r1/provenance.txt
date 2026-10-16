@@ -1,0 +1,14 @@
+recorded_at=2026-10-16T13:20:11+07:00
+head=c99833ac92a20e2a72df44f1c285a1444f6bb6a3
+origin_main=c99833ac92a20e2a72df44f1c285a1444f6bb6a3
+version=0.6.5-rc.1
+branch=main
+tracked_worktree_before_pass_changes=clean
+historical_untracked_entries_preserved=254
+new_pass26_paths=docs/rc-gate-execution-pass26.md,benchmarks/results/pass26-validation-2026-10-16-r1/
+runtime_dispatch=NOT RUN
+workload_or_benchmark=NOT RUN
+quota_actuation=NOT RUN
+rollback_drill=NOT RUN
+PSI_forcing=NOT RUN
+soak=NOT RUN

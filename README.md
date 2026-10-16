@@ -338,6 +338,8 @@ Predeclared candidate acceptance limits for the RC performance review are: at le
 
 For controlled operator rollback, Ubuntu/cgroup prerequisite evidence, second-host manifests, and the exact PASS/FAIL/SKIP/NOT RUN vocabulary, see [the operator rollback and cross-host acceptance checklist](docs/operator-rollback.md) and [the pass-21 gate execution protocol](docs/rc-gate-execution-pass21.md).
 
+The approved manual runtime workflow's runner prerequisites, per-dispatch evidence bundle, hash verification, failure retention, and independent-review requirements are documented in [the pass-26 runtime evidence-retention addendum](docs/rc-gate-execution-pass26.md). The workflow remains disabled unless dispatched from `main` with both approval variables and the dedicated runner label; evidence never self-closes a release gate.
+
 For read-only diagnosis of CPU saturation, PSI versus quota throttling, telemetry gaps, and safe rollback boundaries, see [CPU 100% diagnosis and safe recovery](docs/cpu-100-diagnostics.md). Current RC validation gate status is tracked in [pass 16](docs/rc-validation-pass16.md).
 
 ## Benchmark
