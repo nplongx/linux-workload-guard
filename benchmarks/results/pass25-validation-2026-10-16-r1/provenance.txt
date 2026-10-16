@@ -1,0 +1,11 @@
+pass=25
+recorded_at=2026-10-16T12:57:38+07:00
+version=0.6.5-rc.1
+head=f11c15a6cf96cdad361bd37326237d6ac62fb91d
+origin_main=f11c15a6cf96cdad361bd37326237d6ac62fb91d
+branch=main
+tracked_tree_before_validation=modified
+untracked_entries_before_bundle=254
+v1_0_0_tag=absent
+validation_scope=local unit regression static mocked shell Python systemd and evidence-integrity checks only
+forbidden_operations=NO workload benchmark; NO CPU load generation; NO quota actuation; NO production config/service mutation; NO live integration; NO soak; NO runtime workflow dispatch

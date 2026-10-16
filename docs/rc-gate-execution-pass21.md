@@ -69,7 +69,7 @@ On an approved host, first define representative workload phases and their separ
 benchmarks/soak-monitor.sh "benchmarks/results/pass21-soak-<unique-id>" 86400 60
 ```
 
-Use `259200` seconds for the 72-hour target. The output path must be new. The monitor itself is passive and does not create representative workload phases; attach approved workload-phase logs and review service journal, restarts, quota transitions, PSI, CPU/RSS, route counts, telemetry gaps and recovery. Only `run_status=COMPLETE`, exit status 0, verified checksums and a human-reviewed workload record can be considered for the soak gate. An interrupted or incomplete run stays `INCOMPLETE` and must be preserved.
+Use `259200` seconds for the 72-hour target. The output path must be new. The monitor itself is passive and does not create representative workload phases; attach approved workload-phase logs and review service journal, restarts, quota transitions, PSI, CPU/RSS, route counts, telemetry gaps and recovery. `run_status=COMPLETE` means only that the requested collection interval passed internal integrity checks. `soak_gate_status=OPEN_DURATION_BELOW_24H` is never qualifying evidence; after at least 86,400 uninterrupted seconds, the status remains `REQUIRES_WORKLOAD_PHASE_LOGS_AND_HUMAN_REVIEW` until those separate artifacts are verified and a reviewer explicitly accepts them. The collector never writes a gate `PASS`. An interrupted or incomplete run stays `INCOMPLETE` and must be preserved.
 
 ## 7. Evidence and release decision
 

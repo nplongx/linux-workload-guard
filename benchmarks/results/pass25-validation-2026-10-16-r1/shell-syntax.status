@@ -1,0 +1,4 @@
+COMMAND=sh -n tests/ci-runtime-gate-safety.sh tests/preregister-abba.sh tests/performance-review.sh tests/analyze-aggregate-routing.sh tests/soak-monitor.sh tests/live-psi-observe-safety.sh tests/rc-gate-preflight-safety.sh benchmarks/soak-monitor.sh benchmarks/rc-gate-preflight.sh
+STARTED_AT=2026-10-16T12:58:53+07:00
+EXIT_STATUS=0
+FINISHED_AT=2026-10-16T12:58:53+07:00

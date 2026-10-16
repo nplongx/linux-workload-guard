@@ -113,6 +113,8 @@ fi
 grep -q 'soak monitor collection loop exited:.*acceptance verdict is in' "$TMP/complete.stdout"
 awk -F '\t' 'NR==1 {n=NF; if(n!=14) exit 1} NR>1 && NF!=n {exit 1} END {if(NR<3) exit 1}' "$TMP/complete/samples.tsv"
 grep -q '^run_status=COMPLETE$' "$TMP/complete/environment.txt"
+grep -q '^soak_gate_status=OPEN_DURATION_BELOW_24H$' "$TMP/complete/environment.txt"
+grep -q '^soak_minimum_seconds=86400$' "$TMP/complete/environment.txt"
 grep -q '^coverage_ratio=1.0000$' "$TMP/complete/environment.txt"
 grep -q 'mock journal capture' "$TMP/complete/service-journal.log"
 [ "$(stat -c '%a' "$TMP/complete")" = 700 ]
@@ -130,6 +132,7 @@ unset MOCK_QUOTA_SEQUENCE MOCK_QUOTA_COUNT
 export MOCK_SERVICE_RESTART=1 MOCK_SERVICE_COUNT="$TMP/service-count"
 run_incomplete "$TMP/restarted" 2 1
 grep -q '^run_status=INCOMPLETE$' "$TMP/restarted/environment.txt"
+grep -q '^soak_gate_status=OPEN_RUN_INCOMPLETE$' "$TMP/restarted/environment.txt"
 grep -q 'ERROR.*service restart count increased' "$TMP/restarted/errors.tsv"
 unset MOCK_SERVICE_RESTART MOCK_SERVICE_COUNT
 

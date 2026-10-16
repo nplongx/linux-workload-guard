@@ -1,0 +1,8 @@
+gate_id	gate	status	blocker	required_evidence
+G1	Ubuntu 22.04 delegated CPU counters + effective quota readback	OPEN	No approved runner evidence; generic environment does not establish delegated cgroup capability	Approved temporary cgroup cpu.stat counters over valid interval plus exact effective CPUQuota readback and unit/cgroup identity
+G2	Approved-runner controller integration	OPEN	Runtime workflow not dispatched; no approval variables enabled	Approved dedicated runner execution with routing/recovery/quota/CPUWeight effective readback
+G3	Independent-host preregistered ABBA	OPEN	No real independent-host ABBA performed	Sealed protocol and full A/B/B2/A2 raw evidence on independent host
+G4	Throughput acceptance >= 0.90 under PSI rules	OPEN	No qualifying approved-host evidence	Complete ABBA; paired median >= 0.90; latency/work <= 1.10; PSI confounder evidence
+G5	Dedicated-host rollback drill	OPEN	Not performed on disposable approved host	Config hashes/modes, service identity/restarts, effective quota readback, exact restoration
+G6	Natural PSI crossing >= 0.40	OPEN	No natural crossing with correlated controller/readback evidence	Passive timestamp-correlated PSI, controller decision, effective quota before/after and review
+G7	Continuous soak >= 24h (72h target)	OPEN	No approved-host soak; short monitor fixtures are not soak evidence	>=86400 uninterrupted seconds, complete telemetry/journal, workload-phase logs, hashes and human review

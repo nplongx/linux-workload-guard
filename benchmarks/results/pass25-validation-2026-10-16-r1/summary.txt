@@ -1,0 +1,7 @@
+Pass 25 — soak gate eligibility clarity
+Version: 0.6.5-rc.1
+Source HEAD at validation: f11c15a6cf96cdad361bd37326237d6ac62fb91d
+Origin/main at validation: f11c15a6cf96cdad361bd37326237d6ac62fb91d
+Code change: soak monitor separates run_status=COMPLETE (collection integrity) from soak_gate_status. Under 86400 seconds => OPEN_DURATION_BELOW_24H; longer clean traces require workload-phase logs and human review. Collector never declares release-gate PASS.
+Validation: command-by-command statuses and logs are stored in this bundle. No live workload, benchmark, quota actuation, production configuration/service change, runtime integration, PSI-forcing load, or soak was run.
+All mandatory host/approval-dependent release gates remain OPEN. Stable release NO-GO; version stays 0.6.5-rc.1; no v1.0.0 tag.

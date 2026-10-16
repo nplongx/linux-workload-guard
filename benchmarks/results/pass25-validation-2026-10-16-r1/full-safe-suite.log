@@ -1,0 +1,58 @@
+2026-10-16 12:58:08,600 INFO shutdown route recovered pid=9877 target=/tmp/lwg-shutdown-route-2nq_x9rt/protected-workload-recovery.slice
+2026-10-16 12:58:08,601 WARNING shutdown route retained pid=9878 reason=membership-unknown
+2026-10-16 12:58:08,601 INFO shutdown stale route pruned pid=9879 reason=pid-reused
+2026-10-16 12:58:08,601 WARNING shutdown route retained pid=9880 reason=proc-stat-unavailable
+2026-10-16 12:58:08,601 INFO shutdown route recovered pid=9881 target=/tmp/lwg-shutdown-route-2nq_x9rt/protected-workload-recovery.slice
+2026-10-16 12:58:08,601 WARNING shutdown route restore deadline reached; retaining 1 remaining route record(s)
+2026-10-16 12:58:08,607 INFO aggregate scope restored unit=lwg-workload-test-worker.scope weight=100
+2026-10-16 12:58:08,608 INFO aggregate scope restore skipped unit=lwg-workload-test-worker.scope reason=external-weight-change current=55
+2026-10-16 12:58:08,609 INFO aggregate scope restored unit=lwg-workload-batch0.scope weight=100
+2026-10-16 12:58:08,622 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-16 12:58:08,625 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-16 12:58:08,642 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:58:08,654 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:58:08,666 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 12:58:08,678 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 12:58:08,689 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 12:58:08,701 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 12:58:08,712 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 12:58:08,726 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-16 12:58:08,738 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:58:08,752 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-16 12:58:08,767 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-16 12:58:08,779 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:58:08,790 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 12:58:08,803 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 12:58:08,815 ERROR routing disabled due to invalid configuration: aggregate routing thresholds and sustained sample count are invalid
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)
+evidence integrity: ok (complete artifact set, create-only manifest, 0600 permissions, tamper and manifest-shape rejection)
+2026-10-16 12:58:09,041 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=250% observed=200.00%
+controller sample flow: ok (cgroup cpu.stat -> PSI -> guarded quota decision -> mocked exact readback; missing, malformed, reset and mismatch paths fail closed)
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+controller integration skip safety: ok (explicit SKIP/OPEN and strict-mode failure)
+CI runtime gate safety: ok (generic CI has no self-hosted/runtime steps; separate dispatch-only workflow requires main, two approval variables, and the dedicated runner label)
+ABBA preregistration regression: ok (seal/hash, fixed thresholds/order, run binding, tamper/no-overwrite guards)
+ABBA preregistration CLI safety: ok (no output created without explicit confirmations)
+benchmark provenance dirty/untracked accounting: ok
+benchmark provenance clean revision accounting: ok
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interruption, missing-runtime telemetry fail-closed)
+RC gate preflight safety: ok (arguments, repository boundary, explicit OPEN/NOT RUN classification, SHA-256, no-overwrite, read-only guard)
+performance reviewer rejects invalid limits and detects PSI confounding / unordered evidence
+/tmp/tmp.mFRVgqkku3/prereg-accepted.tsv
+/tmp/tmp.mFRVgqkku3/prereg-tampered-run.tsv
+/tmp/tmp.mFRVgqkku3/tampered-evidence.tsv
+/tmp/tmp.mFRVgqkku3/duplicate-env-key.tsv
+/tmp/tmp.mFRVgqkku3/unsealed-pass.tsv
+performance review tests: ok (status/PSI gates, preregistration binding, duplicate-key rejection, create-only SHA-256 integrity and missing/tampered-evidence fail-closed behavior)
+aggregate analysis regression: ok
+preregistered evidence binding regression: ok (missing manifest digest/path cannot close gate)
+aggregate PSI gate regression: ok (per-pair threshold, condition medians, missing-data inconclusive)
+routing interval telemetry parsing: ok (required counters, malformed/reset-safe snapshots, strict PSI, missing-data fail-closed)
+run-workload scope routing: ok (disabled default and opt-in protected scope)
+unit checks: ok
+invalid shadow configuration: safely rejected
+invalid quota configuration: safely rejected
+custom parent recovery leaf: safely derived
+tests: ok

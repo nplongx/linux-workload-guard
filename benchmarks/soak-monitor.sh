@@ -9,6 +9,7 @@ fi
 OUT=$1
 DURATION=${2:-86400}
 INTERVAL=${3:-60}
+SOAK_MIN_SECONDS=86400
 case "$DURATION:$INTERVAL" in *[!0-9:]*|:*|*:) echo 'duration and interval must be positive integers' >&2; exit 2;; esac
 [ "$DURATION" -ge 1 ] && [ "$INTERVAL" -ge 1 ] || { echo 'duration and interval must be positive integers' >&2; exit 2; }
 START_MONO_NS=$(python3 -c 'import time; print(time.monotonic_ns())' 2>/dev/null || true)
@@ -292,6 +293,19 @@ finish() {
       final_status=INCOMPLETE
     fi
     printf 'run_status=%s\n' "$final_status"
+    # COMPLETE means this collector's requested interval and telemetry are
+    # intact; it is not release-gate acceptance. A short fixture/observation
+    # must never look like a qualifying 24-hour soak, and even a long clean run
+    # still requires workload-phase logs and independent human review.
+    if [ "$final_status" != COMPLETE ]; then
+      soak_gate_status=OPEN_RUN_INCOMPLETE
+    elif [ "$MONO_ELAPSED_NS" -lt "$((SOAK_MIN_SECONDS*1000000000))" ]; then
+      soak_gate_status=OPEN_DURATION_BELOW_24H
+    else
+      soak_gate_status=REQUIRES_WORKLOAD_PHASE_LOGS_AND_HUMAN_REVIEW
+    fi
+    printf 'soak_gate_status=%s\n' "$soak_gate_status"
+    printf 'soak_minimum_seconds=%s\n' "$SOAK_MIN_SECONDS"
     printf 'sample_count=%s\nexpected_samples=%s\ncoverage_ratio=%s\n' "$SAMPLE_COUNT" "$expected_samples" "$coverage"
     printf 'missed_intervals_estimate=%s\nsampling_failures=%s\n' "$MISSED_INTERVALS" "$SAMPLING_FAILURES"
     printf 'quota_transitions_observed=%s\nquota_direction_reversals_observed=%s\n' "$QUOTA_TRANSITIONS" "$QUOTA_REVERSALS"

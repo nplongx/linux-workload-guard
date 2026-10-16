@@ -4,6 +4,13 @@ This roadmap describes the project's intended path from the current `v0.6.5-rc.1
 
 ## Current status
 
+### RC validation pass 25 — soak duration cannot masquerade as release acceptance (2026-10-16)
+
+- Audit found that the soak collector's `run_status=COMPLETE` described collection integrity but could be misread as soak-gate acceptance even for the short-duration fixtures used by tests. The collector now writes a separate `soak_gate_status`: incomplete traces remain `OPEN_RUN_INCOMPLETE`; clean runs shorter than 86,400 monotonic seconds remain `OPEN_DURATION_BELOW_24H`; longer clean traces remain `REQUIRES_WORKLOAD_PHASE_LOGS_AND_HUMAN_REVIEW`. The collector never declares release-gate `PASS`.
+- Added regression assertions for short-run and incomplete-run gate status. Updated README, changelog, and RC execution runbook to distinguish collection completion from gate eligibility and external review. Throughput `0.90`, PSI thresholds/rules, quota bounds, and opt-in defaults are unchanged.
+- Safe validation results and a fresh SHA-256 evidence bundle are recorded in [`pass25-validation-2026-10-16-r1`](benchmarks/results/pass25-validation-2026-10-16-r1/). Validation is local/static and does not close host-dependent gates. No workload, live integration, quota actuation, PSI-forcing load, or soak was run.
+- **Mandatory gates remain OPEN:** Ubuntu 22.04 delegated CPU counters/effective quota readback; approved-runner controller integration; independent-host preregistered ABBA; throughput acceptance `>=0.90` under unchanged PSI confounder rules; dedicated-host rollback; natural PSI crossing `>=0.40` correlated with controller decision/readback; continuous soak >=24 h (72 h target) with workload-phase logs and review. Keep `0.6.5-rc.1`; no `v1.0.0` tag and no stable release while any gate is open.
+
 ### RC validation pass 24 — controller isolation, bounded scope reconciliation, and run-evidence integrity (2026-10-16)
 
 - Continued from Pass 23 at `b280d54` without changing the release version or running host-dependent acceptance. Fixed a second route-cleanup path that could discard a routed PID when `/proc` membership was temporarily unreadable; the tri-state transition is now shared by cleanup and fault-injection tests prove `unknown` preserves the route, while confirmed `gone` prunes it.
