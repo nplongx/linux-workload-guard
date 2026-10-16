@@ -65,7 +65,9 @@ if [ -e "$PARENT_FILE" ] || [ -e "$RECOVERY_FILE" ] || [ -e "$HEAVY_FILE" ]; the
 fi
 cleanup() {
   rc=$?
+  original_rc=$rc
   set +e
+  cleanup_failed=0
   [ -n "$ROUTER_PID" ] && kill "$ROUTER_PID" 2>/dev/null
   [ -n "$WORK_PID_1" ] && kill "$WORK_PID_1" 2>/dev/null
   [ -n "$WORK_PID_2" ] && kill "$WORK_PID_2" 2>/dev/null
@@ -74,9 +76,45 @@ cleanup() {
   # systemd synthesizes the tag's ancestor slice from the hyphenated unit
   # names. Stop that per-run ancestor too, but never stop shared parent slices.
   systemctl --user stop "$TAG.slice" >/dev/null 2>&1
-  if [ "$UNITS_CREATED" -eq 1 ]; then
-    rm -f "$PARENT_FILE" "$RECOVERY_FILE" "$HEAVY_FILE"
-    systemctl --user daemon-reload >/dev/null 2>&1
+  # A successful test must not hide failed cleanup. Wait briefly for systemd
+  # to settle, then verify every per-run unit is no longer active before
+  # removing unit files. If state cannot be queried, retain files for recovery.
+  for unit in "$SCOPE_1" "$SCOPE_2" "$PROBE_SCOPE" "$PARENT_UNIT" "$RECOVERY_UNIT" "$HEAVY_UNIT" "$TAG.slice"; do
+    attempts=0
+    while [ "$attempts" -lt 20 ]; do
+      unit_state=$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null)
+      query_rc=$?
+      if [ "$query_rc" -ne 0 ]; then
+        cleanup_failed=1
+        printf 'cleanup verification failed: unable to query unit=%s\n' "$unit" >&2
+        break
+      fi
+      case "$unit_state" in
+        active|activating|deactivating|reloading) attempts=$((attempts+1)); sleep 0.1;;
+        *) break;;
+      esac
+    done
+    case "$unit_state" in
+      active|activating|deactivating|reloading)
+        cleanup_failed=1
+        printf 'cleanup verification failed: unit remains %s: %s\n' "$unit_state" "$unit" >&2;;
+    esac
+  done
+  if [ "$UNITS_CREATED" -eq 1 ] && [ "$cleanup_failed" -eq 0 ]; then
+    if ! rm -f "$PARENT_FILE" "$RECOVERY_FILE" "$HEAVY_FILE" || \
+       ! systemctl --user daemon-reload >/dev/null 2>&1; then
+      cleanup_failed=1
+      printf 'cleanup failed: could not remove/reload temporary user unit files\n' >&2
+    fi
+  fi
+  if [ "$cleanup_failed" -ne 0 ] && [ "$rc" -eq 0 ]; then rc=1; fi
+  if [ -n "$RESULT_DIR" ] && [ -d "$RESULT_DIR" ]; then
+    {
+      printf 'cleanup_status=%s\n' "$([ "$cleanup_failed" -eq 0 ] && echo VERIFIED || echo FAILED)"
+      printf 'original_exit_code=%s\n' "$original_rc"
+      printf 'recorded_at=%s\n' "$(date --iso-8601=seconds 2>/dev/null || date)"
+      printf 'temporary_unit_files_removed=%s\n' "$([ "$UNITS_CREATED" -eq 1 ] && [ "$cleanup_failed" -eq 0 ] && echo yes || echo no-or-not-applicable)"
+    } > "$RESULT_DIR/cleanup.txt"
   fi
   if [ "$rc" -ne 0 ] && [ -f "$LOG" ]; then
     failure_log="/tmp/$TAG.failure.log"
@@ -92,8 +130,12 @@ cleanup() {
     fi
   fi
   rm -f "$PID_FILE_1" "$PID_FILE_2" "$PID_FILE_1.done" "$PID_FILE_2.done" "$PID_FILE_1.throughput.tsv" "$PID_FILE_2.throughput.tsv" "$PROBE_PID_FILE" "$PHASE_FILE" "$WORKER" "$PROBE" "$PROBE_SAMPLES" "$LOG" "$STATE"
+  exit "$rc"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p "$UNIT_DIR"
 cat > "$PARENT_FILE" <<EOF

@@ -9,6 +9,7 @@ fi
 OUT=$1
 DURATION=${2:-86400}
 INTERVAL=${3:-60}
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 SOAK_MIN_SECONDS=86400
 case "$DURATION:$INTERVAL" in *[!0-9:]*|:*|*:) echo 'duration and interval must be positive integers' >&2; exit 2;; esac
 [ "$DURATION" -ge 1 ] && [ "$INTERVAL" -ge 1 ] || { echo 'duration and interval must be positive integers' >&2; exit 2; }
@@ -23,6 +24,19 @@ START_ISO=$(date --iso-8601=seconds)
 START_EPOCH=$(date +%s)
 ROUTER_PID_START=$(systemctl --user show workload-router.service -p MainPID --value 2>/dev/null || echo 0)
 ROUTER_RESTARTS_START=$(systemctl --user show workload-router.service -p NRestarts --value 2>/dev/null || echo unknown)
+{
+  printf 'recorded_at=%s\n' "$START_ISO"
+  printf 'source_revision=%s\n' "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unavailable)"
+  printf 'source_branch=%s\n' "$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unavailable)"
+  printf 'tracked_worktree=%s\n' "$(if [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then echo clean; else echo dirty-or-unavailable; fi)"
+  printf 'host=%s\n' "$(hostname 2>/dev/null || echo unavailable)"
+  printf 'kernel=%s\n' "$(uname -a 2>/dev/null || echo unavailable)"
+  grep -E '^(ID|VERSION_ID|PRETTY_NAME)=' /etc/os-release 2>/dev/null || true
+  printf 'systemd_version=%s\n' "$(systemctl --version 2>/dev/null | head -1 || echo unavailable)"
+  printf 'cgroup_mode=%s\n' "$(if [ -r /sys/fs/cgroup/cgroup.controllers ]; then echo v2; else echo unknown; fi)"
+  printf 'cgroup_controllers=%s\n' "$(cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null | tr '\n' ' ' || echo unavailable)"
+  printf 'command=%s OUTPUT_DIR DURATION_SECONDS INTERVAL_SECONDS\n' "$0"
+} > "$OUT/provenance.txt"
 cat > "$OUT/environment.txt" <<EOF
 started_at=$START_ISO
 host=$(uname -a)
@@ -309,12 +323,30 @@ finish() {
     printf 'sample_count=%s\nexpected_samples=%s\ncoverage_ratio=%s\n' "$SAMPLE_COUNT" "$expected_samples" "$coverage"
     printf 'missed_intervals_estimate=%s\nsampling_failures=%s\n' "$MISSED_INTERVALS" "$SAMPLING_FAILURES"
     printf 'quota_transitions_observed=%s\nquota_direction_reversals_observed=%s\n' "$QUOTA_TRANSITIONS" "$QUOTA_REVERSALS"
+    printf 'evidence_manifest_file=SHA256SUMS.txt\nevidence_manifest_verification=manifest-verification.txt\n'
   } >> "$OUT/environment.txt"
   # A completed wall-clock interval is not a successful soak when any
   # continuity, telemetry, service-health, or journal gate failed. Propagate
   # that verdict through the process exit status so wrappers/CI cannot mistake
   # an INCOMPLETE artifact for a successful run.
   if [ "$rc" -eq 0 ] && [ "$final_status" != COMPLETE ]; then
+    rc=1
+  fi
+  manifest_rc=0
+  (
+    cd "$OUT" || exit 1
+    find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name manifest-verification.txt ! -name manifest-digest.txt \
+      ! -name .manifest-inputs.tmp ! -name .manifest-sorted.tmp -printf '%f\0' > .manifest-inputs.tmp || exit 1
+    sort -z .manifest-inputs.tmp > .manifest-sorted.tmp || exit 1
+    xargs -0 -r sha256sum < .manifest-sorted.tmp > SHA256SUMS.txt || exit 1
+    rm -f .manifest-inputs.tmp .manifest-sorted.tmp || exit 1
+    sha256sum -c SHA256SUMS.txt > manifest-verification.txt || exit 2
+    sha256sum SHA256SUMS.txt > manifest-digest.txt
+  ) || manifest_rc=$?
+  if [ "$manifest_rc" -eq 0 ]; then
+    printf 'verification_status=PASS\n' >> "$OUT/manifest-verification.txt"
+  else
+    printf 'verification_status=FAIL\nmanifest_exit_code=%s\n' "$manifest_rc" > "$OUT/manifest-verification.txt"
     rc=1
   fi
   exit "$rc"

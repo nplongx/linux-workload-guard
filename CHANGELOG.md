@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added the Pass 27 [operational G1–G7 release-gate execution plan](docs/rc-gate-execution-pass27.md), with exact entry points, sealed ABBA commands, inputs/outputs, thresholds, fail-closed classifications, independent review and CI-only evidence exclusions.
+- Passive PSI and soak collectors now capture source/host provenance, seal finalized run files with SHA-256 manifests, verify the manifests, and expose the manifest digest for independent retention. Regressions cover tampering and dangling-symlink refusal.
+- Added a no-op `--help`/unexpected-argument guard to the active routing benchmark. Previously `--help` was ignored and could launch the default CPU workload; a fake-systemctl regression proves help/argument checks do not reach systemd or create results.
+- The approved runtime workflow now preserves complete controller/routing step output in the run/attempt bundle, records preflight outcomes, and emits the manifest digest to the workflow summary. Controller integration cleanup is verified; an unconfirmed unit stop, unit-state query, or unit-file reload turns an otherwise successful run into a failure and preserves recovery artifacts.
 - Added per-dispatch runtime evidence retention: unique run/attempt directory, host/source/step provenance, explicit OPEN pending independent review, SHA-256 manifest verification, and 90-day artifact upload that runs even after failed integration steps. This improves evidence availability; it does not close a release gate.
 - Added [Pass 26 runtime evidence-retention runbook](docs/rc-gate-execution-pass26.md) with infrastructure prerequisites, per-gate evidence contracts, and reviewer requirements.
 - Added create-only per-run SHA-256 evidence manifests for the six routing benchmark outputs (summary, raw samples, environment, router log, interval telemetry, throughput counters). The evaluator verifies hashes and refuses `PASS` without the manifest; regressions cover tampering, missing files, duplicate keys, and overwrite attempts.

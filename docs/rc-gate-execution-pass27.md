@@ -1,0 +1,75 @@
+# RC gate execution plan — Pass 27
+
+This is the operational handoff for all seven mandatory release gates. It is not approval to run privileged or load-generating tests. Version remains `0.6.5-rc.1`; dynamic quota remains opt-in; stable release is **NO-GO** until every gate has qualifying runtime evidence and independent review. A green generic CI run, a sealed protocol, or a collector's `COMPLETE` status is never a gate PASS.
+
+## Before any state-changing or load-generating run
+
+An authorized repository owner/operator must approve the host and maintenance window, confirm the source revision is on `main` with a clean tracked tree, identify the operator and reviewer, and create new evidence paths. Do not provision a runner, set approval variables, dispatch the approved workflow, change quota, start workload, force PSI, run rollback, or start soak without that authorization. Keep credentials/private config out of shared artifacts.
+
+The approved runtime workflow is **Actions → Approved controller runtime (manual only) → Run workflow → `main`**. Its job condition requires both repository variables to equal the literal string `true`:
+
+- `RUN_APPROVED_CONTROLLER_INTEGRATION`
+- `APPROVED_CONTROLLER_RUNTIME_APPROVED`
+
+It also requires a dedicated registered runner labelled `self-hosted`, `linux`, `x64`, and `lwg-approved-controller-test`. The runner must be isolated from production workloads. The job preflight rejects anything other than Ubuntu 22.04, cgroup v2 with the CPU controller, and a functioning user systemd manager. Missing prerequisites mean **OPEN / NOT RUN**; do not enable the variables merely to make the job start.
+
+Each workflow attempt writes to `benchmarks/results/approved-runtime-<run-id>-<attempt>/`. The directory is create-only. Step output is retained as `controller-step.log` and `routing-step.log`; the finalizer records run/source/host/step outcomes, writes `SHA256SUMS.txt`, verifies it, records `manifest-digest.txt`, and leaves the decision `OPEN_PENDING_INDEPENDENT_REVIEW`. The digest must also be retained in the review/ticket system independently of the artifact. Upload retention is 90 days. Workflow success does not itself close any gate.
+
+## Gate matrix and executable procedures
+
+| Gate | Preconditions and entry point | Required inputs and retained outputs | PASS criteria | FAIL / OPEN rules and independent review |
+|---|---|---|---|---|
+| **G1 — Ubuntu 22.04 delegated CPU counters and effective quota readback** | Approved dedicated Ubuntu 22.04 runner; cgroup v2 CPU delegation; user systemd; owner approval. Run the approved runtime workflow above. | Workflow run URL/ID and SHA; `prerequisite-preflight.txt`; `controller-step.log`; `controller/` raw output including `environment.txt`, `router.log`, `probe-samples.tsv`, per-worker throughput files and metrics; verified outer SHA-256 manifest/digest. | Strict controller integration exits 0; the actual temporary test cgroup exposes nonnegative `usage_usec`, `nr_periods`, and `nr_throttled` with advancing counters; a quota write and exact effective `CPUQuotaPerSecUSec` readback are recorded; cleanup is verified. | Missing counter, unavailable/mismatched quota readback, skip, nonzero exit, missing output or hash failure means **OPEN** (a demonstrated controller assertion failure is **FAIL**, still open for release). Reviewer verifies host inventory, actual cgroup identity/counters, quota transition, source SHA, and artifact digest. Root-cgroup counters or generic CI are insufficient. |
+| **G2 — approved-runner controller/lifecycle integration** | Same owner-approved run as G1; same dedicated runner and clean `main` revision. | `routing-step.log`, controller bundle, run provenance and verified outer manifest. | Controller integration plus routing, recovery, shadow and aggregate-scope integration steps all exit 0; route/recovery/readback assertions are present; no cleanup failure is recorded. | Any skipped, missing, timed-out or failed step means **OPEN**; actual assertion failure is **FAIL**. Reviewer checks each step outcome and raw output, not just the GitHub conclusion. G2 is separate from G1 even when the same workflow run supports both. |
+| **G3 — independent-host sealed ABBA execution** | Independent approved host, approved window, fixed source revision and workload, PSI preflight, five repetitions per block. Do not use another container/job on the same host as “independent.” | Create a new sealed preregistration before observing results; preserve its `protocol.json`, `SHA256SUMS.txt` and digest. Preserve every A/B/B2/A2 result, raw samples, environment, telemetry, throughput counters, router logs, acceptance reports and per-run manifests. | `benchmarks/preregister_abba.py verify <sealed-dir>` succeeds; all four blocks bind to the declared host, source, workload, weights and fixed order; five valid pairs/block; no sample exclusion; all result manifests verify. | Missing preregistration, host/source/workload mismatch, missing block/pair, dirty source, or hash/schema error means **OPEN / INCOMPLETE**. A second hosted CI job is not an independent host. Independent reviewer verifies the host identity separately and records the sealed protocol digest before reviewing results. |
+| **G4 — throughput, latency/work ratios and PSI validity** | G3 protocol sealed before execution; same declared workload/capacity model and complete four-block result set. | Per-result evaluator reports plus aggregate report and raw telemetry; use the evaluator outputs bound to exact result paths, not copied summaries. | Median paired throughput ratio `>= 0.90`; median paired wake-up p95, wake-up p99 and probe-work p95 ratios each `<= 1.10`; all declared sample/routing/overhead limits pass; PSI is present and satisfies the sealed confounder rule. | Do not relax thresholds or discard samples. PSI `>5%` in more than 20% of steady samples in any mode/pair, or baseline/router median PSI imbalance `>5` percentage points, is `CONFOUNDED_INCONCLUSIVE`; missing PSI is `INCONCLUSIVE`; malformed evidence is `INCOMPLETE`. A synthetic workload verdict applies only to that workload. Reviewer independently recomputes from raw samples and verifies report-to-result binding. |
+| **G5 — exact rollback and service/quota health** | Owner-approved disposable test host/window; private backup of exact config bytes and mode; baseline service identity/restarts and effective quota recorded; restoration commands decided in advance. Follow [`operator-rollback.md`](operator-rollback.md). | New private evidence directory with before/after config hashes and modes (not secret contents), commands/exit statuses, service state/MainPID/restart count, journal, route-state observations, and effective quota readback before disable, while disabled, and after restoration. Seal the completed evidence bundle and retain its digest separately. | Original config bytes and mode are restored exactly; service is healthy after the expected restart; route state is safe; effective quota is read back and matches the recorded intended value; no unexpected actuation or cleanup residue remains. | Any uncertain restoration, service failure, quota mismatch, missing before/after evidence or incomplete journal means **FAIL/OPEN**. Do not attempt on a production host. Independent reviewer compares the original backup hash/mode and exact readbacks; synthetic rollback tests do not close G5. |
+| **G6 — natural CPU PSI crossing correlated to controller decision** | Approved host with controller/service already operating normally; passive observation only. Do not add load or change the production `0.40` threshold to manufacture an event. | Run `python3 benchmarks/live-psi-observe.py "$OUT" 3600 5` with a new output path. Retain `provenance.txt`, `samples.tsv`, `controller-journal.log`, `manifest.txt`, `SHA256SUMS.txt`, `manifest-verification.txt`, and `manifest-digest.txt`. | At least one valid natural CPU `some avg10 >= 40.0%` sample is timestamp-correlated to the production controller pressure/decision log and the effective quota before/after readback; telemetry/journal and hashes verify. | No crossing is **NOT RUN**, not failure and not permission to generate load. Crossing without a matching decision/readback is **OPEN**. Collector `REVIEW_REQUIRED` only invites review; it is not PASS. Reviewer verifies the event's natural origin and time correlation from raw samples and journal. |
+| **G7 — uninterrupted RC soak** | Approved host and representative workload plan with phase-specific logging; persistent supervised session; owner-approved 24-hour minimum run (72-hour target). Collector is passive and does not generate representative workload. | Run `benchmarks/soak-monitor.sh "$OUT" 86400 60` (minimum) or `benchmarks/soak-monitor.sh "$OUT" 259200 60` (target), using a new path. Keep approved workload-phase logs inside `$OUT` during collection so they are included in the final manifest. Retain `provenance.txt`, `environment.txt`, `samples.tsv`, `errors.tsv`, `service-journal.log`, phase logs, `SHA256SUMS.txt`, `manifest-verification.txt` and `manifest-digest.txt`. | Exit 0; `run_status=COMPLETE`; monotonic elapsed time >=86,400 seconds (target 259,200); no missed intervals, service identity/restart discontinuity, telemetry gap, journal failure or hash failure; workload-phase logs cover the approved representative phases; independent human review accepts the trace. | Interrupted/short run is **OPEN**; `soak_gate_status=REQUIRES_WORKLOAD_PHASE_LOGS_AND_HUMAN_REVIEW` is not PASS. Missing phase logs or any integrity failure means **OPEN**. If phase logs are only available after collection, do not mutate the sealed run; create a separate review bundle referencing the original manifest digest. Reviewer verifies uninterrupted duration, phase coverage, all hashes and service/telemetry continuity. |
+
+## ABBA commands (G3/G4)
+
+Run these only after owner approval on the declared independent host. Replace every placeholder with a real identifier and a fresh unique path; do not copy fixture values. The preregistration CLI refuses to create a protocol unless both explicit confirmations are supplied, the tracked tree is clean, and cgroup v2 CPU support is observed:
+
+```sh
+python3 benchmarks/preregister_abba.py create \
+  --output "benchmarks/results/abba-<UTC>-<host-id>-sealed" \
+  --host-id "<independent-host-inventory-id>" \
+  --operator-id "<approved-ticket-or-operator-id>" \
+  --workload-kind terminal-build \
+  --confirm-independent-host --confirm-approved-window
+python3 benchmarks/preregister_abba.py verify "benchmarks/results/abba-<UTC>-<host-id>-sealed"
+```
+
+Retain the printed `protocol_sha256` outside the run bundle before starting block A. For each block use a different, non-existing `RESULT` path and the same declared workload. The fixed block weights are A=20, B=80, B2=80, A2=20:
+
+```sh
+PREREG="benchmarks/results/abba-<UTC>-<host-id>-sealed"
+OUT="benchmarks/results/abba-<UTC>-<host-id>"
+mkdir -m 700 "$OUT"  # create once; choose a unique path that does not exist
+# Repeat the command once per block, with the matching block and weight.
+BENCH_REQUIRE_PREREGISTRATION=1 BENCH_PREREGISTRATION_DIR="$PREREG" \
+  BENCH_PREREGISTRATION_BLOCK=A BENCH_AGGREGATE_ROUTING=true \
+  BENCH_AGGREGATE_SCOPE_WEIGHT=20 WORKLOAD_KIND=terminal-build \
+  REPS=5 DURATION=30 WORKERS=2 RESULT="$OUT/A.tsv" \
+  benchmarks/routing-contention-isolated.sh
+```
+
+Repeat with `BENCH_PREREGISTRATION_BLOCK=B` and weight `80`, then `B2` and weight `80`, then `A2` and weight `20`; use unique output filenames for each. Preserve each command's full stdout/stderr and exit status. Evaluate each result with `python3 benchmarks/performance-review.py "$OUT/<BLOCK>.tsv"`; then analyze the full four-block set with:
+
+```sh
+python3 benchmarks/analyze-aggregate-routing.py \
+  --out "$OUT/aggregate-pairs.tsv" --summary "$OUT/aggregate-summary.txt" \
+  "$OUT/A.tsv" "$OUT/B.tsv" "$OUT/B2.tsv" "$OUT/A2.tsv"
+```
+
+The result/evaluator tools use create-only output paths. An evaluator PASS is workload-scoped and still needs independent review. Preserve all adverse and confounded samples; do not rerun only unfavorable blocks or edit the sealed protocol.
+
+## Evidence and release decision rules
+
+1. Every attempt has a new run/attempt path. Existing paths, dangling symlinks, missing inputs, failed checksums and incomplete telemetry are errors, not invitations to overwrite or infer success.
+2. Verify each bundle with its recorded SHA-256 manifest; record the manifest digest in the independent ticket/review system. A manifest detects drift only if its digest is retained separately.
+3. Keep the runtime workflow's `OPEN_PENDING_INDEPENDENT_REVIEW` decision. Reviewers must be independent of the operator who ran the test and must record gate ID, reviewed commit, host identity, artifact URL/path, manifest digest, raw-evidence findings, decision, reviewer identity and timestamp.
+4. `PASS` requires all gate-specific conditions above and traceable independent review. `FAIL`, `SKIP`, `NOT RUN`, `INCOMPLETE`, missing artifact, timeout, or review pending leaves the gate OPEN for release purposes.
+5. Generic CI validates repository code and regression tests only. It cannot close G1–G7. Do not change the `0.90` throughput floor, `1.10` latency/work ceilings, PSI confounder rules, quota bounds or opt-in defaults to obtain a passing result.
+6. Do not create `v1.0.0` while any mandatory gate is OPEN. If infrastructure or authorization is absent, leave the gate OPEN and wait for the exact owner/reviewer action above.

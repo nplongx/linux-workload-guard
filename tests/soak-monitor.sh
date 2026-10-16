@@ -117,8 +117,17 @@ grep -q '^soak_gate_status=OPEN_DURATION_BELOW_24H$' "$TMP/complete/environment.
 grep -q '^soak_minimum_seconds=86400$' "$TMP/complete/environment.txt"
 grep -q '^coverage_ratio=1.0000$' "$TMP/complete/environment.txt"
 grep -q 'mock journal capture' "$TMP/complete/service-journal.log"
+grep -Eq '^source_revision=([0-9a-f]{40}|unavailable)$' "$TMP/complete/provenance.txt"
+grep -q '^verification_status=PASS$' "$TMP/complete/manifest-verification.txt"
+grep -Eq '^[0-9a-f]{64}  SHA256SUMS.txt$' "$TMP/complete/manifest-digest.txt"
+(cd "$TMP/complete" && sha256sum -c SHA256SUMS.txt >/dev/null)
 [ "$(stat -c '%a' "$TMP/complete")" = 700 ]
 [ "$(stat -c '%a' "$TMP/complete/samples.tsv")" = 600 ]
+cp -R "$TMP/complete" "$TMP/complete-tampered"
+printf 'tampered\n' >> "$TMP/complete-tampered/samples.tsv"
+if (cd "$TMP/complete-tampered" && sha256sum -c SHA256SUMS.txt >/dev/null 2>&1); then
+  echo 'soak evidence manifest did not detect post-seal sample edits' >&2; exit 1
+fi
 
 # Quota property changes and a direction reversal must be summarized explicitly.
 export MOCK_QUOTA_SEQUENCE=1 MOCK_QUOTA_COUNT="$TMP/quota-count"

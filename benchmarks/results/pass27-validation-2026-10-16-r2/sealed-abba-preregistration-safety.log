@@ -1,0 +1,2 @@
+ABBA preregistration regression: ok (seal/hash, fixed thresholds/order, run binding, tamper/no-overwrite guards)
+ABBA preregistration CLI safety: ok (no output created without explicit confirmations)

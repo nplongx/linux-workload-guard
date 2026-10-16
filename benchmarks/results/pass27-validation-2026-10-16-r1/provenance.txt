@@ -1,0 +1,17 @@
+recorded_at=2026-10-16T13:31:21+07:00
+head=3ac21c7a36d7d62bbae01c8207c9f8aadd7410c5
+origin_main_head=3ac21c7a36d7d62bbae01c8207c9f8aadd7410c5
+branch=main
+version=0.6.5-rc.1
+tracked_worktree_before_commit=dirty_by_pass27_changes
+historical_untracked_count_before_bundle=255
+historical_artifacts_preserved=true
+kernel=Linux 7.0.0-38-generic x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+VERSION_ID="26.04"
+ID=ubuntu
+cgroup_fs=cgroup2fs
+registered_runners=0
+repository_variables=0
+latest_known_ci_run={"conclusion":"success","databaseId":38860674849,"headSha":"3ac21c7a36d7d62bbae01c8207c9f8aadd7410c5","status":"completed","url":"https://github.com/nplongx/linux-workload-guard/actions/runs/38860674849"}
+v1.0.0_tag=absent

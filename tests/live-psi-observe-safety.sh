@@ -20,6 +20,10 @@ if python3 "$COLLECTOR" "$TMP/existing" 1 1 >/dev/null 2>&1; then
   echo 'live PSI collector accepted an existing evidence directory' >&2; exit 1
 fi
 [ "$(cat "$TMP/existing/marker")" = preserve-evidence ]
+ln -s "$TMP/missing-target" "$TMP/dangling-link"
+if python3 "$COLLECTOR" "$TMP/dangling-link" 1 1 >/dev/null 2>&1; then
+  echo 'live PSI collector accepted a dangling symlink as a fresh evidence path' >&2; exit 1
+fi
 if grep -Eq 'set-property|start workload-router|stop workload-router|restart workload-router|stress-ng|yes >|while true' "$COLLECTOR"; then
   echo 'live PSI collector must remain passive and must not actuate quota or create load' >&2; exit 1
 fi
@@ -68,5 +72,17 @@ grep -q '^collection_status=INCOMPLETE$' "$TMP/unavailable/manifest.txt"
 grep -q '^acceptance_status=NOT_RUN$' "$TMP/unavailable/manifest.txt"
 grep -q '^integrity_error_count=' "$TMP/unavailable/manifest.txt"
 grep -q '^integrity_error=missing critical PSI/service/quota telemetry$' "$TMP/unavailable/manifest.txt"
+for run in interrupted unavailable; do
+  [ -s "$TMP/$run/provenance.txt" ]
+  grep -Eq '^source_revision=([0-9a-f]{40}|unavailable)$' "$TMP/$run/provenance.txt"
+  grep -q '^verification_status=PASS$' "$TMP/$run/manifest-verification.txt"
+  grep -Eq '^sha256=[0-9a-f]{64}  SHA256SUMS.txt$' "$TMP/$run/manifest-digest.txt"
+  (cd "$TMP/$run" && sha256sum -c SHA256SUMS.txt >/dev/null)
+done
+cp -R "$TMP/unavailable" "$TMP/tampered"
+printf 'tampered\n' >> "$TMP/tampered/samples.tsv"
+if (cd "$TMP/tampered" && sha256sum -c SHA256SUMS.txt >/dev/null 2>&1); then
+  echo 'live PSI evidence manifest did not detect post-seal sample edits' >&2; exit 1
+fi
 
-printf '%s\n' 'live PSI collector safety: ok (arguments, no-overwrite, passive-only, interruption, missing-runtime telemetry fail-closed)'
+printf '%s\n' 'live PSI collector safety: ok (arguments/no-overwrite/symlink guard, passive-only, provenance and SHA-256 sealing, tamper detection, interruption and missing telemetry fail-closed)'

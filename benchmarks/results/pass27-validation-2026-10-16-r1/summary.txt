@@ -1,0 +1,17 @@
+full-test-suite=2
+soak-collector-regressions=0
+live-psi-collector-regressions=0
+runtime-workflow-safety=0
+controller-integration-skip-safety=0
+read-only-preflight-safety=0
+routing-benchmark-safety=0
+sealed-abba-preregistration-safety=0
+python-compile=0
+shell-syntax=0
+bash-syntax=0
+yaml-parse=0
+systemd-unit-verification=0
+whitespace-check=0
+pass26-manifest-verification=0
+version-check=0
+failed_checks=1

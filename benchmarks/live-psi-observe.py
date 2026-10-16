@@ -7,8 +7,10 @@ The resulting trace is observations only. Acceptance still requires a genuine
 effective quota before/after evidence; a collection without those is NOT RUN.
 """
 import datetime
+import hashlib
 import os
 import pathlib
+import platform
 import signal
 import subprocess
 import sys
@@ -57,6 +59,94 @@ def pressure():
     return values
 
 
+def write_provenance(out, start_wall, duration, interval):
+    """Capture source and host identity without upgrading observations to acceptance."""
+    def command(args):
+        try:
+            result = subprocess.run(args, text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, timeout=3, check=False)
+            return result.stdout.strip() if result.returncode == 0 else "unavailable"
+        except (OSError, subprocess.SubprocessError):
+            return "unavailable"
+
+    try:
+        os_release = pathlib.Path("/etc/os-release").read_text().replace("\n", ";")
+    except OSError:
+        os_release = "unavailable"
+    try:
+        controllers = " ".join(pathlib.Path("/sys/fs/cgroup/cgroup.controllers").read_text().split())
+    except OSError:
+        controllers = "unavailable"
+    status = command(["git", "status", "--porcelain", "--untracked-files=no"])
+    try:
+        diff_result = subprocess.run(["git", "diff", "HEAD", "--binary"],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     timeout=3, check=False)
+        diff_sha = hashlib.sha256(diff_result.stdout).hexdigest() if diff_result.returncode == 0 else "unavailable"
+    except (OSError, subprocess.SubprocessError):
+        diff_sha = "unavailable"
+    systemd_version = command(["systemctl", "--version"])
+    try:
+        process_cgroup = pathlib.Path("/proc/self/cgroup").read_text().replace("\n", ";")
+    except OSError:
+        process_cgroup = "unavailable"
+    values = {
+        "recorded_at": start_wall,
+        "source_revision": command(["git", "rev-parse", "HEAD"]),
+        "source_branch": command(["git", "branch", "--show-current"]),
+        "tracked_worktree": "clean" if status == "" else ("dirty" if status != "unavailable" else "unavailable"),
+        "tracked_diff_sha256": diff_sha,
+        "hostname": platform.node(),
+        "kernel": platform.release(),
+        "architecture": platform.machine(),
+        "os_release": os_release,
+        "systemd_version": systemd_version.splitlines()[0] if systemd_version != "unavailable" else "unavailable",
+        "cgroup_v2": str(pathlib.Path("/sys/fs/cgroup/cgroup.controllers").is_file()).lower(),
+        "cgroup_controllers": controllers,
+        "process_cgroup": process_cgroup,
+        "requested_duration_seconds": duration,
+        "sampling_interval_seconds": interval,
+        "collection_mode": "passive-only; no workload generation, service lifecycle, config or quota writes",
+    }
+    with (out / "provenance.txt").open("x") as stream:
+        for key, value in values.items():
+            stream.write(f"{key}={value}\n")
+
+
+def seal_evidence(out):
+    """Create and verify a create-only SHA-256 manifest for finalized run files."""
+    files = sorted(path for path in out.iterdir()
+                   if path.is_file() and not path.is_symlink()
+                   and path.name not in {"SHA256SUMS.txt", "manifest-verification.txt", "manifest-digest.txt"})
+    manifest = out / "SHA256SUMS.txt"
+    with manifest.open("x") as stream:
+        for path in files:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            stream.write(f"{digest}  {path.name}\n")
+    errors = []
+    for line in manifest.read_text().splitlines():
+        try:
+            expected, name = line.split("  ", 1)
+            path = out / name
+            if path.parent != out or path.is_symlink() or not path.is_file():
+                errors.append(f"unsafe or missing manifest entry: {name}")
+            elif hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                errors.append(f"SHA-256 mismatch: {name}")
+        except ValueError:
+            errors.append("malformed SHA-256 manifest line")
+    with (out / "manifest-verification.txt").open("x") as stream:
+        stream.write(f"manifest_entries={len(files)}\n")
+        stream.write(f"verification_status={'PASS' if not errors else 'FAIL'}\n")
+        for error in errors:
+            stream.write(f"error={error}\n")
+    digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    with (out / "manifest-digest.txt").open("x") as stream:
+        stream.write(f"sha256={digest}  SHA256SUMS.txt\n")
+    if errors:
+        raise RuntimeError("evidence manifest verification failed: " + "; ".join(errors))
+    return digest, len(files)
+
+
 def main():
     if len(sys.argv) not in (2, 3, 4):
         raise SystemExit("usage: live-psi-observe.py OUTPUT_DIR [DURATION_SECONDS=3600] [INTERVAL_SECONDS=5]")
@@ -68,7 +158,7 @@ def main():
         raise SystemExit("duration must be a positive integer and interval a positive number")
     if duration < 1 or interval < 0.2:
         raise SystemExit("duration must be >=1s and interval must be >=0.2s")
-    if out.exists():
+    if out.exists() or out.is_symlink():
         raise SystemExit(f"refusing to overwrite existing evidence directory: {out}")
     out.mkdir(parents=True, mode=0o700)
     os.chmod(out, 0o700)
@@ -81,6 +171,7 @@ def main():
     signal.signal(signal.SIGTERM, request_stop)
     start_wall = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     start_mono = time.monotonic()
+    write_provenance(out, start_wall, duration, interval)
     start_pid = property_value("workload-router.service", "MainPID")
     start_restarts = property_value("workload-router.service", "NRestarts")
     start_quota = property_value("heavy-workload.slice", "CPUQuotaPerSecUSec")
@@ -167,7 +258,9 @@ def main():
         for error in sorted(set(integrity_errors)):
             manifest.write(f"integrity_error={error}\n")
         manifest.write("note=Passive observation only; correlate crossing timestamp, controller decision, and effective quota transition manually. No workload/config/quota changes made.\n")
+    digest, manifest_entries = seal_evidence(out)
     print(f"evidence_dir={out}\nsamples={len(rows)}\npsi_high_samples={len(crossings)}\ncontroller_quota_change_lines={len(matching_decisions)}\nacceptance_status={status}")
+    print(f"manifest_entries={manifest_entries}\nmanifest_sha256={digest}\nmanifest_verification=PASS")
     if stop_requested["value"]:
         return 130
     if not journal_ok or not collection_complete:

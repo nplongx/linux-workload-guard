@@ -1,0 +1,1 @@
+Pass 27 validation is repository/local verification only. All seven runtime gates remain OPEN. The unintended local synthetic benchmark is explicitly excluded from release evidence. No approved runtime workflow dispatch, quota actuation, PSI forcing, rollback drill, or soak was performed in this pass.

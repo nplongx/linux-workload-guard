@@ -1,0 +1,36 @@
+2026-10-16 13:30:42,041 INFO shutdown route recovered pid=9877 target=/tmp/lwg-shutdown-route-1i3gk_64/protected-workload-recovery.slice
+2026-10-16 13:30:42,041 WARNING shutdown route retained pid=9878 reason=membership-unknown
+2026-10-16 13:30:42,041 INFO shutdown stale route pruned pid=9879 reason=pid-reused
+2026-10-16 13:30:42,041 WARNING shutdown route retained pid=9880 reason=proc-stat-unavailable
+2026-10-16 13:30:42,042 INFO shutdown route recovered pid=9881 target=/tmp/lwg-shutdown-route-1i3gk_64/protected-workload-recovery.slice
+2026-10-16 13:30:42,042 WARNING shutdown route restore deadline reached; retaining 1 remaining route record(s)
+2026-10-16 13:30:42,051 INFO aggregate scope restored unit=lwg-workload-test-worker.scope weight=100
+2026-10-16 13:30:42,052 INFO aggregate scope restore skipped unit=lwg-workload-test-worker.scope reason=external-weight-change current=55
+2026-10-16 13:30:42,053 INFO aggregate scope restored unit=lwg-workload-batch0.scope weight=100
+2026-10-16 13:30:42,066 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-16 13:30:42,068 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-16 13:30:42,082 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 13:30:42,093 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 13:30:42,105 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 13:30:42,115 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 13:30:42,127 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 13:30:42,138 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 13:30:42,149 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 13:30:42,160 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-16 13:30:42,171 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 13:30:42,181 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-16 13:30:42,193 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-16 13:30:42,204 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 13:30:42,214 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 13:30:42,225 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 13:30:42,236 ERROR routing disabled due to invalid configuration: aggregate routing thresholds and sustained sample count are invalid
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)
+evidence integrity: ok (complete artifact set, create-only manifest, 0600 permissions, tamper and manifest-shape rejection)
+2026-10-16 13:30:42,397 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=250% observed=200.00%
+controller sample flow: ok (cgroup cpu.stat -> PSI -> guarded quota decision -> mocked exact readback; missing, malformed, reset and mismatch paths fail closed)
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+controller integration skip safety: ok (explicit SKIP/OPEN and strict-mode failure)
+CI runtime gate safety: ok (generic CI has no self-hosted/runtime steps; separate dispatch-only workflow requires main, two approval variables, and the dedicated runner label)
+ABBA preregistration regression: ok (seal/hash, fixed thresholds/order, run binding, tamper/no-overwrite guards)
+ABBA preregistration CLI safety: ok (no output created without explicit confirmations)
+unexpected argument(s): /home/long/linux-workload-guard/benchmarks/routing-contention.py /tmp/tmp.aGrVhz5BQ3/provenance; use --help for usage

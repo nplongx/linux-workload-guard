@@ -1,0 +1,19 @@
+check	exit_status	command
+full-test-suite	0	./test.sh (final rerun; captured in full-test-suite.log)
+routing-benchmark-safety	0	./tests/routing-benchmark-safety.sh (final rerun; captured in routing-benchmark-safety.log)
+soak-collector-regressions	0	./tests/soak-monitor.sh
+live-psi-collector-regressions	0	./tests/live-psi-observe-safety.sh
+runtime-workflow-safety	0	./tests/ci-runtime-gate-safety.sh
+controller-integration-skip-safety	0	./tests/controller-integration-safety.sh
+read-only-preflight-safety	0	./tests/rc-gate-preflight-safety.sh
+sealed-abba-preregistration-safety	0	./tests/preregister-abba.sh
+python-compile	0	python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py
+shell-syntax	0	sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/integration-routing.sh tests/recovery-routing.sh tests/shadow-routing.sh tests/install-uninstall.sh tests/controller-integration.sh tests/recovery-unit.sh tests/soak-monitor.sh tests/routing-benchmark-safety.sh tests/quota-benchmark-safety.sh tests/live-psi-observe-safety.sh tests/performance-review.sh tests/ci-runtime-gate-safety.sh tests/preregister-abba.sh benchmarks/soak-monitor.sh benchmarks/rc-gate-preflight.sh
+bash-syntax	0	bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
+yaml-parse	0	python3 -c 'import yaml; [yaml.safe_load(open(p)) for p in (".github/workflows/ci.yml", ".github/workflows/approved-controller-runtime.yml")]; print("workflow YAML parse: ok")'
+systemd-unit-verification	0	systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
+whitespace-check	0	git diff --check
+pass26-manifest-verification	0	cd benchmarks/results/pass26-validation-2026-10-16-r1 && sha256sum -c SHA256SUMS.txt
+pass27-r1-manifest-verification	0	cd benchmarks/results/pass27-validation-2026-10-16-r1 && sha256sum -c SHA256SUMS.txt
+version-check	0	./bin/workload-guard version
+new-doc-whitespace	0	! grep -nE '[[:blank:]]+$' docs/rc-gate-execution-pass27.md

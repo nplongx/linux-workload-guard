@@ -18,6 +18,16 @@ import threading
 import tempfile
 import time
 
+if __name__ == "__main__":
+    if any(argument in ("-h", "--help") for argument in sys.argv[1:]):
+        print("Usage: routing-contention.py [--help]")
+        print("Runs an isolated CPU-contention benchmark; this is an active workload, not a read-only check.")
+        print("Configure an approved run with REPS, DURATION, WORKERS, WORKLOAD_KIND and RESULT environment variables.")
+        raise SystemExit(0)
+    if len(sys.argv) > 1:
+        print(f"unexpected argument(s): {' '.join(sys.argv[1:])}; use --help for usage", file=sys.stderr)
+        raise SystemExit(2)
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from evidence_integrity import manifest_path, write_manifest
 

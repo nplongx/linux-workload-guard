@@ -1,0 +1,9 @@
+gate	status	qualifying_evidence_required
+G1	OPEN	Ubuntu 22.04 approved host: real delegated cpu.stat counters and exact effective quota readback; independent review
+G2	OPEN	Approved dedicated-runner controller/lifecycle workflow with all steps successful, cleanup verified, evidence reviewed
+G3	OPEN	Independent-host sealed ABBA A/B/B2/A2 with all raw pairs and host/source binding
+G4	OPEN	Median throughput >=0.90, latency/work ratios <=1.10, PSI rules satisfied, raw evidence independently recomputed
+G5	OPEN	Approved disposable-host rollback; exact config/mode restoration, service health and quota readback
+G6	OPEN	Natural some avg10 >=0.40 correlated to production controller decision and effective quota readback
+G7	OPEN	Continuous >=86400s (target 259200s), phase logs, telemetry/journal, verified hashes and human review
+release	NO-GO	Do not create v1.0.0 while any mandatory gate is OPEN

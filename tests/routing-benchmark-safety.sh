@@ -8,6 +8,30 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 test -x "$BENCH"
 bash -n "$BENCH"
 
+# Help must be a no-op even with malformed workload settings. Use a fake
+# systemctl sentinel so a regression cannot reach host systemd or launch load.
+mkdir -p "$TMP/help-bin"
+cat > "$TMP/help-bin/systemctl" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$SYSTEMCTL_SENTINEL"
+exit 91
+SH
+chmod 0755 "$TMP/help-bin/systemctl"
+SYSTEMCTL_SENTINEL="$TMP/help-systemctl-calls" PATH="$TMP/help-bin:$PATH" \
+  DURATION=not-a-number RESULT="$TMP/help.tsv" \
+  python3 "$ROOT/benchmarks/routing-contention.py" --help > "$TMP/help.out"
+grep -q '^Usage: routing-contention.py' "$TMP/help.out"
+[ ! -e "$TMP/help-systemctl-calls" ]
+[ ! -e "$TMP/help.tsv" ]
+if SYSTEMCTL_SENTINEL="$TMP/help-systemctl-calls" PATH="$TMP/help-bin:$PATH" \
+   python3 "$ROOT/benchmarks/routing-contention.py" unexpected-argument >/dev/null 2>&1; then
+  echo 'routing benchmark accepted an unexpected positional argument' >&2; exit 1
+else
+  rc=$?
+  [ "$rc" -eq 2 ] || { echo "unexpected argument returned $rc, expected 2" >&2; exit 1; }
+fi
+[ ! -e "$TMP/help-systemctl-calls" ]
+
 # Short windows cannot produce comparable steady-state percentiles and must
 # fail before any user unit, workload, or result file is created.
 if RESULT="$TMP/short.tsv" DURATION=19 "$BENCH" >/dev/null 2>"$TMP/short.err"; then

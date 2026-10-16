@@ -29,6 +29,7 @@ jobs:
           test ! -L "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
           mkdir -m 700 "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
       - name: Verify approved runner prerequisites
+        id: preflight
         run: |
           set -eu
           out="$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR/prerequisite-preflight.txt"
@@ -57,21 +58,27 @@ jobs:
         env:
           WORKLOAD_GUARD_CONTROLLER_RESULTS_DIR: ${{ env.WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR }}/controller
         run: |
+          set -o pipefail
           {
             echo '### Delegated CPU runtime gate'
             echo 'This result is limited to the approved dedicated runner and temporary test slices; it does not close ABBA, throughput, rollback, PSI-crossing, or soak gates.'
           } >> "$GITHUB_STEP_SUMMARY"
-          WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh
+          WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh 2>&1 \
+            | tee "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR/controller-step.log"
       - name: Approved routing lifecycle integration
         id: routing
         run: |
-          ./tests/integration-routing.sh
-          ./tests/recovery-routing.sh
-          ./tests/shadow-routing.sh
-          ./tests/aggregate-scope-integration.sh
+          set -o pipefail
+          {
+            ./tests/integration-routing.sh &&
+              ./tests/recovery-routing.sh &&
+              ./tests/shadow-routing.sh &&
+              ./tests/aggregate-scope-integration.sh
+          } 2>&1 | tee "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR/routing-step.log"
       - name: Finalize runtime evidence bundle
         if: ${{ always() }}
         env:
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
           CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
           ROUTING_OUTCOME: ${{ steps.routing.outcome }}
         run: |
@@ -84,6 +91,7 @@ jobs:
             printf 'workflow_run_attempt=%s\n' '${{ github.run_attempt }}'
             printf 'source_revision=%s\n' "$(git rev-parse HEAD)"
             printf 'ref=%s\n' '${{ github.ref }}'
+            printf 'preflight_step_outcome=%s\n' "${PREFLIGHT_OUTCOME:-unknown}"
             printf 'controller_step_outcome=%s\n' "${CONTROLLER_OUTCOME:-unknown}"
             printf 'routing_step_outcome=%s\n' "${ROUTING_OUTCOME:-unknown}"
             printf 'host=%s\n' "$(hostname)"
@@ -94,10 +102,16 @@ jobs:
           } > "$out/provenance-and-status.txt"
           (
             cd "$out"
-            find . -type f ! -name SHA256SUMS.txt ! -name manifest-verification.txt -print0 \
-              | sort -z | xargs -0 -r sha256sum > SHA256SUMS.txt
+            find . -type f ! -name SHA256SUMS.txt ! -name manifest-verification.txt ! -name manifest-digest.txt \
+              ! -name .manifest-inputs.tmp ! -name .manifest-sorted.tmp -print0 > .manifest-inputs.tmp
+            sort -z .manifest-inputs.tmp > .manifest-sorted.tmp
+            xargs -0 -r sha256sum < .manifest-sorted.tmp > SHA256SUMS.txt
+            rm -f .manifest-inputs.tmp .manifest-sorted.tmp
             sha256sum -c SHA256SUMS.txt > manifest-verification.txt
+            sha256sum SHA256SUMS.txt > manifest-digest.txt
           )
+          printf 'Runtime evidence manifest digest (record separately for review):\n' >> "$GITHUB_STEP_SUMMARY"
+          cat "$out/manifest-digest.txt" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload runtime evidence (including failures)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

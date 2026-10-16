@@ -1,0 +1,27 @@
+ .github/workflows/approved-controller-runtime.yml | 28 +++++--
+ CHANGELOG.md                                      |  4 +
+ README.md                                         |  2 +-
+ ROADMAP.md                                        | 10 +++
+ benchmarks/live-psi-observe.py                    | 95 ++++++++++++++++++++++-
+ benchmarks/routing-contention.py                  | 10 +++
+ benchmarks/soak-monitor.sh                        | 32 ++++++++
+ tests/ci-runtime-gate-safety.sh                   |  7 ++
+ tests/controller-integration.sh                   | 50 +++++++++++-
+ tests/live-psi-observe-safety.sh                  | 18 ++++-
+ tests/routing-benchmark-safety.sh                 | 24 ++++++
+ tests/soak-monitor.sh                             |  9 +++
+ 12 files changed, 275 insertions(+), 14 deletions(-)
+
+Changed paths:
+ M .github/workflows/approved-controller-runtime.yml
+ M CHANGELOG.md
+ M README.md
+ M ROADMAP.md
+ M benchmarks/live-psi-observe.py
+ M benchmarks/routing-contention.py
+ M benchmarks/soak-monitor.sh
+ M tests/ci-runtime-gate-safety.sh
+ M tests/controller-integration.sh
+ M tests/live-psi-observe-safety.sh
+ M tests/routing-benchmark-safety.sh
+ M tests/soak-monitor.sh

@@ -1,0 +1,11 @@
+event=UNINTENDED_LOCAL_BENCHMARK_INVOCATION
+command=python3 benchmarks/routing-contention.py --help
+reason=entry point ignored --help and launched its default workload before Pass 27 guard was added
+observed_workload=synthetic; repetitions=3; duration_per_mode_seconds=30; workers=1
+result_path=/tmp/routing-contention.tsv
+checksum_path=/tmp/routing-contention.evidence.sha256
+result_sha256=45b792a234fdfcd41b4e3a40b7e7b0110ee55313376a1d4ea150667d4e724c92
+checksum_file_sha256=9c510c4181247be2840eb30f7d105eecf05ec5a1610f4bdbfcfbaa80b88766ff
+release_evidence_eligible=NO
+release_gate_effect=NONE; all gates remain OPEN
+disposition=preserved for transparency; not staged or used for acceptance
