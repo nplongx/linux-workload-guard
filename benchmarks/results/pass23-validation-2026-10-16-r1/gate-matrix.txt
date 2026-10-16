@@ -1,0 +1,15 @@
+Code unit/regression suite: PASS if captured command exit_status=0
+Python compilation: PASS if captured command exit_status=0
+Shell/Bash syntax: PASS if captured command exit_status=0
+Systemd unit validation: PASS if captured command exit_status=0
+Git whitespace validation: PASS if captured command exit_status=0
+Generic CI runtime isolation: OPEN until new hosted workflow run; live runtime commands are SKIP/OPEN in generic matrix
+Ubuntu 22.04 delegated CPU counters/effective quota readback: OPEN (external approved runner evidence required)
+Approved-runner controller integration: OPEN (not run; approval variables unchanged)
+Independent-host sealed ABBA: OPEN (no real preregistration or workload run)
+Throughput >= 0.90 under preregistered PSI rules: OPEN / INCONCLUSIVE pending qualifying runtime evidence
+Dedicated-host rollback drill: OPEN (not run)
+Natural host PSI some avg10 >= 40% with correlated controller decision and effective quota readback: OPEN (not forced, not run)
+Continuous soak >= 24h (72h target) with workload-phase logs and review: OPEN (not run)
+Stable release: NO-GO; version 0.6.5-rc.1; no v1.0.0 tag
+Safety scope: no workload generation, CPU load, quota actuation, production config change, service lifecycle action, or lwg slice cleanup performed by this validation bundle

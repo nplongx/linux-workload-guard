@@ -1,0 +1,4 @@
+command=sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/integration-routing.sh tests/recovery-routing.sh tests/shadow-routing.sh tests/install-uninstall.sh tests/controller-integration.sh tests/recovery-unit.sh tests/soak-monitor.sh tests/routing-benchmark-safety.sh tests/quota-benchmark-safety.sh tests/live-psi-observe-safety.sh tests/performance-review.sh tests/ci-runtime-gate-safety.sh tests/preregister-abba.sh benchmarks/soak-monitor.sh benchmarks/rc-gate-preflight.sh
+started_at=2026-10-16T10:34:52+07:00
+exit_status=0
+ended_at=2026-10-16T10:34:52+07:00

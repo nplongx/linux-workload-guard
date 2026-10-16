@@ -405,6 +405,61 @@ def steady_host_psi_noise(manifest_values, manifest_path, declared_repetitions):
     )
 
 
+def validate_preregistration_manifest(env):
+    """Verify that a preregistered block is still bound to the sealed protocol."""
+    requested = env.get("preregistration_required", "false").strip().lower() in ("1", "true", "yes", "on")
+    if not requested:
+        return []
+    required = ("preregistration_status", "preregistration_directory", "preregistration_sha256",
+                "preregistration_block", "preregistration_cpu_weight", "preregistration_source_revision",
+                "preregistration_host")
+    missing = [key for key in required if not env.get(key, "").strip()]
+    if missing:
+        return ["preregistered run is missing binding metadata: " + ", ".join(missing)]
+    if env["preregistration_status"] != "SEALED_VERIFIED":
+        return ["preregistered run manifest does not record successful pre-run seal verification"]
+    try:
+        import preregister_abba
+        payload, digest, errors = preregister_abba.verify_sealed_preregistration(env["preregistration_directory"])
+        if errors:
+            return ["sealed preregistration invalid: " + "; ".join(errors)]
+        if digest != env["preregistration_sha256"]:
+            return ["preregistration hash differs from the pre-run verified hash"]
+        block = env["preregistration_block"]
+        selected = next((item for item in payload["experiment"]["blocks"] if item["block"] == block), None)
+        if selected is None:
+            return ["preregistration block is not declared in the sealed protocol"]
+        comparisons = {
+            "preregistration_host": payload["host"].get("hostname"),
+            "preregistration_source_revision": payload["source"].get("revision"),
+            "git_revision": payload["source"].get("revision"),
+            "workload_kind": payload["experiment"].get("workload_kind"),
+            "repetitions": str(payload["experiment"].get("repetitions_per_block")),
+            "workers": str(payload["experiment"].get("workers")),
+            "preregistration_cpu_weight": str(selected["cpu_weight"]),
+        }
+        mismatches = [f"{key} differs from sealed preregistration" for key, expected in comparisons.items()
+                      if env.get(key) != expected]
+        if mismatches:
+            return mismatches
+        try:
+            observed_duration = float(env.get("duration_seconds", "nan"))
+            expected_duration = float(payload["experiment"]["duration_seconds_per_mode"])
+            if not math.isfinite(observed_duration) or not math.isclose(observed_duration, expected_duration, rel_tol=0.0, abs_tol=1e-9):
+                return ["duration_seconds differs from sealed preregistration"]
+        except (TypeError, ValueError, KeyError):
+            return ["duration_seconds is invalid for sealed preregistration"]
+        if env.get("git_dirty", "").strip().lower() not in ("false", "0", "no"):
+            return ["preregistered result source tree is not clean"]
+        aggregate = env.get("aggregate_routing", "")
+        match = re.search(r"CPUWeight=(\d+) per sample", aggregate)
+        if not match or int(match.group(1)) != selected["cpu_weight"]:
+            return ["effective candidate CPUWeight in manifest does not match preregistered block"]
+        return []
+    except (OSError, ValueError, KeyError, ImportError) as exc:
+        return [f"could not verify preregistration binding: {exc}"]
+
+
 def main():
     if len(sys.argv) not in (2, 3):
         print("usage: performance-review.py RESULT.tsv [REPORT.txt]", file=sys.stderr)
@@ -470,6 +525,10 @@ def main():
         findings.append("INCOMPLETE: benchmark manifest result_status is not COMPLETE")
     else:
         malformed = False
+        preregistration_errors = validate_preregistration_manifest(env)
+        if preregistration_errors:
+            malformed = True
+            findings.extend("INCOMPLETE: preregistration: " + error for error in preregistration_errors)
         try:
             reps = sorted({int(row["rep"]) for row in rows})
             if any(not row["rep"].isdigit() or int(row["rep"]) < 1 for row in rows):
@@ -624,13 +683,16 @@ def main():
                     f"bootstrap95CI=[{spread['ci_low']:.3f},{spread['ci_high']:.3f}] "
                     f"(resamples={BOOTSTRAP_RESAMPLES}, seed={BOOTSTRAP_SEED}; descriptive, not a gate override)"
                 )
-        has_fail = any(line.startswith("FAIL:") for line in findings)
-        has_nonperformance_fail = any(line.startswith("FAIL:") and not line.startswith("FAIL: median paired ") for line in findings)
-        has_incomplete = any(line.startswith("INCOMPLETE:") for line in findings)
-        status = ("INCOMPLETE" if has_incomplete else
-                  "FAIL" if has_nonperformance_fail else
-                  "CONFOUNDED_INCONCLUSIVE" if psi_noise_status == "CONFOUNDED_INCONCLUSIVE" else
-                  "FAIL" if has_fail else "PASS")
+    has_fail = any(line.startswith("FAIL:") for line in findings)
+    has_nonperformance_fail = any(line.startswith("FAIL:") and not line.startswith("FAIL: median paired ") for line in findings)
+    has_incomplete = any(line.startswith("INCOMPLETE:") for line in findings)
+    if psi_noise_status == "NOT_ASSESSED":
+        findings.append("INCONCLUSIVE: legacy evidence has no verified steady-window host PSI series; it cannot close throughput acceptance")
+    status = ("INCOMPLETE" if has_incomplete else
+              "FAIL" if has_nonperformance_fail else
+              "CONFOUNDED_INCONCLUSIVE" if psi_noise_status == "CONFOUNDED_INCONCLUSIVE" else
+              "INCONCLUSIVE" if psi_noise_status == "NOT_ASSESSED" else
+              "FAIL" if has_fail else "PASS")
     lines = [
         f"acceptance_status={status}",
         f"result_tsv={result}",
@@ -670,7 +732,7 @@ def main():
         print(f"refusing to overwrite acceptance report: {report}", file=sys.stderr)
         return 2
     print("\n".join(lines))
-    return {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2, "CONFOUNDED_INCONCLUSIVE": 3}[status]
+    return {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2, "CONFOUNDED_INCONCLUSIVE": 3, "INCONCLUSIVE": 4}[status]
 
 
 if __name__ == "__main__":

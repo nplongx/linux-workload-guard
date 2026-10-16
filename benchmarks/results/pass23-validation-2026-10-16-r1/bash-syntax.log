@@ -1,0 +1,4 @@
+command=bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
+started_at=2026-10-16T10:34:52+07:00
+exit_status=0
+ended_at=2026-10-16T10:34:52+07:00

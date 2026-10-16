@@ -1,0 +1,6 @@
+command=./tests/analyze-aggregate-routing.sh
+started_at=2026-10-16T10:34:14+07:00
+aggregate analysis regression: ok
+aggregate PSI gate regression: ok (per-pair threshold, condition medians, missing-data inconclusive)
+exit_status=0
+ended_at=2026-10-16T10:34:15+07:00

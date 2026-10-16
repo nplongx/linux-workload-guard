@@ -538,6 +538,47 @@ def git_source_state(root=ROOT):
     except (OSError, subprocess.SubprocessError):
         return "unavailable", "unavailable", -1
 
+
+def preregistration_preflight():
+    """Validate sealed ABBA binding before creating units or starting workers."""
+    requested = os.getenv("BENCH_REQUIRE_PREREGISTRATION", "false").lower() in ("1", "true", "yes", "on")
+    directory = os.getenv("BENCH_PREREGISTRATION_DIR", "").strip()
+    block = os.getenv("BENCH_PREREGISTRATION_BLOCK", "").strip()
+    supplied = bool(directory or block)
+    if not requested and not supplied:
+        return None
+    if not requested or not directory or not block:
+        raise SystemExit("preregistration binding requires BENCH_REQUIRE_PREREGISTRATION=true plus BENCH_PREREGISTRATION_DIR and BENCH_PREREGISTRATION_BLOCK")
+    try:
+        import preregister_abba
+        source = preregister_abba.tracked_source_state(ROOT)
+        if source["revision"] != git_revision():
+            raise ValueError("cannot bind benchmark to an inconsistent Git HEAD")
+        dirty, _, _ = git_source_state(ROOT)
+        if dirty != "false":
+            raise ValueError("tracked worktree must be clean before the preregistered block starts")
+        weight = int(os.getenv("BENCH_AGGREGATE_SCOPE_WEIGHT", "20"))
+        payload, digest, errors = preregister_abba.verify_run_binding(
+            directory, block, os.uname().nodename, source["revision"],
+            WORKLOAD_KIND, REPS, DURATION, WORKERS, weight,
+        )
+        if errors:
+            raise ValueError("; ".join(errors))
+        protocol_dir = pathlib.Path(directory).resolve()
+        result_path = RESULT.resolve()
+        if result_path == protocol_dir or protocol_dir in result_path.parents:
+            raise ValueError("benchmark output must be outside the sealed preregistration directory")
+        return {
+            "status": "SEALED_VERIFIED",
+            "directory": str(protocol_dir),
+            "sha256": digest,
+            "block": block,
+            "cpu_weight": weight,
+            "source_revision": source["revision"],
+        }
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise SystemExit(f"preregistration preflight failed before any benchmark side effects: {exc}")
+
 def main():
     global ROUTER_LOG_PATH, ROUTER_STATE_PATH, ROUTER_ENV, TELEMETRY_PATH, THROUGHPUT_PATH
     global CREATED_UNIT_FILES
@@ -553,6 +594,7 @@ def main():
         raise SystemExit("WORKLOAD_KIND=terminal-build requires a C compiler (CC or cc)")
     if not pathlib.Path("/sys/fs/cgroup/cgroup.controllers").exists():
         raise SystemExit("cgroup v2 required")
+    preregistration = preregistration_preflight()
     sample_path = RESULT.with_suffix(".samples.tsv")
     environment_path = RESULT.with_suffix(".environment.txt")
     ROUTER_LOG_PATH = RESULT.with_suffix(".router.log")
@@ -612,6 +654,15 @@ def main():
             f.write(f"systemd={ctl('--version').stdout.splitlines()[0]}\ncgroup_mode=v2\n")
             f.write(f"repetitions={REPS}\nworkers={WORKERS}\nduration_seconds={DURATION}\n")
             f.write(f"workload_kind={WORKLOAD_KIND}\n")
+            if preregistration:
+                f.write("preregistration_required=true\n")
+                f.write(f"preregistration_status={preregistration['status']}\n")
+                f.write(f"preregistration_directory={preregistration['directory']}\n")
+                f.write(f"preregistration_sha256={preregistration['sha256']}\n")
+                f.write(f"preregistration_block={preregistration['block']}\n")
+                f.write(f"preregistration_cpu_weight={preregistration['cpu_weight']}\n")
+                f.write(f"preregistration_source_revision={preregistration['source_revision']}\n")
+                f.write(f"preregistration_host={os.uname().nodename}\n")
             f.write(f"parent_unit={PARENT_UNIT}\nheavy_unit={HEAVY_UNIT}\nrecovery_unit={RECOVERY_UNIT}\n")
             f.write("parent_cpu_quota=100%; heavy_child_cpu_quota=100%; both modes share the same 100% parent aggregate ceiling\n")
             aggregate_setting = os.getenv("BENCH_AGGREGATE_ROUTING", "true" if WORKERS > 1 else "false").lower()

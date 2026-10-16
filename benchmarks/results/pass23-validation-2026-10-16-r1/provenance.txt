@@ -1,0 +1,9 @@
+pass=23
+version=0.6.5-rc.1
+head=df744d38bc0f381d4dfdb238d154ba0f85a53198
+origin_main=df744d38bc0f381d4dfdb238d154ba0f85a53198
+branch=main
+tracked_worktree_before_bundle=dirty
+untracked_entries_before_bundle=258
+v1_0_0_tag=absent
+captured_at=2026-10-16T10:33:23+07:00

@@ -1,0 +1,5 @@
+PASS candidates: local unit/regression, syntax, compile, static workflow guard, and systemd definition checks only, each conditional on recorded exit status 0.
+NOT RUN: approved runtime integration, real ABBA, rollback drill, natural PSI threshold crossing, and 24h/72h soak.
+INCONCLUSIVE: no causal throughput acceptance can be concluded without valid per-mode/pair PSI and complete preregistered runtime evidence.
+Protocol fixtures and sealed-file checks establish integrity/binding behavior only; they do not prove execution or performance.
+Historical Pass 21/22 and other untracked artifacts are preserved and are not included in this new bundle.

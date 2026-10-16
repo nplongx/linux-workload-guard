@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added hash-sealed ABBA preregistration with fixed block order/weights, immutable protocol output, host/source/workload binding, explicit approved-window confirmations, and fixture-only tamper/mismatch regressions. Protocol verification proves file integrity, not experiment execution.
+- Added preregistration validation to benchmark preflight and evaluator manifest review. Invalid or mismatched binding fails closed before workload setup or acceptance.
+
+### Changed
+
+- Generic CI reports runtime routing, delegated CPU, and aggregate-scope gates as `SKIP / OPEN`; live integration commands require both explicit approval variables and the dedicated runner label. Green generic CI is not runtime acceptance.
+- Aggregate PSI confounder analysis now evaluates each mode/pair independently and uses per-pair condition medians. Missing/invalid PSI or incomplete pair coverage cannot be treated as quiet.
+
+### Fixed
+
+- Performance review no longer lets legacy evidence without verified steady-window host PSI close throughput acceptance. It reports `INCONCLUSIVE`; malformed evidence remains `INCOMPLETE`, PSI-confounded evidence remains `CONFOUNDED_INCONCLUSIVE`, and the `0.90` throughput threshold is unchanged.
+
 ### Fixed
 
 - `CPUQuotaPerSecUSec` readback now parses systemd's `us`, `ms`, and `s` renderings correctly; previously values such as `500ms` could be misread as malformed, preventing exact effective-quota verification at common sub-100% quotas. Invalid/infinite values remain unavailable.

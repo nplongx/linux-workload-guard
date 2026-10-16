@@ -1,0 +1,8 @@
+command=./tests/performance-review.sh
+started_at=2026-10-16T10:34:09+07:00
+performance reviewer rejects invalid limits and detects PSI confounding / unordered evidence
+/tmp/tmp.UXAUChvVJF/prereg-accepted.tsv
+/tmp/tmp.UXAUChvVJF/prereg-tampered-run.tsv
+performance review tests: ok (PASS/FAIL/INCOMPLETE/CONFOUNDED_INCONCLUSIVE/INCONCLUSIVE, legacy PSI gate, paired ratios and evidence-order guards)
+exit_status=0
+ended_at=2026-10-16T10:34:14+07:00

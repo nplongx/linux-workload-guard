@@ -1,0 +1,4 @@
+command=git diff --check
+started_at=2026-10-16T10:34:53+07:00
+exit_status=0
+ended_at=2026-10-16T10:34:53+07:00

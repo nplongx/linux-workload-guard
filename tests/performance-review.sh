@@ -42,8 +42,11 @@ PY
 }
 
 pass=$(make_fixture pass COMPLETE 1.05 1050)
-python3 "$REVIEW" "$pass" > "$TMP/pass.out"
-grep -q '^acceptance_status=PASS$' "$TMP/pass.out"
+if python3 "$REVIEW" "$pass" > "$TMP/pass.out"; then
+  echo 'performance reviewer accepted legacy evidence without a verifiable PSI noise series' >&2; exit 1
+else [ "$?" -eq 4 ]; fi
+grep -q '^acceptance_status=INCONCLUSIVE$' "$TMP/pass.out"
+grep -q '^INCONCLUSIVE: legacy evidence has no verified steady-window host PSI series' "$TMP/pass.out"
 grep -q '^scope=synthetic Python integer-mixing workload' "$TMP/pass.out"
 grep -q '^VARIATION: steady_p95_ms ratio min=' "$TMP/pass.out"
 if python3 "$REVIEW" "$pass" > "$TMP/overwrite.out" 2>&1; then
@@ -55,18 +58,15 @@ grep -q 'refusing to overwrite acceptance report' "$TMP/overwrite.out"
 
 fail=$(make_fixture fail COMPLETE 1.20 1050)
 if python3 "$REVIEW" "$fail" > "$TMP/fail.out"; then
-  echo 'performance reviewer accepted a latency regression' >&2; exit 1
-else
-  [ "$?" -eq 1 ]
-fi
-grep -q '^acceptance_status=FAIL$' "$TMP/fail.out"
-grep -q '^FAIL: median paired steady_p95_ms ratio=1.200' "$TMP/fail.out"
+  echo 'performance reviewer accepted legacy evidence without PSI controls' >&2; exit 1
+else [ "$?" -eq 4 ]; fi
+grep -q '^acceptance_status=INCONCLUSIVE$' "$TMP/fail.out"
 
 throughput_fail=$(make_fixture throughput-fail COMPLETE 1.00 800)
 if python3 "$REVIEW" "$throughput_fail" > "$TMP/throughput-fail.out"; then
-  echo 'performance reviewer accepted a throughput regression' >&2; exit 1
-else [ "$?" -eq 1 ]; fi
-grep -q '^FAIL: median paired worker_throughput_per_sec ratio=0.800 limit=≥0.90' "$TMP/throughput-fail.out"
+  echo 'performance reviewer accepted legacy evidence without PSI controls' >&2; exit 1
+else [ "$?" -eq 4 ]; fi
+grep -q '^acceptance_status=INCONCLUSIVE$' "$TMP/throughput-fail.out"
 
 incomplete=$(make_fixture incomplete INCOMPLETE 1.00 1000)
 if python3 "$REVIEW" "$incomplete" > "$TMP/incomplete.out"; then
@@ -197,17 +197,18 @@ for name, psi in [('quiet-telemetry',1.0),('noisy-telemetry',27.0)]:
                 router=mode=='router'
                 steady=sum(1 for i in range(1500) if i*0.02 >= 12.0)
                 sw.writerow({'mode':mode,'rep':rep,'samples':1500,'elapsed_s':30.0,'routed_at_s':1.0 if router else '',
-                    'workers_in_heavy':1 if router else 0,'worker_count':1,'trial_valid':1,'validity_reason':'',
+                    'workers_in_heavy':2 if router else 0,'worker_count':2,'trial_valid':1,'validity_reason':'',
                     'all_mean_ms':0.1,'all_p50_ms':0.1,'all_p95_ms':1.0,'all_p99_ms':2.0,'all_max_ms':3.0,'work_p95_ms':3.0,
                     'steady_n':steady,'steady_mean_ms':0.1,'steady_p50_ms':0.1,'steady_p95_ms':1.0,'steady_p99_ms':1.8 if router else 2.0,
-                    'steady_max_ms':3.0,'steady_work_p95_ms':3.06 if router else 3.0,'worker_iterations_per_sec':1000,
-                    'worker_throughput_per_sec':1000,'router_cpu_pct_one_core':1.0 if router else '',
+                    'steady_max_ms':3.0,'steady_work_p95_ms':3.06 if router else 3.0,'worker_iterations_per_sec':2000,
+                    'worker_throughput_per_sec':2000,'router_cpu_pct_one_core':1.0 if router else '',
                     'router_peak_rss_kib':18000 if router else '', 'psi_some_avg10':psi,'router_enabled_during_trial':int(router)})
                 for i in range(1500):
                     rw.writerow({'mode':mode,'rep':rep,'relative_s':f'{i*0.02:.6f}','wakeup_lateness_ms':'0.1','work_duration_ms':'0.2'})
-                for elapsed,counter in ((12,0),(13,1000),(14,2000)):
-                    thw.writerow({'mode':mode,'rep':rep,'worker':1,'elapsed_s':elapsed,'counter':counter,'metric_kind':'cumulative_counter'})
-                for kind in ('parent','heavy','probe','workload'):
+                for worker in (1,2):
+                    for elapsed,counter in ((12,0),(13,1000),(14,2000)):
+                        thw.writerow({'mode':mode,'rep':rep,'worker':worker,'elapsed_s':elapsed,'counter':counter,'metric_kind':'cumulative_counter'})
+                for kind in ('parent','heavy','probe'):
                     unit=f'lwg-{kind}-{rep}'
                     for i in range(20):
                         tw.writerow({'mode':mode,'rep':rep,'monotonic_s':f'{10000+rep*100+i:.3f}','elapsed_s':f'{12+i:.3f}',
@@ -217,8 +218,17 @@ for name, psi in [('quiet-telemetry',1.0),('noisy-telemetry',27.0)]:
                             'host_psi_some_avg10':psi,'loadavg_1m':'0.5','router_cpu_ticks':100+i if router else '',
                             'router_rss_kib':18000 if router else '',
                             'router_log_new_lines':'aggregate scope decision=fixture' if router and kind=='parent' and i==0 else ''})
+                for worker in (1,2):
+                    kind='workload'; unit=f'lwg-{kind}-{rep}-worker{worker}'
+                    for i in range(20):
+                        tw.writerow({'mode':mode,'rep':rep,'monotonic_s':f'{10000+rep*100+i:.3f}','elapsed_s':f'{12+i:.3f}',
+                            'cgroup_kind':kind,'unit':unit,'cgroup_path':f'/test/{mode}/{rep}/{kind}/{worker}',
+                            'cpu_weight':20 if router else 100,'usage_usec':1000000+i*1000,
+                            'nr_periods':100+i,'nr_throttled':5+i,'throttled_usec':1000+i,
+                            'host_psi_some_avg10':psi,'loadavg_1m':'0.5','router_cpu_ticks':100+i if router else '',
+                            'router_rss_kib':18000 if router else '', 'router_log_new_lines':''})
     manifest.write_text('\n'.join([
-        'result_status=COMPLETE','workers=1','workload_kind=synthetic','git_revision='+'a'*40,'git_dirty=false',
+        'result_status=COMPLETE','workers=2','workload_kind=synthetic','git_revision='+'a'*40,'git_dirty=false',
         'git_diff_sha256='+'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
         'host=test-host','python=python-test',
         'cpu_model=test-cpu','logical_cpus=8','systemd=systemd-test','cgroup_mode=v2','cgroup_controllers=cpu',
@@ -229,6 +239,93 @@ PY
 quiet="$TMP/quiet-telemetry.tsv"
 python3 "$REVIEW" "$quiet" > "$TMP/quiet-telemetry.out"
 grep -q '^acceptance_status=PASS$' "$TMP/quiet-telemetry.out"
+
+# Preregistered rows require a real seal/hash and an exact binding to the
+# measured host, source, workload, pair count, duration and candidate weight.
+# A modified protocol cannot pass even when the samples are otherwise clean.
+python3 - "$TMP" "$ROOT/benchmarks/preregister_abba.py" <<'PY'
+import csv, importlib.util, pathlib, shutil, sys
+root=pathlib.Path(sys.argv[1])
+spec=importlib.util.spec_from_file_location('preregister_abba', pathlib.Path(sys.argv[2]))
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+source={'revision':'a'*40,'tracked_dirty':False,'tracked_diff_sha256':'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+host={'hostname':'test-host','os_release':'test-os','kernel':'test-kernel','architecture':'x86_64','logical_cpus':8,
+      'cpu_model':'test-cpu','python':'Python test','systemd':'systemd test','cgroup_v2':True,'cgroup_controllers':['cpu']}
+payload=module.protocol_payload('host-fixture','operator-fixture','terminal-build',source,host,created_at='2026-10-16T00:00:00+00:00')
+sealed=root/'prereg-sealed'; digest=module.write_sealed_preregistration(sealed,payload)
+(root/'preregistration.sha256').write_text(digest+'\n')
+def clone_result(prefix):
+    for suffix in ('.tsv','.samples.tsv','.telemetry.tsv','.throughput.tsv','.environment.txt'):
+        source_path=root/('quiet-telemetry'+suffix)
+        target_path=root/(prefix+suffix)
+        shutil.copyfile(source_path,target_path)
+    env_path=root/(prefix+'.environment.txt')
+    text=env_path.read_text().replace(str(root/'quiet-telemetry.telemetry.tsv'),str(root/(prefix+'.telemetry.tsv')))
+    text=text.replace(str(root/'quiet-telemetry.throughput.tsv'),str(root/(prefix+'.throughput.tsv')))
+    text=text.replace('workload_kind=synthetic','workload_kind=terminal-build')
+    env_path.write_text(text)
+    return root/(prefix+'.tsv')
+accepted=clone_result('prereg-accepted')
+with (root/'prereg-accepted.environment.txt').open('a') as stream:
+    stream.write('\n'.join([
+        'preregistration_required=true','preregistration_status=SEALED_VERIFIED',
+        f'preregistration_directory={sealed}',f'preregistration_sha256={digest}',
+        'preregistration_block=A','preregistration_cpu_weight=20',
+        'preregistration_source_revision='+'a'*40,'preregistration_host=test-host',''
+    ]))
+tampered=root/'prereg-tampered'; shutil.copytree(sealed,tampered)
+protocol=tampered/'protocol.json'; protocol.chmod(0o644)
+protocol.write_text(protocol.read_text().replace('"minimum_median_paired_throughput_ratio": 0.9',
+                                                  '"minimum_median_paired_throughput_ratio": 0.89',1))
+bad=clone_result('prereg-tampered-run')
+env_path=root/'prereg-tampered-run.environment.txt'
+text=env_path.read_text().replace(str(sealed),str(tampered))
+text += '\n'.join([
+    'preregistration_required=true','preregistration_status=SEALED_VERIFIED',
+    f'preregistration_directory={tampered}',f'preregistration_sha256={digest}',
+    'preregistration_block=A','preregistration_cpu_weight=20',
+    'preregistration_source_revision='+'a'*40,'preregistration_host=test-host',''
+])
+env_path.write_text(text)
+print(accepted)
+print(bad)
+PY
+if ! python3 "$REVIEW" "$TMP/prereg-accepted.tsv" > "$TMP/prereg-accepted.out"; then
+  cat "$TMP/prereg-accepted.out" >&2
+  echo 'sealed preregistration fixture should produce a valid scoped acceptance result' >&2
+  exit 1
+fi
+grep -q '^acceptance_status=PASS$' "$TMP/prereg-accepted.out"
+if python3 "$REVIEW" "$TMP/prereg-tampered-run.tsv" > "$TMP/prereg-tampered-run.out"; then
+  echo 'performance reviewer accepted a modified sealed preregistration' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/prereg-tampered-run.out"
+grep -q 'preregistration.*SHA-256 does not match' "$TMP/prereg-tampered-run.out"
+
+# A measurable performance failure is still FAIL when the preregistered PSI
+# controls and raw evidence are complete. This distinguishes causal FAIL from
+# a legacy result that cannot assess confounding.
+cp "$TMP/quiet-telemetry.tsv" "$TMP/quiet-latency-fail.tsv"
+cp "$TMP/quiet-telemetry.samples.tsv" "$TMP/quiet-latency-fail.samples.tsv"
+cp "$TMP/quiet-telemetry.telemetry.tsv" "$TMP/quiet-latency-fail.telemetry.tsv"
+cp "$TMP/quiet-telemetry.throughput.tsv" "$TMP/quiet-latency-fail.throughput.tsv"
+cp "$TMP/quiet-telemetry.environment.txt" "$TMP/quiet-latency-fail.environment.txt"
+sed -i "s|$TMP/quiet-telemetry.telemetry.tsv|$TMP/quiet-latency-fail.telemetry.tsv|; s|$TMP/quiet-telemetry.throughput.tsv|$TMP/quiet-latency-fail.throughput.tsv|" "$TMP/quiet-latency-fail.environment.txt"
+python3 - "$TMP/quiet-latency-fail.tsv" <<'PY'
+import csv, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+with p.open(newline='') as source:
+    rows=list(csv.DictReader(source,delimiter='\t')); fields=list(rows[0])
+for row in rows:
+    if row['mode']=='router': row['steady_p95_ms']='1.20'
+with p.open('w',newline='') as output:
+    writer=csv.DictWriter(output,fieldnames=fields,delimiter='\t',lineterminator='\n'); writer.writeheader(); writer.writerows(rows)
+PY
+if python3 "$REVIEW" "$TMP/quiet-latency-fail.tsv" > "$TMP/quiet-latency-fail.out"; then
+  echo 'performance reviewer accepted a complete-evidence latency regression' >&2; exit 1
+else [ "$?" -eq 1 ]; fi
+grep -q '^acceptance_status=FAIL$' "$TMP/quiet-latency-fail.out"
+grep -q '^FAIL: median paired steady_p95_ms ratio=1.200 limit=≤1.10' "$TMP/quiet-latency-fail.out"
 cp "$TMP/quiet-telemetry.tsv" "$TMP/dirty-telemetry.tsv"
 cp "$TMP/quiet-telemetry.samples.tsv" "$TMP/dirty-telemetry.samples.tsv"
 cp "$TMP/quiet-telemetry.telemetry.tsv" "$TMP/dirty-telemetry.telemetry.tsv"
@@ -287,4 +384,4 @@ else [ "$?" -eq 2 ]; fi
 grep -q '^acceptance_status=INCOMPLETE$' "$TMP/unordered-throughput.out"
 grep -q 'throughput raw: throughput raw timestamps are not strictly increasing' "$TMP/unordered-throughput.out"
 
-printf '%s\n' 'performance review tests: ok (PASS/FAIL/INCOMPLETE/CONFOUNDED_INCONCLUSIVE, paired ratios, PSI noise and evidence-order guards)'
+printf '%s\n' 'performance review tests: ok (PASS/FAIL/INCOMPLETE/CONFOUNDED_INCONCLUSIVE/INCONCLUSIVE, legacy PSI gate, paired ratios and evidence-order guards)'

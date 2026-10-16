@@ -1,0 +1,5 @@
+command=./tests/ci-runtime-gate-safety.sh
+started_at=2026-10-16T10:34:09+07:00
+CI runtime gate safety: ok (generic hosted matrix is test/static-only and marks all live workload/actuation gates SKIP/OPEN; runtime integration requires two approvals and dedicated runner label)
+exit_status=0
+ended_at=2026-10-16T10:34:09+07:00

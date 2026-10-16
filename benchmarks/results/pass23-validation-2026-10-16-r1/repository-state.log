@@ -1,0 +1,163 @@
+command=git status --short --branch; git rev-parse HEAD; git rev-parse origin/main; git ls-files --others --exclude-standard | wc -l; ./bin/workload-guard version; git tag --list v1.0.0
+## main...origin/main
+ M .github/workflows/ci.yml
+ M CHANGELOG.md
+ M README.md
+ M ROADMAP.md
+ M benchmarks/analyze-aggregate-routing.py
+ M benchmarks/performance-review.py
+ M benchmarks/routing-contention.py
+ M test.sh
+ M tests/analyze-aggregate-routing.sh
+ M tests/ci-runtime-gate-safety.sh
+ M tests/performance-review.sh
+?? benchmarks/preregister_abba.py
+?? benchmarks/results/aimd-shadow-live-2026-10-09.samples.tsv
+?? benchmarks/results/aimd-shadow-live-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-live-logs-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-live-long-2026-10-09.samples.tsv
+?? benchmarks/results/aimd-shadow-live-long-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-paired-3rep-2026-10-09.samples.tsv
+?? benchmarks/results/aimd-shadow-paired-3rep-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-paired-3rep-logs-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-psi-gate-smoke-2026-10-09.samples.tsv
+?? benchmarks/results/aimd-shadow-psi-gate-smoke-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-psi-gate-smoke-logs-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-workers-1-2026-10-09.samples.tsv
+?? benchmarks/results/aimd-shadow-workers-1-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-workers-2-2026-10-09.samples.tsv
+?? benchmarks/results/aimd-shadow-workers-2-2026-10-09.tsv
+?? benchmarks/results/aimd-shadow-workers-4-2026-10-09.samples.tsv
+?? benchmarks/results/aimd-shadow-workers-4-2026-10-09.tsv
+?? benchmarks/results/controller-hardening-smoke-2026-10-14-run1/
+?? benchmarks/results/controller-hardening-smoke-2026-10-14-run2/
+?? benchmarks/results/controller-hardening-smoke-2026-10-14-run3/
+?? benchmarks/results/controller-hardening-smoke-2026-10-14-run4/
+?? benchmarks/results/controller-replay-2026-10-09.tsv
+?? benchmarks/results/controller-research-assessment-2026-10-09.md
+?? benchmarks/results/interactive-cli-validation-pass14-2026-10-15/
+?? benchmarks/results/live-psi-observation-incomplete-pass15-argument-misuse-2026-10-15/SHA256SUMS.txt
+?? benchmarks/results/live-psi-observation-incomplete-pass15-argument-misuse-2026-10-15/controller-journal.log
+?? benchmarks/results/live-psi-observation-incomplete-pass15-argument-misuse-2026-10-15/samples.tsv
+?? benchmarks/results/local-verification-pass6-2026-10-15.log
+?? benchmarks/results/local-verification-pass6-final-2026-10-15.log
+?? benchmarks/results/operational-hardening-assessment-2026-10-09.md
+?? benchmarks/results/pass11-artifact-sha256sums-2026-10-15.txt
+?? benchmarks/results/pass14-artifact-sha256sums-2026-10-15.txt
+?? benchmarks/results/pass14-blockA-weight20-preflight-2026-10-15.txt
+?? benchmarks/results/pass14-blockA2-weight20-preflight-2026-10-15.txt
+?? benchmarks/results/pass14-blockB-weight80-preflight-2026-10-15.txt
+?? benchmarks/results/pass14-blockB2-weight80-preflight-2026-10-15.txt
+?? benchmarks/results/pass14-repo-cli-preflight-2026-10-15.txt
+?? benchmarks/results/pass16-integrity-2026-10-15-r2.txt
+?? benchmarks/results/pass16-integrity-2026-10-15.txt
+?? benchmarks/results/pass16-local-validation-2026-10-15-r2/
+?? benchmarks/results/pass16-local-validation-2026-10-15/
+?? benchmarks/results/pass17-validation-2026-10-15-r1/
+?? benchmarks/results/pass17-validation-2026-10-15-r2/
+?? benchmarks/results/pass23-validation-2026-10-16-r1/
+?? benchmarks/results/quota-long-20261009-logs.tsv
+?? benchmarks/results/quota-long-20261009.tsv
+?? benchmarks/results/quota-pressure-replay-2026-10-09.tsv
+?? benchmarks/results/quota-repeat-a-20261009-logs.tsv
+?? benchmarks/results/quota-repeat-a-20261009.tsv
+?? benchmarks/results/quota-repeat-b-20261009-logs.tsv
+?? benchmarks/results/quota-repeat-b-20261009.tsv
+?? benchmarks/results/quota-stability-live-2026-10-09.tsv
+?? benchmarks/results/quota-stability-live-logs-2026-10-09.tsv
+?? benchmarks/results/quota-stress-stress-230612-logs.tsv
+?? benchmarks/results/quota-stress-stress-230612.tsv
+?? benchmarks/results/quota-stress-stress4-230916-logs.tsv
+?? benchmarks/results/quota-stress-stress4-230916.tsv
+?? benchmarks/results/quota-stress-stress4fix-231123-logs.tsv
+?? benchmarks/results/quota-stress-stress4fix-231123.tsv
+?? benchmarks/results/release-readiness-2026-10-15-pass4.md
+?? benchmarks/results/routing-contention-aggregate-analysis-final-pass14-2026-10-15.summary.txt
+?? benchmarks/results/routing-contention-aggregate-analysis-final-pass14-2026-10-15.tsv
+?? benchmarks/results/routing-contention-aggregate-analysis-pass14-2026-10-15.summary.txt
+?? benchmarks/results/routing-contention-aggregate-analysis-pass14-2026-10-15.tsv
+?? benchmarks/results/routing-contention-build-aggregate-smoke-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-build-aggregate-smoke-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-build-aggregate-smoke-2026-10-15.tsv
+?? benchmarks/results/routing-contention-isolated-1worker-2026-10-09.samples.tsv
+?? benchmarks/results/routing-contention-isolated-1worker-2026-10-09.tsv
+?? benchmarks/results/routing-contention-isolated-1worker-5rep-2026-10-09.samples.tsv
+?? benchmarks/results/routing-contention-longrun-2026-10-09.tsv
+?? benchmarks/results/routing-contention-paired-metrics-pass6-2026-10-15.acceptance-reviewed.txt
+?? benchmarks/results/routing-contention-paired-metrics-pass6-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-smoke-pass9-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-smoke-pass9-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-smoke-pass9-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-smoke-pass9-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-smoke2-pass9-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-smoke2-pass9-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-smoke2-pass9-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-smoke2-pass9-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.telemetry.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.throughput.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke-pass14-1rep20-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.telemetry.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.throughput.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-telemetry-smoke2-pass14-1rep20-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.telemetry.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.throughput.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA-pass14-5rep30-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.telemetry.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.throughput.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA2-pass14-5rep30-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.telemetry.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.throughput.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB-pass14-5rep30-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.telemetry.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.throughput.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-synthetic-weight80-blockB2-pass14-5rep30-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.telemetry.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.throughput.tsv
+?? benchmarks/results/routing-contention-scope-aggregate-terminal-repo-cli-5rep30-pass14-2026-10-15.tsv
+?? benchmarks/results/routing-contention-scope-build-5rep-pass10-2026-10-15.acceptance.txt
+?? benchmarks/results/routing-contention-scope-build-5rep-pass10-2026-10-15.environment.txt
+?? benchmarks/results/routing-contention-scope-build-5rep-pass10-2026-10-15.router.log
+?? benchmarks/results/routing-contention-scope-build-5rep-pass10-2026-10-15.samples.tsv
+?? benchmarks/results/routing-contention-scope-build-5rep-pass10-2026-10-15.tsv
+?? benchmarks/results/shadow-policy-assessment-2026-10-09.md
+?? docs/aggregate-throughput-investigation-results-pass14.md
+?? docs/rc-gate-execution-pass23.md
+?? tests/preregister-abba.sh
+HEAD=df744d38bc0f381d4dfdb238d154ba0f85a53198
+origin_main=df744d38bc0f381d4dfdb238d154ba0f85a53198
+untracked_file_count=278
+version=0.6.5-rc.1
+v1.0.0_tag=absent
+tracked_diff_sha256=a9a564f7680b3eb2708c4dde2892b51ab7361403ab9f37661ea43dad36b55d31
+preregister_source_sha256=b42f5895d2cd1101433ab94a5998d755b39435ad3a9e4b45def3e20d911a2fb2
+preregister_test_sha256=fe29fa2210e27c53d1a83e362c1ddc1b8e8ce11802ec116331dc0c3a5646b415
+runbook_sha256=31d532f2ea95c9c1c07e487f495453984f5198b976b8e1b5218f4b4360f74d7d
+captured_at=2026-10-16T10:35:29+07:00

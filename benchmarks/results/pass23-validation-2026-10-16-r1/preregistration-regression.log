@@ -1,0 +1,6 @@
+command=./tests/preregister-abba.sh
+started_at=2026-10-16T10:34:09+07:00
+ABBA preregistration regression: ok (seal/hash, fixed thresholds/order, run binding, tamper/no-overwrite guards)
+ABBA preregistration CLI safety: ok (no output created without explicit confirmations)
+exit_status=0
+ended_at=2026-10-16T10:34:09+07:00

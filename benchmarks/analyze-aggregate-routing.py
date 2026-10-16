@@ -60,11 +60,12 @@ def interval_metrics(result, env, mode, rep):
                 else:
                     throughput_path = fallback
     output = {
-        "host_psi_avg10_mean": None, "host_psi_avg10_max": None,
+        "host_psi_avg10_mean": None, "host_psi_avg10_median": None, "host_psi_avg10_max": None,
         "host_psi_gt5_pct": None, "parent_usage_cpu_s": None,
         "parent_nr_periods_delta": None, "parent_nr_throttled_delta": None,
         "parent_throttled_usec_delta": None, "workers_usage_cpu_s": None,
         "worker_throughput_raw": None, "throughput_per_cpu_s": None,
+        "host_psi_status": "NOT_AVAILABLE",
         "workload_weight_values": "", "telemetry_rows": 0,
     }
     telemetry_rows = []
@@ -74,12 +75,19 @@ def interval_metrics(result, env, mode, rep):
                           and (number(row.get("elapsed_s")) or 0) >= 12.0]
         output["telemetry_rows"] = len(telemetry_rows)
         host_rows = [row for row in telemetry_rows if row.get("cgroup_kind") == "parent"]
-        psi = [number(row.get("host_psi_some_avg10")) for row in host_rows]
-        psi = [value for value in psi if value is not None]
-        if psi:
+        parsed_psi = [number(row.get("host_psi_some_avg10")) for row in host_rows]
+        # The shared steady window starts at 12s of a 30s trial, so there are
+        # normally about 18 one-second PSI samples. Requiring 20 *steady*
+        # samples would incorrectly downgrade valid evaluator-checked runs.
+        if len(host_rows) >= 10 and all(value is not None and 0.0 <= value <= 100.0 for value in parsed_psi):
+            psi = parsed_psi
             output["host_psi_avg10_mean"] = statistics.mean(psi)
+            output["host_psi_avg10_median"] = statistics.median(psi)
             output["host_psi_avg10_max"] = max(psi)
             output["host_psi_gt5_pct"] = 100.0 * sum(value > 5 for value in psi) / len(psi)
+            output["host_psi_status"] = "VALID"
+        elif host_rows:
+            output["host_psi_status"] = "INVALID" if any(value is None or value < 0 or value > 100 for value in parsed_psi) else "INSUFFICIENT"
 
         def counter_delta(kind, unit=None, field="usage_usec"):
             rows = [row for row in telemetry_rows if row.get("cgroup_kind") == kind
@@ -129,6 +137,53 @@ def interval_metrics(result, env, mode, rep):
             if cpu and cpu > 0:
                 output["throughput_per_cpu_s"] = output["worker_throughput_raw"] / cpu
     return output
+
+
+def psi_gate_status(rows_by_block, block_weights, expected_pairs=5):
+    """Apply PSI controls per mode/pair; never average away a noisy pair.
+
+    A single pair with >20% of samples above 5% PSI confounds causal
+    interpretation. Missing per-pair telemetry is INCONCLUSIVE, not quiet.
+    Condition imbalance is computed from the median of each pair's PSI median,
+    so every paired repetition contributes one equally weighted observation.
+    """
+    required_blocks = tuple(block_weights)
+    baseline_medians, router_medians = [], []
+    observed_high = []
+    missing = []
+    for block in required_blocks:
+        rows = rows_by_block.get(block, [])
+        if len(rows) != expected_pairs:
+            missing.append(f"{block}: expected {expected_pairs} pairs, observed {len(rows)}")
+        for row in rows:
+            rep = row.get("rep", "?")
+            for mode, median_key, high_key, status_key in (
+                ("baseline", "baseline_host_psi_avg10_median", "baseline_host_psi_gt5_pct", "baseline_host_psi_status"),
+                ("router", "router_host_psi_avg10_median", "host_psi_router_gt5_pct", "router_host_psi_status"),
+            ):
+                value = row.get(median_key)
+                high_pct = row.get(high_key)
+                if row.get(status_key) != "VALID" or value is None or high_pct is None:
+                    missing.append(f"{block}/rep{rep}/{mode}: host PSI series unavailable or incomplete")
+                    continue
+                if high_pct > 20.0:
+                    observed_high.append(f"{block}/rep{rep}/{mode}={high_pct:.1f}% samples >5% PSI")
+                (baseline_medians if mode == "baseline" else router_medians).append(value)
+    imbalance = None
+    if baseline_medians and router_medians:
+        imbalance = abs(statistics.median(baseline_medians) - statistics.median(router_medians))
+    if observed_high or (imbalance is not None and imbalance > 5.0):
+        details = []
+        if observed_high:
+            details.append("per-pair confounding: " + ", ".join(observed_high))
+        if imbalance is not None:
+            details.append(f"baseline/router condition median imbalance={imbalance:.2f} percentage points")
+        if missing:
+            details.append("additional missing telemetry: " + "; ".join(missing))
+        return "CONFOUNDED_INCONCLUSIVE", "; ".join(details), imbalance
+    if missing:
+        return "INCONCLUSIVE", "; ".join(missing), imbalance
+    return "WITHIN_LIMIT", f"all per-pair PSI rates <=20%; condition median imbalance={imbalance:.2f} percentage points", imbalance
 
 
 def main():
@@ -185,7 +240,11 @@ def main():
                 "throughput_ratio": throughput_ratio, "wake_p95_ratio": ratio("steady_p95_ms"),
                 "wake_p99_ratio": ratio("steady_p99_ms"), "probe_work_p95_ratio": ratio("steady_work_p95_ms"),
                 "baseline_host_psi_avg10_mean": base_metrics["host_psi_avg10_mean"],
+                "baseline_host_psi_avg10_median": base_metrics["host_psi_avg10_median"],
+                "baseline_host_psi_status": base_metrics["host_psi_status"],
                 "router_host_psi_avg10_mean": router_metrics["host_psi_avg10_mean"],
+                "router_host_psi_avg10_median": router_metrics["host_psi_avg10_median"],
+                "router_host_psi_status": router_metrics["host_psi_status"],
                 "baseline_host_psi_gt5_pct": base_metrics["host_psi_gt5_pct"],
                 "host_psi_router_gt5_pct": router_metrics["host_psi_gt5_pct"],
                 "baseline_parent_usage_cpu_s": base_metrics["parent_usage_cpu_s"],
@@ -268,24 +327,23 @@ def main():
         no_severe_pair = bool(values80) and all(value >= .80 for value in values80)
         effect_size_pass = med20 is not None and med80 is not None and med80 - med20 >= .05
         contrasts_pass = contrast1 is not None and contrast2 is not None and contrast1 > 0 and contrast2 > 0
-        psi_means = {}
-        psi_high = []
-        for weight, keys in ((20, (a_key, a2_key)), (80, (b_key, b2_key))):
-            rows = [row for row in pair_rows if row["block"] in keys and row["weight"] == weight]
-            psi_values = [row[field] for row in rows for field in ("baseline_host_psi_avg10_mean", "router_host_psi_avg10_mean") if row[field] is not None]
-            high_values = [row[field] for row in rows for field in ("baseline_host_psi_gt5_pct", "host_psi_router_gt5_pct") if row[field] is not None]
-            if psi_values:
-                psi_means[weight] = statistics.median(psi_values)
-                lines.append(f"{design}_weight{weight}_median_host_psi_avg10={psi_means[weight]:.2f}")
-            if high_values:
-                high_pct = statistics.mean(high_values)
-                psi_high.append(high_pct)
-                lines.append(f"{design}_weight{weight}_mean_sample_percent_host_psi_gt5={high_pct:.1f}")
-        psi_confounded = (any(value > 20 for value in psi_high)
-                          or (len(psi_means) == 2 and abs(psi_means[80] - psi_means[20]) > 5))
+        block_weights = {a_key: 20, b_key: 80, b2_key: 80, a2_key: 20}
+        rows_by_block = {
+            key: [row for row in pair_rows if row["block"] == key and row["weight"] == weight]
+            for key, weight in block_weights.items()
+        }
+        psi_status, psi_detail, psi_imbalance = psi_gate_status(rows_by_block, block_weights)
+        psi_confounded = psi_status == "CONFOUNDED_INCONCLUSIVE"
+        psi_complete = psi_status == "WITHIN_LIMIT"
+        lines.append(f"{design}_psi_noise_status={psi_status}")
+        lines.append(f"{design}_psi_noise_detail={psi_detail}")
+        lines.append(f"{design}_baseline_router_condition_median_imbalance_points={psi_imbalance if psi_imbalance is not None else 'unavailable'}")
         criteria_pass = (weight80_statuses_pass and weight80_block_medians_pass and no_severe_pair
-                         and effect_size_pass and contrasts_pass and not psi_confounded)
-        interpretation = "CONFOUNDED_INCONCLUSIVE" if psi_confounded else ("CONSISTENT_WITH_H1" if criteria_pass else "H1_NOT_SUPPORTED_BY_PREDECLARED_CRITERIA")
+                         and effect_size_pass and contrasts_pass and psi_complete)
+        interpretation = ("CONFOUNDED_INCONCLUSIVE" if psi_confounded else
+                          "INCONCLUSIVE" if not psi_complete else
+                          "CONSISTENT_WITH_H1" if criteria_pass else
+                          "H1_NOT_SUPPORTED_BY_PREDECLARED_CRITERIA")
         design_results[design] = interpretation
         lines.append(f"{design}_weight20_n={len(values20)} median={med20 if med20 is not None else 'unavailable'}")
         lines.append(f"{design}_weight80_n={len(values80)} median={med80 if med80 is not None else 'unavailable'}")

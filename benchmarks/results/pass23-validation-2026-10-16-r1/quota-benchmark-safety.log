@@ -1,0 +1,5 @@
+command=./tests/quota-benchmark-safety.sh
+started_at=2026-10-16T10:34:47+07:00
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+exit_status=0
+ended_at=2026-10-16T10:34:52+07:00
