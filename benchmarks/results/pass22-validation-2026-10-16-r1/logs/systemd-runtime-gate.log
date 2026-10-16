@@ -1,0 +1,11 @@
+production PSI boundary: below/equal/above 0.40; missing/stale hold; bounded quota readback passed in temporary slice
+probe_baseline: n=251 wakeup_lateness_ms p50/p95/p99=0.078/0.233/0.970; work_duration_ms p50/p95/p99=0.642/1.454/19.993
+probe_enabled: n=269 wakeup_lateness_ms p50/p95/p99=0.084/0.113/0.132; work_duration_ms p50/p95/p99=0.668/1.541/1.632
+cpu_bound_baseline: workers=2 aggregate_python_loop_iterations_per_second=64440.317
+cpu_bound_enabled: workers=2 aggregate_python_loop_iterations_per_second=77396.680
+guard_enabled_window: wall_s=5.098 cpu_s=0.060 one_core_cpu_pct=1.18 rss_start/end_kib=20000/20084 peak_rss_kib=20084 router_process_runqueue_delay_delta_ms=9.689 cpu_counter_status=valid scheduler_counter_status=valid
+host_cpu_psi_some_avg10_pct: baseline_start/end=1.77/4.03; enabled_start/end=5.11/5.75
+transition_timing_s: both_workers_routed=0.793; first_quota_increase=1.327; idle_to_quota_decrease_and_recovery=1.595
+quota_stability: transitions=4 direction_reversals=1 values=100->150,350->300,300->250,250->200
+metrics_scope: one bounded synthetic host run; loop iterations and probe timings are workload-specific, not application SLA evidence
+controller integration: ok (burst rejected; two competing workers routed; dynamic quota applied/decreased; AIMD log-only; both recovered; external quota change reconciled; router restart with active routes recovered; cgroup recreated and routing/recovery resumed; dynamic quota disabled without changing the recorded temporary quota)

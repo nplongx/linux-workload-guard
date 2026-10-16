@@ -1,0 +1,14 @@
+check	exit_status	command
+controller-hardening	0	python3 tests/controller-hardening.py
+full-test-suite	0	./test.sh
+python-compileall	0	python3 -m compileall -q bin benchmarks tests
+python-explicit-compile	0	python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py
+shell-syntax	0	sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/*.sh benchmarks/soak-monitor.sh benchmarks/rc-gate-preflight.sh
+bash-syntax	0	bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
+systemd-unit-verification	0	systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
+install-uninstall-isolated	0	./tests/install-uninstall.sh
+local-temp-slice-controller-integration	0	WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh
+telemetry-parser	0	python3 tests/routing-telemetry.py
+aggregate-evidence-regression	0	./tests/analyze-aggregate-routing.sh
+whitespace-diff	0	git diff --check
+controller-hardening-final	0	python3 tests/controller-hardening.py (after final controller diff)

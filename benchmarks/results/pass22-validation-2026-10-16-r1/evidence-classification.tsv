@@ -1,0 +1,6 @@
+evidence_type	description
+NEW_EXECUTION	Local full test and static validation logs in this bundle
+HISTORICAL	Pass 20/21 bundles and 254 prior untracked artifact entries were preserved unchanged
+SIMULATION	Deterministic/mocked regression cases only; not runtime quota/PSI/rollback acceptance
+LOCAL_ISOLATED_RUNTIME_TEST	Strict controller-integration command returned 0 and exercised a temporary user-slice controller with synthetic CPU workers and quota transitions; not approved-host or external release-gate evidence
+SKIPPED_OR_NOT_RUN	Independent-host ABBA, dedicated rollback, natural production PSI crossing, and 24/72h soak

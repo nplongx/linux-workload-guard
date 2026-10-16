@@ -1,0 +1,13 @@
+gate	status	evidence_or_blocker
+local_full_test_suite	PASS	logs/full-test-suite.log
+controller_quota_parser_and_counter_regressions	PASS	logs/controller-hardening-final.log
+local_temp_slice_controller_integration	PASS_NOT_EXTERNAL_GATE	logs/systemd-runtime-gate.log
+ubuntu_22_04_delegated_cpu_counters	OPEN	Current host is not Ubuntu 22.04 hosted runner; external CI must expose usage_usec,nr_periods,nr_throttled in actual delegated test cgroup
+approved_runtime_quota_actuation_readback	OPEN	A local temporary-slice integration ran, but it was not an approved dedicated-host gate and does not close external acceptance
+independent_host_preregistered_ABBA	OPEN	No independent host benchmark performed; no CPU workload generated
+throughput_acceptance_0_90	OPEN_CONFOUNDED_INCONCLUSIVE	No new ABBA raw samples; threshold remains 0.90 and PSI confounding rules unchanged
+dedicated_host_rollback_drill	OPEN	No service restart/config/quota rollback drill performed
+natural_production_PSI_crossing_0_40	OPEN_NOT_RUN	Passive observation gate not run; no forced PSI crossing
+continuous_RC_soak_24h_min_72h_target	OPEN_NOT_RUN	No continuous soak run performed
+stable_release	NO_GO	Mandatory external gates remain open; no v1.0.0 tag
+hosted_CI_for_pass22	PENDING_PUSH	No hosted CI result exists until this commit is pushed and workflow completes

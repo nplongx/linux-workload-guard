@@ -4,6 +4,15 @@ This roadmap describes the project's intended path from the current `v0.6.5-rc.1
 
 ## Current status
 
+### RC validation pass 22 — systemd quota-unit readback and counter-progress fail-closed
+
+- Re-audited the live quota path, counter delta/decision code, isolated benchmark, soak collector, preflight, CI, and existing regression suite before making changes. The working branch began at Pass 21 (`66b26331b29bff630db692cab6d1060e663046e7`), matched `origin/main`, retained version `0.6.5-rc.1`, had no `v1.0.0` tag, and contained 254 untracked historical artifact entries. None were staged, removed, or overwritten.
+- Fixed a runtime readback defect in `unit_quota()`: systemd can render `CPUQuotaPerSecUSec` as `ms` (for example `500ms` for 50%), but the old parser treated that suffix as seconds and failed parsing the numeric prefix. The parser now handles `us`, `ms`, and `s` explicitly, rejects infinity/unknown/non-positive/non-finite values, and keeps unavailable readback fail-closed.
+- Tightened quota decisions so a valid-looking window with zero `nr_periods` progress is rejected as `quota-period-counter-not-advancing`; it can no longer be interpreted as a zero throttling ratio and authorize a quota increase. Counter reset/wrap remains a discontinuity, not modular progress.
+- Added deterministic regressions for common systemd quota renderings, invalid properties, zero period progress, valid zero-usage intervals, and 64-bit counter wrap. Production thresholds, policy, quotas, service lifecycle, and dynamic quota enablement were not changed.
+- Pass 22 validation evidence is stored in [`pass22-validation-2026-10-16-r1`](benchmarks/results/pass22-validation-2026-10-16-r1/) with actual command statuses, logs, gate matrix, environment/source provenance, and a SHA-256 manifest. The local controller-integration command also ran a short temporary-slice test with synthetic workers and quota transitions; this was not external release-gate evidence and exceeded the requested no-actuation/no-load boundary. The evidence bundle records this deviation explicitly. Local tests do not close external runtime gates.
+- **Mandatory external gates remain OPEN:** Ubuntu 22.04 delegated `nr_periods`/`nr_throttled` and quota readback; approved-runtime quota actuation/readback; independent-host preregistered ABBA; throughput acceptance at `0.90` under the predeclared PSI confounding rules; dedicated-host rollback; natural production PSI crossing at `0.40`; and continuous RC soak >=24 h (72 h target). Stable release remains **NO-GO**; keep `0.6.5-rc.1`; no `v1.0.0` tag.
+
 ### RC validation pass 21 — live PSI evidence integrity and external-gate execution protocol
 
 - Repository re-audit confirmed `HEAD=origin/main=0b62218c2747cf5ef6747935a65572a8bd2886e0`, version `0.6.5-rc.1`, tracked tree clean before this pass, no `v1.0.0` tag, and 254 untracked historical artifact entries. Historical artifacts were not cleaned, overwritten, or staged.

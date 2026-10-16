@@ -1,0 +1,38 @@
+2026-10-16 09:40:49,548 INFO aggregate scope restored unit=lwg-workload-test-worker.scope weight=100
+2026-10-16 09:40:49,549 INFO aggregate scope restore skipped unit=lwg-workload-test-worker.scope reason=external-weight-change current=55
+2026-10-16 09:40:49,555 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-16 09:40:49,556 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-16 09:40:49,568 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:40:49,577 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:40:49,586 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 09:40:49,597 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 09:40:49,606 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 09:40:49,616 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 09:40:49,626 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 09:40:49,636 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-16 09:40:49,647 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:40:49,656 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-16 09:40:49,668 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-16 09:40:49,679 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:40:49,690 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 09:40:49,700 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 09:40:49,711 ERROR routing disabled due to invalid configuration: aggregate routing thresholds and sustained sample count are invalid
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)
+quota benchmark safety: ok (argument/collision guards, isolated temporary slice, counters/schema, no production unit calls)
+controller integration skip safety: ok (explicit SKIP/OPEN and strict-mode failure)
+benchmark provenance dirty/untracked accounting: ok
+benchmark provenance clean revision accounting: ok
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interruption, missing-runtime telemetry fail-closed)
+RC gate preflight safety: ok (arguments, repository boundary, explicit OPEN/NOT RUN classification, SHA-256, no-overwrite, read-only guard)
+performance reviewer rejects invalid limits and detects PSI confounding / unordered evidence
+performance review tests: ok (PASS/FAIL/INCOMPLETE/CONFOUNDED_INCONCLUSIVE, paired ratios, PSI noise and evidence-order guards)
+aggregate analysis regression: ok
+routing interval telemetry parsing: ok (required counters, malformed/reset-safe snapshots, strict PSI, missing-data fail-closed)
+run-workload scope routing: ok (disabled default and opt-in protected scope)
+unit checks: ok
+invalid shadow configuration: safely rejected
+invalid quota configuration: safely rejected
+custom parent recovery leaf: safely derived
+tests: ok

@@ -1,0 +1,52 @@
+
+[controller-hardening] python3 tests/controller-hardening.py
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/controller-hardening.log
+
+[full-test-suite] ./test.sh
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/full-test-suite.log
+
+[python-compileall] python3 -m compileall -q bin benchmarks tests
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/python-compileall.log
+
+[python-explicit-compile] python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/python-explicit-compile.log
+
+[shell-syntax] sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/*.sh benchmarks/soak-monitor.sh benchmarks/rc-gate-preflight.sh
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/shell-syntax.log
+
+[bash-syntax] bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/bash-syntax.log
+
+[systemd-unit-verification] systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/systemd-unit-verification.log
+
+[install-uninstall-isolated] ./tests/install-uninstall.sh
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/install-uninstall-isolated.log
+
+[systemd-runtime-gate] WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/systemd-runtime-gate.log
+
+[telemetry-parser] python3 tests/routing-telemetry.py
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/telemetry-parser.log
+
+[aggregate-evidence-regression] ./tests/analyze-aggregate-routing.sh
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/aggregate-evidence-regression.log
+
+[whitespace-diff] git diff --check
+exit_status=0
+log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/whitespace-diff.log
+
+[post-validation-runtime-audit] read-only systemctl observations
+exit_status=0
+production router observed active/running, MainPID=358400, NRestarts=0; production heavy quota property=1s. Several lwg-prefixed user slices remain active; provenance is uncertain and no cleanup action was taken.

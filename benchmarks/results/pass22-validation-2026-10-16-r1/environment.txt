@@ -1,0 +1,26 @@
+recorded_at=2026-10-16T09:40:48+07:00
+hostname=bougainvillean
+kernel=Linux bougainvillean 7.0.0-38-generic #38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:10:14 UTC 2026 x86_64 GNU/Linux
+os_release=PRETTY_NAME="Ubuntu 26.04.1 LTS"
+python=Python 3.14.4
+systemd_version=systemd 259 (259.5-0ubuntu3.4)
+cgroup_fs=cgroup2fs
+cgroup_controllers=cpuset cpu io memory hugetlb pids rdma misc dmem
+user_manager=0
+user_router=ActiveState=active;SubState=running;MainPID=358400;NRestarts=0;
+user_heavy_quota=1s
+host_psi=some avg10=0.48 avg60=1.87 avg300=3.17 total=3371831161;full avg10=0.00 avg60=0.00 avg300=0.00 total=0;
+source_head=66b26331b29bff630db692cab6d1060e663046e7
+source_branch=main
+version=0.6.5-rc.1
+tracked_worktree_before_validation=dirty
+historical_untracked_entries_before_bundle=254
+tracked_diff_sha256_before_validation=429aa64694df3f12c251e2dc98725c5d97e668b8e7683d9e522390fbc2386a48
+v1_0_0_tag=
+post_validation_router_user_state=ActiveState=active;SubState=running;MainPID=358400;NRestarts=0;
+post_validation_production_heavy_quota=1s
+post_validation_lwg_prefixed_active_units=5
+untracked_entries_observed_during_bundle_capture_includes_new_bundle_file=255
+systemctl_version=systemd 259 (259.5-0ubuntu3.4)
+source_diff_sha256_final=544e8cdcf4ae4b804bbe12757e58f60b51a5235d5ce6e11763ec9a67f51e3cc8
+current_tracked_diff_sha256=544e8cdcf4ae4b804bbe12757e58f60b51a5235d5ce6e11763ec9a67f51e3cc8

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- `CPUQuotaPerSecUSec` readback now parses systemd's `us`, `ms`, and `s` renderings correctly; previously values such as `500ms` could be misread as malformed, preventing exact effective-quota verification at common sub-100% quotas. Invalid/infinite values remain unavailable.
+- Dynamic quota decisions now reject an observation interval when `nr_periods` does not advance. Zero counter progress is not converted into a zero throttling ratio, and counter wrap/reset continues to invalidate the interval.
+
 - The soak monitor now exits nonzero whenever its final acceptance verdict is `INCOMPLETE`, including telemetry gaps, service identity/restart discontinuities, deadline/clock failures, or missing journal evidence. Its completion message no longer implies success before the final verdict is evaluated; regression tests assert exit status for incomplete runs.
 - The isolated routing benchmark now treats `cpu.stat` as a complete snapshot: required delegated counters, duplicate/malformed/negative values, and impossible throttling are checked before a row can be used. cgroup/host PSI telemetry is unavailable rather than partially accepted when required fields are malformed, duplicated, non-finite, or out of range.
 - Core routing environment values are now parsed into explicit invalid sentinels and validated before the routing loop. Malformed/non-finite values, invalid sample intervals/counts, and unsafe thresholds no longer crash module import or enter an unsafe loop; invalid core routing configuration logs an error and leaves routing disabled until corrected.

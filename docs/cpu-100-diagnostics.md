@@ -5,6 +5,8 @@ This runbook is read-only until an operator explicitly authorizes a rollback on 
 ## 1. Distinguish the signals
 
 - **CPU quota throttling:** `nr_throttled / nr_periods` and `throttled_usec` deltas from the workload cgroup's `cpu.stat`. High throttling means the cgroup hit its quota; it does not alone prove host-wide CPU contention.
+- **Quota readback:** `systemctl --user show heavy-workload.slice -p CPUQuotaPerSecUSec` may render the effective quota as a duration such as `500ms` (50%) or `1s` (100%). Compare the parsed effective property, not just the successful exit status from `set-property`. Missing, infinite, malformed, or mismatched readback is unavailable/failed evidence; do not update the controller's confirmed quota cache.
+- **Counter progress:** calculate `nr_periods` and `nr_throttled` from monotonic deltas in the same cgroup over the same interval as `usage_usec`. A reset/wrap, impossible `nr_throttled > nr_periods`, or zero period progress invalidates the interval. Do not treat any of these cases as zero throttling or low pressure.
 - **CPU pressure:** PSI `some avg10` from `/proc/pressure/cpu` means at least some runnable tasks were stalled. PSI is a percentage, not CPU utilization. `full` is a separate signal and may be absent/zero on some kernels.
 - **Host capacity:** compare `nproc`, `uptime`, `/proc/loadavg`, host PSI, and cgroup counters over the same monotonic interval. Do not compare cumulative counters without taking deltas.
 - **Router overhead:** sample router CPU ticks/RSS separately from workload CPU. A small router CPU share does not explain away a throughput regression without paired workload evidence.

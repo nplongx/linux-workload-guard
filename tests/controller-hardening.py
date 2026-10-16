@@ -261,6 +261,20 @@ check(router.cgroup_cpu_delta(
     {"usage_usec": 101, "nr_periods": 10, "nr_throttled": 3},
     {"usage_usec": 100, "nr_periods": 10, "nr_throttled": 2},
 ) is None, "impossible throttled-period delta must be rejected")
+check(router.cgroup_cpu_delta(
+    {"usage_usec": 100, "nr_periods": 2, "nr_throttled": 1},
+    {"usage_usec": 100, "nr_periods": 1, "nr_throttled": 0},
+) == {"usage_usec": 0, "nr_periods": 1, "nr_throttled": 1},
+      "valid zero-usage interval with one period must preserve exact counter deltas")
+check(router.cgroup_cpu_delta(
+    {"usage_usec": 1, "nr_periods": 0, "nr_throttled": 0},
+    {"usage_usec": 1, "nr_periods": 0, "nr_throttled": 0},
+) == {"usage_usec": 0, "nr_periods": 0, "nr_throttled": 0},
+      "counter parser should preserve zero deltas; decision layer rejects absent period progress")
+check(router.cgroup_cpu_delta(
+    {"usage_usec": 1, "nr_periods": 1, "nr_throttled": 0},
+    {"usage_usec": (1 << 64) - 2, "nr_periods": (1 << 64) - 1, "nr_throttled": 0},
+) is None, "64-bit counter wrap must be treated as discontinuity, not modular progress")
 check(router.reconcile_quota_observation(200, 200) == (200.0, "ok"),
       "unchanged systemd quota property should retain the confirmed baseline")
 check(router.reconcile_quota_observation(200, 250) == (250.0, "quota-changed-externally"),
@@ -293,6 +307,13 @@ check(reason == "ok" and decision["target"] == 300,
 decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, 0.40, 0.0, 0.8)
 check(reason == "ok" and decision["target"] == 250,
       "integrated production-threshold path must decrease quota at exactly 0.40")
+no_period_progress = {"usage_usec": base["usage_usec"] + 1_000_000,
+                      "nr_periods": base["nr_periods"],
+                      "nr_throttled": base["nr_throttled"]}
+decision, reason = router.quota_decision_from_sample(300, base, no_period_progress,
+                                                       5.0, 0.05, 0.0, 0.9)
+check(decision is None and reason == "quota-period-counter-not-advancing",
+      "zero period-counter progress must not masquerade as zero throttling or authorize quota increase")
 decision, reason = router.quota_decision_from_sample(300, base, high, 5.0, 0.4001, 0.0, 0.8)
 check(reason == "ok" and decision["target"] == 250,
       "integrated production-threshold path must decrease quota above 0.40")
@@ -340,6 +361,16 @@ check(decision is None and reason == "invalid-route-demand",
 # successful actuation or fabricated telemetry.
 with patch.object(router.subprocess, "check_output", side_effect=subprocess.TimeoutExpired("systemctl", 2)):
     check(router.user_cgroup("heavy-workload.slice") is None, "systemctl timeout must yield unavailable cgroup")
+for rendered, expected in (("1s", 100.0), ("1.5s", 150.0), ("500ms", 50.0),
+                           ("250ms", 25.0), ("250000us", 25.0)):
+    with patch.object(router.subprocess, "check_output", return_value=rendered):
+        observed = router.unit_quota("temporary-test.slice")
+    check(observed is not None and abs(observed - expected) < 0.01,
+          f"systemd CPUQuotaPerSecUSec {rendered!r} should parse as {expected}% (got {observed!r})")
+for rendered in ("infinity", "", "500xs", "0ms", "nanms", "-100ms"):
+    with patch.object(router.subprocess, "check_output", return_value=rendered):
+        check(router.unit_quota("temporary-test.slice") is None,
+              f"unsupported/invalid systemd quota property {rendered!r} must be unavailable")
 with patch.object(router.subprocess, "run", side_effect=subprocess.TimeoutExpired("systemctl", 3)):
     check(not router.set_unit_quota("heavy-workload.slice", 150), "quota timeout must not report success")
 with patch.object(router.subprocess, "run") as run_set, patch.object(router, "unit_quota", return_value=150.0):

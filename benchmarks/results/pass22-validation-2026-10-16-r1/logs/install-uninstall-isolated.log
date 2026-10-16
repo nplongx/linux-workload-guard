@@ -1,0 +1,3 @@
+Linux Workload Guard installed.
+Linux Workload Guard removed.
+install/uninstall smoke: ok (systemctl mocked; user config preserved)

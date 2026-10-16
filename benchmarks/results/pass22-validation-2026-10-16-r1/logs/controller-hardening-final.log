@@ -1,0 +1,20 @@
+2026-10-16 09:43:26,627 INFO aggregate scope restored unit=lwg-workload-test-worker.scope weight=100
+2026-10-16 09:43:26,627 INFO aggregate scope restore skipped unit=lwg-workload-test-worker.scope reason=external-weight-change current=55
+2026-10-16 09:43:26,633 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-16 09:43:26,633 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-16 09:43:26,648 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:43:26,662 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:43:26,672 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 09:43:26,685 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 09:43:26,697 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 09:43:26,710 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 09:43:26,721 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 09:43:26,732 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-16 09:43:26,742 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:43:26,755 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-16 09:43:26,768 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-16 09:43:26,779 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 09:43:26,790 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 09:43:26,800 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 09:43:26,811 ERROR routing disabled due to invalid configuration: aggregate routing thresholds and sustained sample count are invalid
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)

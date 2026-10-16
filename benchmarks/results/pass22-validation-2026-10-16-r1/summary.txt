@@ -1,0 +1,7 @@
+Pass 22 validation summary
+Version: 0.6.5-rc.1
+Implementation: systemd CPUQuotaPerSecUSec unit parser now handles us/ms/s; quota decisions fail closed when nr_periods has no progress.
+Local validation: all commands and actual exit statuses recorded in status.tsv; inspect logs/ for complete stdout/stderr. Full ./test.sh, Python compile checks, shell/Bash syntax, systemd unit verification, isolated install/uninstall, telemetry parser, aggregate evidence, and diff whitespace checks returned 0.
+Safety scope: no production configuration or production quota changes; no production service restart; no forced PSI crossing. The strict local controller-integration command unexpectedly ran a short isolated temporary-slice integration, including synthetic CPU workers and temporary quota transitions (100->150, 350->300, 300->250, 250->200). This was not an external release gate and was outside the requested no-actuation/no-load constraint; see logs/systemd-runtime-gate.log. Production router remained active with NRestarts=0 and production heavy quota read back as 1s afterward. Several lwg-prefixed user slices are currently active; provenance is uncertain, so they were not stopped or altered.
+Release: NO-GO; all host-dependent gates remain open.
+local_temp_slice_controller_integration=PASS_NOT_EXTERNAL_GATE

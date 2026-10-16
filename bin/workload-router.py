@@ -940,14 +940,29 @@ def monotonic_counter_delta(current, previous):
     return current - previous
 
 def unit_quota(unit):
+    """Read systemd CPUQuotaPerSecUSec in its documented time units.
+
+    systemd commonly renders quotas below 100% as e.g. ``500ms``. Treating
+    every value ending in ``s`` as seconds also matches ``ms`` and then fails
+    to parse the numeric prefix, which made otherwise valid effective quota
+    readback look unavailable. Convert the property duration to a percentage
+    of one CPU; infinity and unknown units are intentionally unsupported.
+    """
     try:
         value = subprocess.check_output(
             ["systemctl", "--user", "show", unit, "--property=CPUQuotaPerSecUSec", "--value"],
             text=True, stderr=subprocess.DEVNULL, timeout=2,
         ).strip()
-        if value.endswith("s"):
-            quota = float(value[:-1]) * 100.0
-            return quota if math.isfinite(quota) and quota > 0 else None
+        if value.endswith("ms"):
+            seconds = float(value[:-2]) / 1000.0
+        elif value.endswith("us"):
+            seconds = float(value[:-2]) / 1_000_000.0
+        elif value.endswith("s"):
+            seconds = float(value[:-1])
+        else:
+            return None
+        quota = seconds * 100.0
+        return quota if math.isfinite(quota) and quota > 0 else None
     except (OSError, ValueError, subprocess.SubprocessError):
         pass
     return None
@@ -1138,7 +1153,12 @@ def quota_decision_from_sample(current_quota, previous_stat, current_stat, elaps
     cgroup_demand = min(1.0, usage_pct / max(100.0, quota_value))
     demand = max(min(1.0, max(0.0, route_demand)), cgroup_demand)
     periods = deltas["nr_periods"]
-    throttled_ratio = deltas["nr_throttled"] / periods if periods else 0.0
+    # A quota interval with no observed period progress cannot support a
+    # throttling ratio. In particular, do not substitute 0.0 and let stale or
+    # unsupported counters authorize an increase. Require a fresh interval.
+    if periods <= 0:
+        return None, "quota-period-counter-not-advancing"
+    throttled_ratio = deltas["nr_throttled"] / periods
     if pressure is None and sched_delay_ms is None:
         return None, "pressure-signals-unavailable"
     target = dynamic_quota_target(quota_value, pressure, demand, throttled_ratio, sched_delay_ms)
