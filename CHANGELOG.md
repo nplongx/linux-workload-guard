@@ -4,19 +4,26 @@
 
 ### Added
 
+- Added create-only per-run SHA-256 evidence manifests for the six routing benchmark outputs (summary, raw samples, environment, router log, interval telemetry, throughput counters). The evaluator verifies hashes and refuses `PASS` without the manifest; regressions cover tampering, missing files, duplicate keys, and overwrite attempts.
+- Added controller-lock, `/proc` membership-gap, known-heavy false-positive, batched systemd-property, external `CPUWeight` override, and acceptance-report binding regressions.
+- Added graceful-stop recovery for verified routed PIDs to the quota-protected recovery slice; route state is removed only after PID starttime and destination membership readback, while unknown membership/readback preserves the recovery journal.
+- Bound graceful shutdown with batched cgroup-unit discovery and an 8.5-second total cleanup deadline; per-call systemd timeouts share the remaining budget, and aggregate-scope restoration defers instead of overrunning the service stop window.
 - Added hash-sealed ABBA preregistration with fixed block order/weights, immutable protocol output, host/source/workload binding, explicit approved-window confirmations, and fixture-only tamper/mismatch regressions. Protocol verification proves file integrity, not experiment execution.
 - Added preregistration validation to benchmark preflight and evaluator manifest review. Invalid or mismatched binding fails closed before workload setup or acceptance.
 
 ### Changed
 
-- Generic CI reports runtime routing, delegated CPU, and aggregate-scope gates as `SKIP / OPEN`; live integration commands require both explicit approval variables and the dedicated runner label. Green generic CI is not runtime acceptance.
+- Removed all self-hosted runtime jobs from generic push/PR CI; the separate `.github/workflows/approved-controller-runtime.yml` is manual-dispatch-only, requires `main`, both approval variables, and the dedicated runner label. Green generic CI is not runtime acceptance, and this runtime workflow was not dispatched.
+- Aggregate-scope reconciliation now reads tracked `CPUWeight` values in one bounded systemd query and restores at most one scope per poll cycle. Scope-weight actuation precheck/readback uses batched properties and still verifies exact effective values and cgroup identity.
+- Evaluator/analyzer reject duplicate manifest keys and bind acceptance output to the exact result/raw/environment paths and source/host/workload metadata. SHA-256 manifests detect artifact drift; the manifest digest itself must be retained independently by the reviewing evidence system to detect coordinated file-plus-manifest rewriting.
 - Aggregate PSI confounder analysis now evaluates each mode/pair independently and uses per-pair condition medians. Missing/invalid PSI or incomplete pair coverage cannot be treated as quiet.
 
 ### Fixed
 
+- Final routed-PID cleanup now distinguishes confirmed process exit, known cgroup departure, and unknown `/proc` membership consistently with recovery logic. Transient access/read failures preserve route identity and reset CPU/recovery baselines instead of pruning potentially live routes.
+- Known-heavy recognition now parses argv and tool subcommands instead of arbitrary substrings. Normal Python/Node commands whose arguments merely mention build/test/inference phrases no longer bypass the sustained-CPU threshold. A nonblocking owner-only, symlink-resistant singleton lock prevents controller instances from racing shared route state.
+- Benchmark output/report path handling rejects dangling symlinks as occupied paths, preventing collectors/reviewers from following them to create files outside the declared evidence directory.
 - Performance review no longer lets legacy evidence without verified steady-window host PSI close throughput acceptance. It reports `INCONCLUSIVE`; malformed evidence remains `INCOMPLETE`, PSI-confounded evidence remains `CONFOUNDED_INCONCLUSIVE`, and the `0.90` throughput threshold is unchanged.
-
-### Fixed
 
 - `CPUQuotaPerSecUSec` readback now parses systemd's `us`, `ms`, and `s` renderings correctly; previously values such as `500ms` could be misread as malformed, preventing exact effective-quota verification at common sub-100% quotas. Invalid/infinite values remain unavailable.
 - Dynamic quota decisions now reject an observation interval when `nr_periods` does not advance. Zero counter progress is not converted into a zero throttling ratio, and counter wrap/reset continues to invalidate the interval.

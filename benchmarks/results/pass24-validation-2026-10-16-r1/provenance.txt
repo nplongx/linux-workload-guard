@@ -1,0 +1,15 @@
+pass=24
+source_base_head=b280d546bcff0ed32de7730103d7b23e9ee0e7c1
+origin_main_head_at_pass_start=b280d546bcff0ed32de7730103d7b23e9ee0e7c1
+version=0.6.5-rc.1
+branch=main
+recorded_at_utc=2026-10-16T05:08:02Z
+tracked_diff_excluding_bundle_sha256=fada34f4e21fcd7b9dc06060528d028e4663237d122591496826c7c428b587d2
+untracked_count_at_pass_start=259
+preexisting_historical_untracked_count=254
+all_historical_untracked_artifacts_preserved=true
+runtime_workflow_dispatched=false
+approval_variables_changed=false
+runtime_acceptance_gates_closed=0
+release_status=NO-GO
+actionlint=not-installed; workflows parsed with PyYAML BaseLoader and static gate tests

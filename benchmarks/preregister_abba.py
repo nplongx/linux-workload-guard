@@ -35,6 +35,39 @@ MIN_PAIRS = 5
 PSI_THRESHOLD_PERCENT = 5.0
 PSI_MAX_HIGH_SAMPLE_SHARE_PERCENT = 20.0
 PSI_MAX_CONDITION_MEDIAN_IMBALANCE_POINTS = 5.0
+WITHIN_BLOCK_MODE_ORDER = "odd repetitions baseline->router; even repetitions router->baseline"
+CAPACITY_MODEL = ("same temporary cgroup-v2 parent CPUQuota=100% in every block and mode; "
+                  "dynamic quota disabled; only candidate temporary workload-scope CPUWeight varies")
+RUN_CONTRACT = {
+    "before_each_block": ("verify this preregistration checksum; use only the source revision and declared host "
+                          "recorded here; capture preflight identity and PSI without changing quota or generating load"),
+    "command_template": ("BENCH_REQUIRE_PREREGISTRATION=1 BENCH_PREREGISTRATION_DIR=<sealed-dir> "
+                         "BENCH_PREREGISTRATION_BLOCK=<A|B|B2|A2> BENCH_AGGREGATE_ROUTING=true "
+                         "BENCH_AGGREGATE_SCOPE_WEIGHT=<block-weight> WORKLOAD_KIND=<declared-workload> "
+                         "REPS=5 DURATION=30 WORKERS=2 RESULT=<new-unique-result.tsv> "
+                         "benchmarks/routing-contention-isolated.sh"),
+    "result_directory_must_be_new": True,
+    "production_service_config_and_quota_mutations": "PROHIBITED",
+    "execution_requires_explicit_approval": True,
+}
+EXPECTED_ACCEPTANCE = {
+    "minimum_median_paired_throughput_ratio": MIN_THROUGHPUT_RATIO,
+    "maximum_median_paired_latency_and_probe_work_ratio": MAX_LATENCY_RATIO,
+    "minimum_valid_pairs_per_block": MIN_PAIRS,
+    "minimum_steady_samples_per_mode": MIN_STEADY_SAMPLES,
+    "maximum_router_cpu_percent_of_one_logical_cpu": 5.0,
+    "maximum_router_peak_rss_kib": 32768,
+    "minimum_candidate_weight80_block_median_throughput_ratio": MIN_THROUGHPUT_RATIO,
+    "minimum_weight_effect_median_delta": 0.05,
+    "minimum_individual_weight80_pair_ratio": 0.80,
+    "psi_some_avg10_sample_threshold_percent": PSI_THRESHOLD_PERCENT,
+    "maximum_samples_above_psi_threshold_per_mode_pair_percent": PSI_MAX_HIGH_SAMPLE_SHARE_PERCENT,
+    "maximum_baseline_router_condition_median_imbalance_percentage_points": PSI_MAX_CONDITION_MEDIAN_IMBALANCE_POINTS,
+    "psi_failure_classification": "CONFOUNDED_INCONCLUSIVE",
+    "missing_or_invalid_psi_classification": "INCONCLUSIVE",
+    "invalid_or_missing_raw_evidence_classification": "INCOMPLETE",
+    "no_sample_exclusion_or_threshold_change": True,
+}
 
 
 def sha256_bytes(data):
@@ -121,35 +154,12 @@ def protocol_payload(host_id, operator_id, workload_kind, source, host_facts, cr
             "minimum_steady_samples_per_mode": MIN_STEADY_SAMPLES,
             "block_order": ["A", "B", "B2", "A2"],
             "blocks": [dict(block) for block in BLOCKS],
-            "within_block_mode_order": "odd repetitions baseline->router; even repetitions router->baseline",
-            "capacity_model": "same temporary cgroup-v2 parent CPUQuota=100% in every block and mode; dynamic quota disabled; only candidate temporary workload-scope CPUWeight varies",
+            "within_block_mode_order": WITHIN_BLOCK_MODE_ORDER,
+            "capacity_model": CAPACITY_MODEL,
             "preserve_all_samples": True,
         },
-        "acceptance": {
-            "minimum_median_paired_throughput_ratio": MIN_THROUGHPUT_RATIO,
-            "maximum_median_paired_latency_and_probe_work_ratio": MAX_LATENCY_RATIO,
-            "minimum_valid_pairs_per_block": MIN_PAIRS,
-            "minimum_steady_samples_per_mode": MIN_STEADY_SAMPLES,
-            "maximum_router_cpu_percent_of_one_logical_cpu": 5.0,
-            "maximum_router_peak_rss_kib": 32768,
-            "minimum_candidate_weight80_block_median_throughput_ratio": MIN_THROUGHPUT_RATIO,
-            "minimum_weight_effect_median_delta": 0.05,
-            "minimum_individual_weight80_pair_ratio": 0.80,
-            "psi_some_avg10_sample_threshold_percent": PSI_THRESHOLD_PERCENT,
-            "maximum_samples_above_psi_threshold_per_mode_pair_percent": PSI_MAX_HIGH_SAMPLE_SHARE_PERCENT,
-            "maximum_baseline_router_condition_median_imbalance_percentage_points": PSI_MAX_CONDITION_MEDIAN_IMBALANCE_POINTS,
-            "psi_failure_classification": "CONFOUNDED_INCONCLUSIVE",
-            "missing_or_invalid_psi_classification": "INCONCLUSIVE",
-            "invalid_or_missing_raw_evidence_classification": "INCOMPLETE",
-            "no_sample_exclusion_or_threshold_change": True,
-        },
-        "run_contract": {
-            "before_each_block": "verify this preregistration checksum; use only the source revision and declared host recorded here; capture preflight identity and PSI without changing quota or generating load",
-            "command_template": "BENCH_REQUIRE_PREREGISTRATION=1 BENCH_PREREGISTRATION_DIR=<sealed-dir> BENCH_PREREGISTRATION_BLOCK=<A|B|B2|A2> BENCH_AGGREGATE_ROUTING=true BENCH_AGGREGATE_SCOPE_WEIGHT=<block-weight> WORKLOAD_KIND=<declared-workload> REPS=5 DURATION=30 WORKERS=2 RESULT=<new-unique-result.tsv> benchmarks/routing-contention-isolated.sh",
-            "result_directory_must_be_new": True,
-            "production_service_config_and_quota_mutations": "PROHIBITED",
-            "execution_requires_explicit_approval": True,
-        },
+        "acceptance": dict(EXPECTED_ACCEPTANCE),
+        "run_contract": dict(RUN_CONTRACT),
     }
 
 
@@ -163,41 +173,64 @@ def validate_payload(payload):
         errors.append("unexpected top-level workload_kind")
     experiment = payload.get("experiment", {})
     acceptance = payload.get("acceptance", {})
+    run_contract = payload.get("run_contract", {})
+    if not isinstance(experiment, dict):
+        return ["experiment must be a JSON object"]
+    if not isinstance(acceptance, dict):
+        return ["acceptance must be a JSON object"]
+    if not isinstance(run_contract, dict):
+        return ["run_contract must be a JSON object"]
     blocks = experiment.get("blocks", [])
     if experiment.get("block_order") != ["A", "B", "B2", "A2"]:
         errors.append("block order must remain A/B/B2/A2")
     if blocks != list(BLOCKS):
         errors.append("block weights/order must remain A=20, B=80, B2=80, A2=20")
-    if experiment.get("workers") != 2 or experiment.get("repetitions_per_block") != MIN_PAIRS or experiment.get("duration_seconds_per_mode") != 30:
-        errors.append("worker/pair/duration protocol was changed")
-    required_acceptance = {
-        "minimum_median_paired_throughput_ratio": MIN_THROUGHPUT_RATIO,
-        "maximum_median_paired_latency_and_probe_work_ratio": MAX_LATENCY_RATIO,
-        "minimum_valid_pairs_per_block": MIN_PAIRS,
+    expected_experiment = {
+        "workers": 2,
+        "repetitions_per_block": MIN_PAIRS,
+        "duration_seconds_per_mode": 30,
+        "steady_window_start_seconds": 12,
         "minimum_steady_samples_per_mode": MIN_STEADY_SAMPLES,
-        "psi_some_avg10_sample_threshold_percent": PSI_THRESHOLD_PERCENT,
-        "maximum_samples_above_psi_threshold_per_mode_pair_percent": PSI_MAX_HIGH_SAMPLE_SHARE_PERCENT,
-        "maximum_baseline_router_condition_median_imbalance_percentage_points": PSI_MAX_CONDITION_MEDIAN_IMBALANCE_POINTS,
+        "within_block_mode_order": WITHIN_BLOCK_MODE_ORDER,
+        "capacity_model": CAPACITY_MODEL,
+        "preserve_all_samples": True,
     }
-    for key, expected in required_acceptance.items():
+    for key, expected in expected_experiment.items():
+        if experiment.get(key) != expected:
+            errors.append(f"predeclared experiment value changed: {key}")
+    for key, expected in EXPECTED_ACCEPTANCE.items():
         if acceptance.get(key) != expected:
             errors.append(f"predeclared acceptance value changed: {key}")
-    if experiment.get("preserve_all_samples") is not True or acceptance.get("no_sample_exclusion_or_threshold_change") is not True:
-        errors.append("all-samples/no-threshold-change invariant missing")
+    if run_contract != RUN_CONTRACT:
+        errors.append("run contract differs from the fixed approved execution contract")
     if payload.get("artifact_status") != "SEALED_PREREGISTRATION_REQUIRED_BEFORE_EXECUTION":
         errors.append("artifact is not a pre-execution sealed preregistration")
     if not str(payload.get("operator_id", "")).strip() or not str(payload.get("declared_independent_host_id", "")).strip():
         errors.append("operator/host identity labels are missing")
     source = payload.get("source", {})
+    if not isinstance(source, dict):
+        return errors + ["source must be a JSON object"]
     if not re.fullmatch(r"[0-9a-f]{40}", str(source.get("revision", ""))):
         errors.append("source revision must be a full 40-hex commit")
     if not re.fullmatch(r"[0-9a-f]{64}", str(source.get("tracked_diff_sha256", ""))) or source.get("tracked_dirty") is not False:
         errors.append("tracked source must be clean and carry its diff SHA-256")
     host = payload.get("host", {})
+    if not isinstance(host, dict):
+        return errors + ["host must be a JSON object"]
     if not host.get("hostname") or not host.get("os_release") or not host.get("kernel"):
         errors.append("host identity facts are incomplete")
+    if host.get("cgroup_v2") is not True or not isinstance(host.get("cgroup_controllers"), list) or "cpu" not in host.get("cgroup_controllers", []):
+        errors.append("host must report cgroup v2 with the CPU controller")
+    if not isinstance(host.get("logical_cpus"), int) or host.get("logical_cpus", 0) < 1:
+        errors.append("host logical CPU count must be a positive integer")
     if payload.get("experiment", {}).get("workload_kind") not in ALLOWED_WORKLOADS:
         errors.append("unsupported/missing declared workload kind")
+    try:
+        created_at = datetime.datetime.fromisoformat(str(payload.get("created_at_utc", "")).replace("Z", "+00:00"))
+        if created_at.tzinfo is None or created_at.utcoffset() is None:
+            errors.append("created_at_utc must include an explicit timezone")
+    except ValueError:
+        errors.append("created_at_utc must be a valid ISO-8601 timestamp")
     return errors
 
 
@@ -225,9 +258,14 @@ def verify_sealed_preregistration(directory):
     directory = pathlib.Path(directory)
     protocol_path = directory / "protocol.json"
     manifest_path = directory / "SHA256SUMS.txt"
-    if not directory.is_dir() or protocol_path.is_symlink() or manifest_path.is_symlink():
+    if not directory.is_dir() or directory.is_symlink() or protocol_path.is_symlink() or manifest_path.is_symlink():
         return None, None, ["preregistration directory or files are missing/unsafe"]
     try:
+        if not protocol_path.is_file() or not manifest_path.is_file():
+            return None, None, ["preregistration protocol and manifest must be regular files"]
+        unexpected = {item.name for item in directory.iterdir()} - {"protocol.json", "SHA256SUMS.txt"}
+        if unexpected:
+            return None, None, ["unexpected files in sealed preregistration directory: " + ", ".join(sorted(unexpected))]
         lines = manifest_path.read_text().splitlines()
         if len(lines) != 1:
             return None, None, ["checksum manifest must contain exactly one protocol entry"]
@@ -238,7 +276,14 @@ def verify_sealed_preregistration(directory):
         actual = sha256_bytes(raw)
         if actual != digest:
             return None, actual, ["protocol SHA-256 does not match preregistration manifest"]
-        payload = json.loads(raw)
+        def reject_duplicate_keys(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate JSON key: {key}")
+                result[key] = value
+            return result
+        payload = json.loads(raw, object_pairs_hook=reject_duplicate_keys)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return None, None, [f"could not read preregistration artifact: {exc}"]
     errors = validate_payload(payload)

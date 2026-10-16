@@ -1,0 +1,7 @@
+Pass 24 — safe controller/evidence hardening validation
+Version: 0.6.5-rc.1
+Base source at pass start: b280d546bcff0ed32de7730103d7b23e9ee0e7c1 (origin/main matched at pass start)
+Purpose: local regression/static verification only. No runtime controller integration, workload benchmark, ABBA, quota actuation, production configuration change, PSI-forcing load, or soak was run.
+Changes under validation: tri-state routed-process membership recovery; argv-based known-heavy detection; nonblocking singleton state lock; bounded batched scope-weight read/restore with external-edit protection; SHA-256 run manifests and evaluator/analyzer binding; dispatch-only approved runtime workflow separated from generic push/PR CI; preregistration validation hardening.
+Acceptance thresholds preserved: throughput ratio >= 0.90; latency/probe-work ratio <= 1.10; production PSI high threshold 0.40; PSI confounder rules unchanged; dynamic quota remains opt-in; all preregistration requirements retained.
+See gate-matrix.tsv: every host-/approval-dependent mandatory gate remains OPEN. Local tests and generic CI are not runtime acceptance.

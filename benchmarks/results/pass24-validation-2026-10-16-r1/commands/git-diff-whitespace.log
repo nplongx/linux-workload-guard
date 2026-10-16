@@ -1,0 +1,4 @@
+command=git diff --check HEAD
+started_at_utc=2026-10-16T05:08:02Z
+ended_at_utc=2026-10-16T05:08:02Z
+exit_code=0

@@ -1,0 +1,5 @@
+command=./tests/run-workload-scope.sh
+started_at_utc=2026-10-16T05:08:01Z
+run-workload scope routing: ok (disabled default and opt-in protected scope)
+ended_at_utc=2026-10-16T05:08:01Z
+exit_code=0

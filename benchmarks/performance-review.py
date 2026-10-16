@@ -13,6 +13,9 @@ import re
 import statistics
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from evidence_integrity import digest_file, manifest_path, verify_manifest
+
 MIN_PAIRS = 5
 MIN_STEADY_SAMPLES = 500
 MAX_LATENCY_RATIO = 1.10
@@ -472,16 +475,35 @@ def main():
     manifest = result.with_suffix(".environment.txt")
     raw_path = result.with_suffix(".samples.tsv")
     report = pathlib.Path(sys.argv[2]) if len(sys.argv) == 3 else result.with_suffix(".acceptance.txt")
-    if not result.is_file() or not manifest.is_file() or not raw_path.is_file():
-        print("INCOMPLETE: result TSV, raw samples, or environment manifest missing", file=sys.stderr)
+    if (any(path.is_symlink() for path in (result, manifest, raw_path)) or
+            not result.is_file() or not manifest.is_file() or not raw_path.is_file()):
+        print("INCOMPLETE: result TSV, raw samples, or environment manifest missing/unsafe", file=sys.stderr)
         return 2
-    if report.exists():
+    if report.exists() or report.is_symlink():
         print(f"refusing to overwrite acceptance report: {report}", file=sys.stderr)
         return 2
+    evidence_manifest = manifest_path(result)
+    evidence_manifest_errors = (verify_manifest(result)
+                                if evidence_manifest.exists() or evidence_manifest.is_symlink() else [])
+    try:
+        evidence_manifest_digest = (digest_file(evidence_manifest)
+                                    if evidence_manifest.is_file() and not evidence_manifest.is_symlink()
+                                    else "unavailable")
+    except (OSError, UnicodeError) as exc:
+        evidence_manifest_digest = "unavailable"
+        evidence_manifest_errors.append(f"could not digest evidence checksum manifest: {exc}")
     env = {}
-    for line in manifest.read_text().splitlines():
+    try:
+        environment_lines = manifest.read_text().splitlines()
+    except (OSError, UnicodeError) as exc:
+        print(f"INCOMPLETE: environment manifest could not be read: {exc}", file=sys.stderr)
+        return 2
+    for line in environment_lines:
         if "=" in line:
             key, value = line.split("=", 1)
+            if key in env:
+                print(f"INCOMPLETE: environment manifest contains duplicate key {key!r}", file=sys.stderr)
+                return 2
             env[key] = value
     findings = []
     status = "INCOMPLETE"
@@ -693,11 +715,19 @@ def main():
               "CONFOUNDED_INCONCLUSIVE" if psi_noise_status == "CONFOUNDED_INCONCLUSIVE" else
               "INCONCLUSIVE" if psi_noise_status == "NOT_ASSESSED" else
               "FAIL" if has_fail else "PASS")
+    if evidence_manifest_errors:
+        findings.extend("INCOMPLETE: evidence integrity: " + error for error in evidence_manifest_errors)
+        status = "INCOMPLETE"
+    elif status == "PASS" and evidence_manifest_digest == "unavailable":
+        findings.append("INCOMPLETE: verified throughput acceptance requires a run evidence checksum manifest")
+        status = "INCOMPLETE"
     lines = [
         f"acceptance_status={status}",
         f"result_tsv={result}",
         f"raw_samples_tsv={raw_path}",
         f"manifest={manifest}",
+        f"evidence_checksum_manifest={evidence_manifest if evidence_manifest_digest != 'unavailable' else 'unavailable'}",
+        f"evidence_checksum_manifest_sha256={evidence_manifest_digest}",
         f"git_revision={env.get('git_revision', 'unavailable')}",
         f"workload_kind={env.get('workload_kind', 'unavailable')}",
         f"host={env.get('host', 'unavailable')}",

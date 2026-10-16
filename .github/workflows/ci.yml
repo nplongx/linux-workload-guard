@@ -68,25 +68,3 @@ jobs:
           echo 'Aggregate scope runtime gate: SKIP / OPEN (no runtime CPUWeight actuation/workload on generic hosted CI)'
       - name: Aggregate benchmark evidence integrity regressions
         run: ./tests/analyze-aggregate-routing.sh
-
-  approved-controller-runtime:
-    # This is intentionally separate from the generic Ubuntu matrix. It runs
-    # quota actuation and bounded CPU workloads, so both explicit repository
-    # approvals and a dedicated, labelled self-hosted runner are required.
-    if: ${{ vars.RUN_APPROVED_CONTROLLER_INTEGRATION == 'true' && vars.APPROVED_CONTROLLER_RUNTIME_APPROVED == 'true' }}
-    runs-on: [self-hosted, linux, x64, lwg-approved-controller-test]
-    steps:
-      - uses: actions/checkout@v5
-      - name: Approved isolated delegated CPU controller integration
-        run: |
-          {
-            echo '### Delegated CPU runtime gate'
-            echo 'This result is limited to the approved dedicated runner and temporary test slices; it does not close ABBA, throughput, rollback, PSI-crossing, or soak gates.'
-          } >> "$GITHUB_STEP_SUMMARY"
-          WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh
-      - name: Approved routing lifecycle integration
-        run: |
-          ./tests/integration-routing.sh
-          ./tests/recovery-routing.sh
-          ./tests/shadow-routing.sh
-          ./tests/aggregate-scope-integration.sh

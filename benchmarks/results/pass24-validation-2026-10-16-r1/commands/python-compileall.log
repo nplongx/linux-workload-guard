@@ -1,0 +1,4 @@
+command=python3 -m compileall -q bin benchmarks tests
+started_at_utc=2026-10-16T05:07:14Z
+ended_at_utc=2026-10-16T05:07:14Z
+exit_code=0

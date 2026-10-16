@@ -1,0 +1,31 @@
+command=python3 tests/controller-hardening.py
+started_at_utc=2026-10-16T05:07:14Z
+2026-10-16 12:07:14,884 INFO shutdown route recovered pid=9877 target=/tmp/lwg-shutdown-route-zbo0d7sg/protected-workload-recovery.slice
+2026-10-16 12:07:14,884 WARNING shutdown route retained pid=9878 reason=membership-unknown
+2026-10-16 12:07:14,884 INFO shutdown stale route pruned pid=9879 reason=pid-reused
+2026-10-16 12:07:14,884 WARNING shutdown route retained pid=9880 reason=proc-stat-unavailable
+2026-10-16 12:07:14,885 INFO shutdown route recovered pid=9881 target=/tmp/lwg-shutdown-route-zbo0d7sg/protected-workload-recovery.slice
+2026-10-16 12:07:14,885 WARNING shutdown route restore deadline reached; retaining 1 remaining route record(s)
+2026-10-16 12:07:14,892 INFO aggregate scope restored unit=lwg-workload-test-worker.scope weight=100
+2026-10-16 12:07:14,892 INFO aggregate scope restore skipped unit=lwg-workload-test-worker.scope reason=external-weight-change current=55
+2026-10-16 12:07:14,893 INFO aggregate scope restored unit=lwg-workload-batch0.scope weight=100
+2026-10-16 12:07:14,904 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=200.00%
+2026-10-16 12:07:14,907 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=150% observed=unavailable
+2026-10-16 12:07:14,925 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:07:14,941 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:07:14,954 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 12:07:14,968 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 12:07:14,982 ERROR routing disabled due to invalid configuration: sample interval must be in [0.05, 60] seconds
+2026-10-16 12:07:14,995 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 12:07:15,008 ERROR routing disabled due to invalid configuration: sustained sample count must be a positive integer
+2026-10-16 12:07:15,021 ERROR routing disabled due to invalid configuration: recovery sample count must be a positive integer
+2026-10-16 12:07:15,034 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:07:15,049 ERROR routing disabled due to invalid configuration: CPU thresholds must be in (0, 100] and [0, 100]
+2026-10-16 12:07:15,064 ERROR routing disabled due to invalid configuration: cooldown and recovery dwell must be non-negative
+2026-10-16 12:07:15,079 ERROR routing disabled due to invalid configuration: core routing settings must be finite numbers
+2026-10-16 12:07:15,091 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 12:07:15,106 ERROR routing disabled due to invalid configuration: statistics interval must be at least 0.1s and history interval at least 1s
+2026-10-16 12:07:15,119 ERROR routing disabled due to invalid configuration: aggregate routing thresholds and sustained sample count are invalid
+controller hardening: ok (strict PSI, production threshold path, quota bounds, PID/exec identity, recovery sequence, timeout fail-safe)
+ended_at_utc=2026-10-16T05:07:15Z
+exit_code=0

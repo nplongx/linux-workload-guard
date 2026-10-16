@@ -25,6 +25,15 @@ fi
 grep -q 'refusing to overwrite existing benchmark evidence' "$TMP/existing.err"
 grep -qx 'preserve-this-result' "$TMP/existing.tsv"
 
+# Dangling symlinks also occupy an artifact path. The collector must not follow
+# them to create a target file or overwrite untrusted destinations.
+ln -s "$TMP/should-not-be-created.tsv" "$TMP/dangling.samples.tsv"
+if WORKLOAD_KIND=synthetic RESULT="$TMP/dangling.tsv" DURATION=20 "$BENCH" >"$TMP/dangling.out" 2>"$TMP/dangling.err"; then
+  echo 'routing benchmark accepted a dangling sidecar symlink' >&2; exit 1
+fi
+grep -q 'refusing to overwrite existing benchmark evidence' "$TMP/dangling.err"
+[ ! -e "$TMP/should-not-be-created.tsv" ]
+
 # The routed trial must remain inside the same aggregate 100% parent budget;
 # a sibling heavy slice would accidentally grant a second CPU's worth of quota.
 grep -q 'HEAVY_UNIT = f"{PARENT_UNIT\[:-6\]}-heavy.slice"' "$ROOT/benchmarks/routing-contention.py"
@@ -52,6 +61,9 @@ grep -q 'terminal-gzip' "$ROOT/benchmarks/performance-review.py"
 grep -q 'openssl", "speed"' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'Popen(\["gzip","-1","-c","/dev/zero"\]' "$ROOT/benchmarks/routing-contention.py"
 grep -q 'worker_throughput_per_sec' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'RESULT must end in .tsv' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'write_manifest(RESULT)' "$ROOT/benchmarks/routing-contention.py"
+grep -q 'not cleanup_ok or not evidence_sealed' "$ROOT/benchmarks/routing-contention.py"
 
 # Unknown workload modes must fail before creating evidence or temporary units.
 if WORKLOAD_KIND=unknown RESULT="$TMP/unknown.tsv" DURATION=20 "$BENCH" >/dev/null 2>"$TMP/unknown.err"; then

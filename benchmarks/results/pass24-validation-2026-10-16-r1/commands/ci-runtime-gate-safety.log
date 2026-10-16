@@ -1,0 +1,5 @@
+command=./tests/ci-runtime-gate-safety.sh
+started_at_utc=2026-10-16T05:07:23Z
+CI runtime gate safety: ok (generic CI has no self-hosted/runtime steps; separate dispatch-only workflow requires main, two approval variables, and the dedicated runner label)
+ended_at_utc=2026-10-16T05:07:23Z
+exit_code=0

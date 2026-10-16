@@ -30,6 +30,62 @@ assert all(row["throughput_ratio"] not in ("", None) for row in rows if row["blo
 print("aggregate analysis regression: ok")
 PY
 
+# A valid-looking report must be bound to the exact result path it describes;
+# copying an unrelated PASS report beside a different TSV is not acceptance.
+source=benchmarks/results/routing-contention-scope-aggregate-synthetic-weight20-blockA3-pass15-5rep30-2026-10-15.tsv
+cp "$source" "$TMP/copied-report.tsv"
+cp "${source%.tsv}.environment.txt" "$TMP/copied-report.environment.txt"
+cp "${source%.tsv}.acceptance.txt" "$TMP/copied-report.acceptance.txt"
+if python3 benchmarks/analyze-aggregate-routing.py \
+  --out "$TMP/copied-report-pairs.tsv" --summary "$TMP/copied-report-summary.txt" \
+  "$TMP/copied-report.tsv" > "$TMP/copied-report.out" 2>&1; then
+  echo 'aggregate analyzer accepted an acceptance report copied from another result' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q 'acceptance report result_tsv does not bind to supplied result' "$TMP/copied-report.out"
+
+# Conflicting duplicate status keys are ambiguous evidence, even when the
+# first occurrence is valid; they must not receive last-key-wins semantics.
+cp "${source%.tsv}.acceptance.txt" "$TMP/duplicate-status.acceptance.txt"
+cp "${source%.tsv}.environment.txt" "$TMP/duplicate-status.environment.txt"
+cp "$source" "$TMP/duplicate-status.tsv"
+printf 'acceptance_status=PASS\n' >> "$TMP/duplicate-status.acceptance.txt"
+if python3 benchmarks/analyze-aggregate-routing.py \
+  --out "$TMP/duplicate-status-pairs.tsv" --summary "$TMP/duplicate-status-summary.txt" \
+  "$TMP/duplicate-status.tsv" > "$TMP/duplicate-status.out" 2>&1; then
+  echo 'aggregate analyzer accepted duplicate evaluator status keys' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q 'duplicate key.*acceptance_status' "$TMP/duplicate-status.out"
+
+# Aggregate analysis must reject symlinked evidence companions before parsing
+# metadata, even when the symlink target is a valid old acceptance report.
+cp "$source" "$TMP/linked-acceptance.tsv"
+cp "${source%.tsv}.environment.txt" "$TMP/linked-acceptance.environment.txt"
+ln -s "$ROOT/${source%.tsv}.acceptance.txt" "$TMP/linked-acceptance.acceptance.txt"
+if python3 benchmarks/analyze-aggregate-routing.py \
+  --out "$TMP/linked-acceptance-pairs.tsv" --summary "$TMP/linked-acceptance-summary.txt" \
+  "$TMP/linked-acceptance.tsv" > "$TMP/linked-acceptance.out" 2>&1; then
+  echo 'aggregate analyzer accepted a symlinked acceptance report' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q 'missing or unsafe manifest/evaluator output' "$TMP/linked-acceptance.out"
+
+# Historical summaries may still be used for descriptive plots, but an ABBA
+# run explicitly bound to preregistration cannot close a gate without the new
+# per-run evidence digest/path fields.
+python3 - "$ROOT" "$source" <<'PY'
+import importlib.util, pathlib, sys
+root=pathlib.Path(sys.argv[1]); result=pathlib.Path(sys.argv[2])
+path=root/'benchmarks/analyze-aggregate-routing.py'
+spec=importlib.util.spec_from_file_location('aggregate_binding_test',path)
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+manifest=result.with_suffix('.environment.txt'); acceptance_path=result.with_suffix('.acceptance.txt')
+env=module.manifest_values(manifest); report=module.manifest_values(acceptance_path)
+env['preregistration_required']='true'
+errors=module.verify_acceptance_binding(result,manifest,acceptance_path,env,report)
+assert any('missing the per-run evidence checksum digest' in item for item in errors), errors
+assert any('missing the per-run evidence checksum path' in item for item in errors), errors
+print('preregistered evidence binding regression: ok (missing manifest digest/path cannot close gate)')
+PY
+
 # PSI acceptance must be evaluated per mode/pair, not by averaging the
 # percentages across all repetitions. A single noisy pair is sufficient to
 # confound attribution; missing PSI is INCONCLUSIVE rather than quiet.

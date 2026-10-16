@@ -47,6 +47,40 @@ assert any('SHA-256 does not match' in item for item in errors), errors
 tamper_design=dict(payload)
 tamper_design['acceptance']=dict(payload['acceptance'],minimum_median_paired_throughput_ratio=0.89)
 assert any('minimum_median_paired_throughput_ratio' in item for item in module.validate_payload(tamper_design))
+for field, bad in (
+    ('maximum_router_cpu_percent_of_one_logical_cpu', 9.0),
+    ('maximum_router_peak_rss_kib', 65536),
+    ('minimum_candidate_weight80_block_median_throughput_ratio', 0.80),
+    ('minimum_weight_effect_median_delta', 0.01),
+    ('minimum_individual_weight80_pair_ratio', 0.50),
+):
+    mutated=dict(payload); mutated['acceptance']=dict(payload['acceptance'], **{field:bad})
+    assert any(field in item for item in module.validate_payload(mutated)), (field, module.validate_payload(mutated))
+for section, field, bad in (
+    ('experiment','steady_window_start_seconds', 10),
+    ('experiment','capacity_model','different capacity'),
+    ('experiment','within_block_mode_order','router first always'),
+    ('run_contract','execution_requires_explicit_approval', False),
+    ('run_contract','production_service_config_and_quota_mutations','allowed'),
+):
+    mutated=dict(payload); mutated[section]=dict(payload[section], **{field:bad})
+    assert module.validate_payload(mutated), (section, field)
+for malformed in (
+    dict(payload, experiment=[]), dict(payload, acceptance=[]), dict(payload, run_contract=[]),
+    dict(payload, source=[]), dict(payload, host=[]), dict(payload, created_at_utc='not-a-date'),
+):
+    assert module.validate_payload(malformed), malformed
+
+# Duplicate JSON keys and unexpected files are rejected even when the checksum
+# is internally consistent; this avoids ambiguous parser semantics.
+duplicate=tmp/'duplicate-keys'; duplicate.mkdir()
+raw=(module.json.dumps(payload, sort_keys=True, indent=2) + '\n').replace(
+    '"schema_version": 1,', '"schema_version": 1,\n  "schema_version": 1,', 1).encode()
+(duplicate/'protocol.json').write_bytes(raw)
+(duplicate/'SHA256SUMS.txt').write_text(module.sha256_bytes(raw) + '  protocol.json\n')
+assert any('duplicate JSON key' in item for item in module.verify_sealed_preregistration(duplicate)[2])
+extra=tmp/'extra-file'; module.write_sealed_preregistration(extra,payload); (extra/'notes.txt').write_text('unsealed')
+assert any('unexpected files' in item for item in module.verify_sealed_preregistration(extra)[2])
 try:
     module.write_sealed_preregistration(sealed,payload)
 except FileExistsError:

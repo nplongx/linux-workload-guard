@@ -1,0 +1,5 @@
+command=./tests/live-psi-observe-safety.sh
+started_at_utc=2026-10-16T05:07:59Z
+live PSI collector safety: ok (arguments, no-overwrite, passive-only, interruption, missing-runtime telemetry fail-closed)
+ended_at_utc=2026-10-16T05:08:01Z
+exit_code=0

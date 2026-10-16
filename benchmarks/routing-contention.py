@@ -18,6 +18,9 @@ import threading
 import tempfile
 import time
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from evidence_integrity import manifest_path, write_manifest
+
 REPS = int(os.getenv("REPS", "3"))
 DURATION = float(os.getenv("DURATION", "30"))
 WORKERS = int(os.getenv("WORKERS", "1"))
@@ -582,6 +585,8 @@ def preregistration_preflight():
 def main():
     global ROUTER_LOG_PATH, ROUTER_STATE_PATH, ROUTER_ENV, TELEMETRY_PATH, THROUGHPUT_PATH
     global CREATED_UNIT_FILES
+    if RESULT.suffix.lower() != ".tsv":
+        raise SystemExit("RESULT must end in .tsv so the complete evidence set can be bound safely")
     if REPS < 1 or WORKERS < 1 or DURATION < 20:
         raise SystemExit("REPS and WORKERS must be positive; DURATION must be >=20s for comparable steady windows")
     if WORKLOAD_KIND not in ("synthetic", "terminal-openssl", "terminal-gzip", "terminal-build", "terminal-repo-cli"):
@@ -597,12 +602,14 @@ def main():
     preregistration = preregistration_preflight()
     sample_path = RESULT.with_suffix(".samples.tsv")
     environment_path = RESULT.with_suffix(".environment.txt")
+    evidence_manifest_path = manifest_path(RESULT)
     ROUTER_LOG_PATH = RESULT.with_suffix(".router.log")
     TELEMETRY_PATH = RESULT.with_suffix(".telemetry.tsv")
     THROUGHPUT_PATH = RESULT.with_suffix(".throughput.tsv")
-    output_paths = (RESULT, sample_path, environment_path, ROUTER_LOG_PATH, TELEMETRY_PATH, THROUGHPUT_PATH)
+    output_paths = (RESULT, sample_path, environment_path, ROUTER_LOG_PATH, TELEMETRY_PATH,
+                    THROUGHPUT_PATH, evidence_manifest_path)
     for path in output_paths:
-        if path.exists():
+        if path.exists() or path.is_symlink():
             raise SystemExit(f"refusing to overwrite existing benchmark evidence: {path}")
     RESULT.parent.mkdir(parents=True, exist_ok=True)
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -614,7 +621,7 @@ def main():
     )
     for unit, contents in unit_specs:
         path = UNIT_DIR / unit
-        if path.exists():
+        if path.exists() or path.is_symlink():
             raise SystemExit(f"refusing to overwrite existing user unit: {path}")
     try:
         for unit, contents in unit_specs:
@@ -748,6 +755,7 @@ def main():
                 raise SystemExit(f"benchmark invalid: {len(invalid)} router trial(s) failed to route all workers; see {RESULT}")
         benchmark_status = "COMPLETE"
     finally:
+        pending_exception = sys.exc_info()[0] is not None
         cleanup_ok = True
         try:
             stop_router()
@@ -776,5 +784,17 @@ def main():
             with environment_path.open("a") as f:
                 f.write(f"result_status={'COMPLETE' if benchmark_status == 'COMPLETE' and cleanup_ok else 'INCOMPLETE'}\n")
                 f.write(f"ended_at={time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n")
+        evidence_sealed = False
+        try:
+            write_manifest(RESULT)
+            evidence_sealed = True
+            print(f"evidence checksum manifest: {evidence_manifest_path}")
+        except (OSError, ValueError) as exc:
+            print(f"warning: could not seal run evidence: {exc}", file=sys.stderr)
+        # A missing manifest or incomplete cleanup must not exit 0 after an
+        # otherwise successful run. Preserve an exception already raised by
+        # the benchmark body, but make finalization failures visible to CI.
+        if not pending_exception and (benchmark_status != "COMPLETE" or not cleanup_ok or not evidence_sealed):
+            raise SystemExit("benchmark incomplete: inspect result_status and evidence/checksum logs")
 
 if __name__ == "__main__": main()

@@ -1,0 +1,7 @@
+command=./tests/analyze-aggregate-routing.sh
+started_at_utc=2026-10-16T05:07:21Z
+aggregate analysis regression: ok
+preregistered evidence binding regression: ok (missing manifest digest/path cannot close gate)
+aggregate PSI gate regression: ok (per-pair threshold, condition medians, missing-data inconclusive)
+ended_at_utc=2026-10-16T05:07:23Z
+exit_code=0

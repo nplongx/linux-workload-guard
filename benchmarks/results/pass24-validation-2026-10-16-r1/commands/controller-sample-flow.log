@@ -1,0 +1,6 @@
+command=python3 tests/controller-sample-flow.py
+started_at_utc=2026-10-16T05:07:15Z
+2026-10-16 12:07:15,297 WARNING quota actuation readback mismatch unit=temporary-test.slice requested=250% observed=200.00%
+controller sample flow: ok (cgroup cpu.stat -> PSI -> guarded quota decision -> mocked exact readback; missing, malformed, reset and mismatch paths fail closed)
+ended_at_utc=2026-10-16T05:07:15Z
+exit_code=0

@@ -1,0 +1,5 @@
+command=./tests/rc-gate-preflight-safety.sh
+started_at_utc=2026-10-16T05:07:23Z
+RC gate preflight safety: ok (arguments, repository boundary, explicit OPEN/NOT RUN classification, SHA-256, no-overwrite, read-only guard)
+ended_at_utc=2026-10-16T05:07:23Z
+exit_code=0

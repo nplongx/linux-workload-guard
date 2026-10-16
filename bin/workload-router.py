@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, math, os, time, logging, subprocess, signal
+import fcntl, json, math, os, time, logging, subprocess, signal, shlex, stat
 
 SYSTEMD_PREFIX = "/sys/fs/cgroup"
 
@@ -97,9 +97,14 @@ STATE_FILE = os.getenv(
     os.path.join(os.getenv("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "linux-workload-guard", "routes.tsv"),
 )
 SCOPE_STATE_FILE = os.getenv("WORKLOAD_GUARD_SCOPE_STATE_FILE", STATE_FILE + ".scopes.tsv")
+INSTANCE_LOCK_FILE = os.getenv("WORKLOAD_GUARD_LOCK_FILE", STATE_FILE + ".lock")
+INSTANCE_LOCK_HANDLE = None
 AGGREGATE_SCOPE_WEIGHT = core_int_env("WORKLOAD_GUARD_AGGREGATE_SCOPE_WEIGHT", 20)
 AGGREGATE_SCOPE_DESCRIPTION = "Linux Workload Guard aggregate candidate"
 AGGREGATE_MAX_SCOPES = 64
+AGGREGATE_SCOPE_MAX_RESTORES_PER_CYCLE = 1
+SHUTDOWN_ROUTE_RESTORE_DEADLINE_SEC = 5.0
+SHUTDOWN_TOTAL_DEADLINE_SEC = 8.5
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 STOP_REQUESTED = False
@@ -171,6 +176,53 @@ def route_process_matches(route, command, starttime):
     if not route or len(route) < 6 or route[5] is None:
         return False
     return route[5] == starttime
+
+
+def acquire_instance_lock(path=None):
+    """Acquire a non-blocking lock before controller side effects.
+
+    A second manual/alternate instance could otherwise race state temp files,
+    process moves, and quota decisions despite systemd's normal singleton
+    service behavior. Lock failure is fail-closed.
+    """
+    lock_path = INSTANCE_LOCK_FILE if path is None else path
+    directory = os.path.dirname(lock_path) or "."
+    fd = None
+    handle = None
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(lock_path, flags, 0o600)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            fd = None
+            return None
+        os.fchmod(fd, 0o600)
+        handle = os.fdopen(fd, "r+")
+        fd = None  # the text handle now owns the descriptor
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            handle = None
+            return None
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"pid={os.getpid()}\n")
+        handle.flush()
+        return handle
+    except OSError:
+        if handle is not None:
+            try:
+                handle.close()
+            except OSError:
+                pass
+        elif fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        return None
 
 def cmdline(pid):
     try:
@@ -354,16 +406,18 @@ def unit_property(unit, prop):
     except (OSError, subprocess.SubprocessError):
         return None
 
-def unit_properties(units, properties):
+def unit_properties(units, properties, timeout=3.0):
     """Read selected properties for many units in one bounded systemctl call."""
     if not units:
         return {}
+    if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+        return None
     command = ["systemctl", "--user", "show", *units, "--property=Id"]
     command.extend(f"--property={prop}" for prop in properties)
     command.append("--no-pager")
     try:
         result = subprocess.run(command, check=True, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, text=True, timeout=3)
+                                stderr=subprocess.DEVNULL, text=True, timeout=min(3.0, timeout))
     except (OSError, subprocess.SubprocessError):
         return None
     parsed = {}
@@ -396,15 +450,28 @@ def unit_cpu_weight(unit):
         except (OSError, ValueError):
             return None
 
-def set_unit_cpu_weight(unit, weight, expected_cgroup=None, expected_inode=None):
+def set_unit_cpu_weight(unit, weight, expected_cgroup=None, expected_inode=None,
+                        expected_current_weight=None, timeout=3.0):
     """Set/read back a scope weight only while its systemd identity still matches."""
     if not isinstance(weight, int) or not 1 <= weight <= 10000:
         return False
-    control_group = unit_property(unit, "ControlGroup")
-    if not control_group or not unit.endswith(".scope") or not unit.startswith("lwg-workload-"):
+    if not unit.endswith(".scope") or not unit.startswith("lwg-workload-"):
         return False
-    if unit_property(unit, "Description") != AGGREGATE_SCOPE_DESCRIPTION:
+    if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
         return False
+    timeout = min(3.0, timeout)
+    initial = unit_properties([unit], ("ControlGroup", "Description", "ActiveState", "CPUWeight"), timeout=timeout)
+    properties = initial.get(unit) if initial else None
+    control_group = properties.get("ControlGroup") if properties else None
+    if not control_group or properties.get("Description") != AGGREGATE_SCOPE_DESCRIPTION:
+        return False
+    if expected_current_weight is not None:
+        try:
+            observed_before = int(properties.get("CPUWeight"))
+        except (TypeError, ValueError):
+            return False
+        if observed_before != expected_current_weight:
+            return False
     if expected_cgroup is not None:
         expected = expected_cgroup
         if expected.startswith(SYSTEMD_PREFIX):
@@ -416,15 +483,20 @@ def set_unit_cpu_weight(unit, weight, expected_cgroup=None, expected_inode=None)
                 return False
         except OSError:
             return False
-    if unit_property(unit, "ActiveState") != "active":
+    if properties.get("ActiveState") != "active":
         return False
     try:
         subprocess.run(["systemctl", "--user", "set-property", unit, f"CPUWeight={weight}"],
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return False
-    observed = unit_cpu_weight(unit)
-    if observed != weight or unit_property(unit, "ControlGroup") != control_group:
+    readback = unit_properties([unit], ("CPUWeight", "ControlGroup"), timeout=timeout)
+    readback_properties = readback.get(unit) if readback else None
+    try:
+        observed = int(readback_properties.get("CPUWeight")) if readback_properties else None
+    except (TypeError, ValueError):
+        observed = None
+    if observed != weight or not readback_properties or readback_properties.get("ControlGroup") != control_group:
         return False
     try:
         return expected_inode is None or os.stat(expected_cgroup).st_ino == expected_inode
@@ -506,17 +578,34 @@ def apply_scope_route(state, unit, candidate, route_weight=AGGREGATE_SCOPE_WEIGH
     if record["inode"] != candidate["inode"] or record["cgroup"] != candidate["path"]:
         state.pop(unit, None)
         return False, "scope-recreated"
-    if not created and unit_cpu_weight(unit) == route_weight:
+    if not created:
+        current = unit_cpu_weight(unit)
+        if current is None:
+            return False, "scope-weight-unavailable"
+        if current != record.get("route_weight", route_weight):
+            # A routed scope remains controller-owned only while its effective
+            # weight matches our last applied value. Never overwrite an
+            # external/systemd edit during the next high-demand sample.
+            record["suppressed"] = True
+            return False, "scope-weight-external-override"
         return False, "scope-already-routed"
-    if not set_unit_cpu_weight(unit, route_weight, candidate["path"], candidate["inode"]):
+    if not set_unit_cpu_weight(unit, route_weight, candidate["path"], candidate["inode"],
+                               expected_current_weight=record["original_weight"]):
         return False, "scope-weight-actuation-failed"
     return True, "aggregate-scope-weight"
 
 def reconcile_scope_routes(state, candidates, should_remain_routed,
-                           route_weight=AGGREGATE_SCOPE_WEIGHT):
-    """Restore only our own unchanged scope weights; never overwrite external edits."""
+                           route_weight=AGGREGATE_SCOPE_WEIGHT, deadline=None):
+    """Restore only our own unchanged weights with bounded batched readback.
+
+    Query all current CPUWeight values in one bounded systemd round trip rather
+    than serializing one ``systemctl show`` per tracked scope. At most one
+    restore is attempted per poll cycle, so a degraded user manager cannot turn
+    a 64-scope reconciliation into minutes of controller starvation.
+    """
     changed = False
     candidate_names = set(candidates)
+    eligible_units = []
     for unit, record in list(state.items()):
         candidate = candidates.get(unit)
         if candidate is None:
@@ -529,10 +618,36 @@ def reconcile_scope_routes(state, candidates, should_remain_routed,
             state.pop(unit, None)
             changed = True
             continue
-        current = unit_cpu_weight(unit)
-        if current is None:
-            continue
         if record.get("suppressed"):
+            continue
+        eligible_units.append(unit)
+
+    if not eligible_units:
+        return changed
+    timeout = 3.0
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.25:
+            logging.warning("aggregate scope reconciliation skipped: shutdown deadline reached; retaining journal")
+            return False
+        # Leave enough deadline for the bounded precheck, set-property, and
+        # effective readback in the one permitted restoration attempt.
+        timeout = min(timeout, remaining / 4.0)
+    properties = unit_properties(eligible_units, ("CPUWeight",), timeout=timeout)
+    if properties is None:
+        logging.debug("aggregate scope reconciliation deferred: batched systemd properties unavailable")
+        return changed
+
+    restore_attempts = 0
+    for unit in eligible_units:
+        record = state.get(unit)
+        candidate = candidates.get(unit)
+        observed = properties.get(unit)
+        try:
+            current = int(observed.get("CPUWeight")) if observed else None
+        except (TypeError, ValueError):
+            current = None
+        if current is None or not 1 <= current <= 10000:
             continue
         if should_remain_routed and unit in candidate_names:
             if current == record.get("route_weight", route_weight):
@@ -542,7 +657,19 @@ def reconcile_scope_routes(state, candidates, should_remain_routed,
             changed = True
             continue
         if current == record.get("route_weight", route_weight):
-            if set_unit_cpu_weight(unit, record["original_weight"], candidate["path"], candidate["inode"]):
+            if restore_attempts >= AGGREGATE_SCOPE_MAX_RESTORES_PER_CYCLE:
+                continue
+            restore_attempts += 1
+            command_timeout = 3.0
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.15:
+                    logging.warning("aggregate scope restoration deferred at shutdown to preserve stop deadline")
+                    continue
+                command_timeout = min(command_timeout, remaining / 3.0)
+            if set_unit_cpu_weight(unit, record["original_weight"], candidate["path"], candidate["inode"],
+                                   expected_current_weight=record.get("route_weight", route_weight),
+                                   timeout=command_timeout):
                 logging.info("aggregate scope restored unit=%s weight=%s", unit, record["original_weight"])
                 state.pop(unit, None)
                 changed = True
@@ -555,14 +682,8 @@ def reconcile_scope_routes(state, candidates, should_remain_routed,
             changed = True
     return changed
 
-HEAVY = (
-    'npm run build','npm run test','npm run lint','pnpm build','pnpm test','pnpm lint',
-    'yarn build','yarn test','yarn lint','tsc ','vite build','webpack','esbuild','rollup',
-    'parcel build','cargo build','cargo test','cargo check','rustc ','go build','go test',
-    'make ','cmake --build','ninja ','pytest','mvn ','gradle ','gradlew ','docker build',
-    'podman build','ffmpeg ','inference','torchrun','accelerate launch'
-)
-HEAVY_NAMES = {'tsc','rustc','cargo','go','make','ninja','pytest','ffmpeg','torchrun','gradle','mvn'}
+HEAVY_NAMES = {'tsc', 'rustc', 'make', 'ninja', 'pytest', 'ffmpeg', 'torchrun', 'gradle', 'gradlew', 'mvn'}
+SHELL_NAMES = {"sh", "bash", "dash", "zsh", "fish", "ksh"}
 DEFAULT_EXCLUDE = (
     'workload-router.py', 'workload-router'
 )
@@ -575,9 +696,162 @@ def is_excluded(cmd):
     return any(x in low for x in EXCLUDE)
 
 def command_heavy(cmd):
-    low=cmd.lower()
-    base=os.path.basename(low.split()[0]) if low else ''
-    return any(x in low for x in HEAVY) or base in HEAVY_NAMES
+    """Recognize known build/inference commands from argv, not arbitrary text.
+
+    Raw substring matching can route ordinary programs whose arguments merely
+    mention e.g. "cargo test". Shell -c wrappers remain supported by parsing
+    the command string one level deep.
+    """
+    return _command_heavy(cmd, depth=0)
+
+
+def _command_heavy(cmd, depth):
+    if depth > 2 or not isinstance(cmd, str) or not cmd.strip():
+        return False
+    try:
+        argv = shlex.split(cmd, posix=True)
+    except ValueError:
+        return False
+    if not argv:
+        return False
+    base = os.path.basename(argv[0]).lower()
+    args = argv[1:]
+    if base in SHELL_NAMES:
+        for index, arg in enumerate(args):
+            if arg == "--command" or arg == "-c" or (
+                    arg.startswith("-") and not arg.startswith("--") and "c" in arg[1:]):
+                # /proc/<pid>/cmdline is NUL-joined and quotes are not
+                # preserved, so the shell command can arrive split into
+                # multiple whitespace-delimited tokens. Join its remaining
+                # argv representation before parsing the nested command.
+                nested = " ".join(args[index + 1:])
+                return bool(nested) and _command_heavy(nested, depth + 1)
+        return False
+    if base in ("npm", "pnpm", "yarn"):
+        if not args:
+            return False
+        if base == "npm":
+            return len(args) >= 2 and args[0] in ("run", "run-script") and args[1] in ("build", "test", "lint")
+        if args[0] in ("run", "run-script"):
+            return len(args) >= 2 and args[1] in ("build", "test", "lint")
+        return args[0] in ("build", "test", "lint")
+    if base == "cargo":
+        return bool(args and args[0] in ("build", "test", "check"))
+    if base == "go":
+        return bool(args and args[0] in ("build", "test"))
+    if base == "cmake":
+        return "--build" in args
+    if base in ("webpack", "esbuild", "rollup"):
+        return True
+    if base in ("vite", "parcel"):
+        return bool(args and args[0] == "build")
+    if base in ("docker", "podman"):
+        return bool(args and args[0] == "build")
+    if base == "accelerate":
+        return bool(args and args[0] == "launch")
+    if base == "inference":
+        return True
+    return base in HEAVY_NAMES
+
+
+def route_membership_action(membership):
+    """Classify route pruning without treating unreadable membership as exit."""
+    if membership in ("gone", "outside"):
+        return "prune"
+    if membership == "inside":
+        return "retain"
+    return "unknown"
+
+
+def reconcile_moved_membership(moved, routes, route_prev, recovery_hot, recovery_since, membership_reader):
+    """Prune only confirmed-gone/out-of-tree routes; preserve unknown identity.
+
+    The final cleanup runs independently of the earlier recovery loop, so it
+    must use the same tri-state semantics. Kept as a pure state transition
+    around an injected membership reader for fault-injection regression tests.
+    """
+    membership_unknown = set()
+    changed = False
+    for pid in list(moved):
+        action = route_membership_action(membership_reader(pid))
+        if action == "unknown":
+            membership_unknown.add(pid)
+            route_prev.pop(pid, None)
+            recovery_hot[pid] = 0
+            recovery_since.pop(pid, None)
+            continue
+        if action == "prune":
+            moved.discard(pid)
+            routes.pop(pid, None)
+            route_prev.pop(pid, None)
+            recovery_hot.pop(pid, None)
+            recovery_since.pop(pid, None)
+            changed = True
+    return membership_unknown, changed
+
+
+def restore_routes_on_shutdown(routes, moved, heavy_cgroup, recovery_cgroup,
+                               membership_reader=None, stat_reader=None, move_process=None,
+                               deadline=None):
+    """Return verified live routes to the quota-protected recovery slice on stop.
+
+    Graceful daemon shutdown must not strand known routed processes in the
+    standalone heavy slice after the controller stops sampling. Unknown
+    membership/readback is retained in the state file for the next start; PID
+    reuse or confirmed departure only removes stale controller state. All
+    process/cgroup operations are injectable so this path can be fault-tested
+    without moving real PIDs.
+    """
+    membership_reader = membership_reader or routed_process_membership
+    stat_reader = stat_reader or proc_stat
+    move_process = move_process or move
+    if not heavy_cgroup or not recovery_cgroup or not os.path.isdir(recovery_cgroup):
+        return False
+    changed = False
+    deadline = min(time.monotonic() + SHUTDOWN_ROUTE_RESTORE_DEADLINE_SEC,
+                   deadline if deadline is not None else float("inf"))
+    for pid, route in list(routes.items()):
+        if time.monotonic() >= deadline:
+            logging.warning("shutdown route restore deadline reached; retaining %s remaining route record(s)", len(routes))
+            break
+        membership = membership_reader(pid, heavy_cgroup)
+        if membership in ("gone", "outside"):
+            routes.pop(pid, None)
+            moved.discard(pid)
+            changed = True
+            logging.info("shutdown route state pruned pid=%s membership=%s", pid, membership)
+            continue
+        if membership != "inside":
+            logging.warning("shutdown route retained pid=%s reason=membership-unknown", pid)
+            continue
+        if not isinstance(route, (tuple, list)) or len(route) < 6 or not isinstance(route[5], int):
+            logging.warning("shutdown route retained pid=%s reason=missing-starttime", pid)
+            continue
+        expected_starttime = route[5]
+        before = stat_reader(pid)
+        if before is None:
+            logging.warning("shutdown route retained pid=%s reason=proc-stat-unavailable", pid)
+            continue
+        if before[3] != expected_starttime:
+            routes.pop(pid, None)
+            moved.discard(pid)
+            changed = True
+            logging.info("shutdown stale route pruned pid=%s reason=pid-reused", pid)
+            continue
+        if not move_process(pid, recovery_cgroup, "shutdown-recovery"):
+            logging.warning("shutdown route retained pid=%s reason=recovery-move-failed", pid)
+            continue
+        after = stat_reader(pid)
+        after_membership = membership_reader(pid, recovery_cgroup)
+        if (after is None or after[3] != expected_starttime or after_membership != "inside"):
+            logging.warning("shutdown route retained pid=%s reason=recovery-readback-invalid membership=%s",
+                            pid, after_membership)
+            continue
+        routes.pop(pid, None)
+        moved.discard(pid)
+        changed = True
+        logging.info("shutdown route recovered pid=%s target=%s", pid, recovery_cgroup)
+    return changed
 
 def command_class(cmd):
     parts = cmd.lower().split()
@@ -1286,7 +1560,11 @@ def load_state():
     return routes
 
 def main():
-    global SHADOW_ENABLED, QUOTA_DYNAMIC, QUOTA_AIMD_SHADOW
+    global SHADOW_ENABLED, QUOTA_DYNAMIC, QUOTA_AIMD_SHADOW, INSTANCE_LOCK_HANDLE
+    INSTANCE_LOCK_HANDLE = acquire_instance_lock()
+    if INSTANCE_LOCK_HANDLE is None:
+        logging.error("routing disabled: another controller instance holds state lock (%s)", INSTANCE_LOCK_FILE)
+        return
     scope_route_state = load_scope_state()
     routing_error = routing_config_error()
     if routing_error:
@@ -1295,6 +1573,8 @@ def main():
         if not SCOPE_DISCOVERY_ERROR and reconcile_scope_routes(scope_route_state, candidates, False):
             write_scope_state(scope_route_state)
         logging.error("routing disabled due to invalid configuration: %s", routing_error)
+        INSTANCE_LOCK_HANDLE.close()
+        INSTANCE_LOCK_HANDLE = None
         return
     prev={}
     hot={}
@@ -1528,6 +1808,7 @@ def main():
                                 logging.info('route decision=accepted pid=%s cpu=%.1f%% reason=%s threshold=%.1f%% sustained_samples=%s cmd=%s',
                                              pid, cpu, reason, CPU_THRESHOLD, hot.get(pid, 0), cmd[:180])
             current_route_cpu = {}
+            membership_unknown = set()
             for pid in list(routes):
                 membership = routed_process_membership(pid, heavy_cgroup)
                 if membership in ("gone", "outside"):
@@ -1543,6 +1824,7 @@ def main():
                     route_prev.pop(pid, None)
                     recovery_hot[pid] = 0
                     recovery_since.pop(pid, None)
+                    membership_unknown.add(pid)
                     continue
                 process_stat = proc_stat(pid)
                 if process_stat is None:
@@ -1729,11 +2011,12 @@ def main():
             if pid not in protected_pids: hot.pop(pid,None)
         for pid in list(shadow_policy):
             if pid not in alive: shadow_policy.pop(pid, None)
-        for pid in list(moved):
-            if not os.path.exists(f"/proc/{pid}") or not in_cgroup_tree(pid, heavy_cgroup):
-                moved.discard(pid)
-                routes.pop(pid, None)
-                state_dirty = True
+        membership_unknown_after_cleanup, membership_changed = reconcile_moved_membership(
+            moved, routes, route_prev, recovery_hot, recovery_since,
+            lambda pid: routed_process_membership(pid, heavy_cgroup),
+        )
+        membership_unknown.update(membership_unknown_after_cleanup)
+        state_dirty = state_dirty or membership_changed
         for pid in list(routes):
             if pid not in moved:
                 routes.pop(pid, None)
@@ -1741,6 +2024,10 @@ def main():
                 recovery_hot.pop(pid, None)
                 recovery_since.pop(pid, None)
                 state_dirty = True
+            elif pid in membership_unknown:
+                # Resume from a fresh baseline after a later valid membership
+                # sample; a transient gap is never interpreted as idleness.
+                route_prev.pop(pid, None)
             else:
                 process_stat = proc_stat(pid)
                 if process_stat is not None and process_stat[3] == routes[pid][5]:
@@ -1784,13 +2071,37 @@ def main():
         while not STOP_REQUESTED and time.monotonic() < sleep_until:
             time.sleep(min(0.25, max(0.0, sleep_until - time.monotonic())))
 
-    # A normal systemd stop restores only weights this controller previously
-    # changed and only for the same live cgroup inode. On SIGKILL, the persisted
-    # journal is reconciled by the next service start.
-    parent = user_cgroup(PARENT_UNIT)
-    candidates = workload_scope_candidates(parent, scope_route_state.keys()) if parent else {}
-    if not SCOPE_DISCOVERY_ERROR and reconcile_scope_routes(scope_route_state, candidates, False):
-        write_scope_state(scope_route_state)
+    # A graceful stop returns verified PID routes to the protected recovery
+    # child, whose CPU allocation is bounded by the protected parent. Query all
+    # three units together to keep this path within systemd's stop deadline.
+    # Failed/unknown process checks remain persisted for the next start; SIGKILL
+    # cannot promise immediate cleanup, so the route file remains the journal.
+    shutdown_deadline = time.monotonic() + SHUTDOWN_TOTAL_DEADLINE_SEC
+    shutdown_units = unit_properties((PARENT_UNIT, HEAVY_UNIT, RECOVERY_UNIT), ("ControlGroup",), timeout=3.0)
+    def shutdown_cgroup(unit):
+        record = shutdown_units.get(unit) if shutdown_units else None
+        value = record.get("ControlGroup") if record else None
+        path = SYSTEMD_PREFIX + value if value and value.startswith("/") else None
+        return path if path and os.path.isdir(path) else None
+    parent = shutdown_cgroup(PARENT_UNIT)
+    heavy_cgroup = shutdown_cgroup(HEAVY_UNIT)
+    recovery_cgroup = shutdown_cgroup(RECOVERY_UNIT)
+    if routes and heavy_cgroup and recovery_cgroup:
+        if restore_routes_on_shutdown(routes, moved, heavy_cgroup, recovery_cgroup,
+                                      deadline=shutdown_deadline):
+            write_state(routes)
+    elif routes:
+        logging.error("shutdown could not verify workload cgroups; retaining %s routed process record(s)", len(routes))
+    if parent and scope_route_state and time.monotonic() + 3.25 < shutdown_deadline:
+        candidates = workload_scope_candidates(parent, scope_route_state.keys())
+        if not SCOPE_DISCOVERY_ERROR and reconcile_scope_routes(
+                scope_route_state, candidates, False, deadline=shutdown_deadline):
+            write_scope_state(scope_route_state)
+    elif parent and scope_route_state:
+        logging.warning("shutdown deadline leaves %s aggregate scope record(s) for next-start reconciliation",
+                        len(scope_route_state))
+    elif scope_route_state:
+        logging.error("shutdown could not verify protected parent cgroup; retaining %s aggregate scope record(s)", len(scope_route_state))
     logging.info("shutdown complete; aggregate scope routes reconciled")
 
 if __name__=='__main__': main()

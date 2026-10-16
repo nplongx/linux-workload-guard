@@ -1,0 +1,11 @@
+command=./tests/performance-review.sh
+started_at_utc=2026-10-16T05:07:15Z
+performance reviewer rejects invalid limits and detects PSI confounding / unordered evidence
+/tmp/tmp.p7lSLCsXIk/prereg-accepted.tsv
+/tmp/tmp.p7lSLCsXIk/prereg-tampered-run.tsv
+/tmp/tmp.p7lSLCsXIk/tampered-evidence.tsv
+/tmp/tmp.p7lSLCsXIk/duplicate-env-key.tsv
+/tmp/tmp.p7lSLCsXIk/unsealed-pass.tsv
+performance review tests: ok (status/PSI gates, preregistration binding, duplicate-key rejection, create-only SHA-256 integrity and missing/tampered-evidence fail-closed behavior)
+ended_at_utc=2026-10-16T05:07:21Z
+exit_code=0

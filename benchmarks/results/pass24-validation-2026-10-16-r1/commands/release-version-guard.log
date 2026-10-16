@@ -1,0 +1,5 @@
+command=bash -lc set\ -eu\;\ test\ \"\$\(cat\ VERSION\)\"\ =\ \"0.6.5-rc.1\"\;\ test\ \"\$\(git\ tag\ --list\ v1.0.0\)\"\ =\ \"\"\;\ \!\ git\ diff\ --name-status\ HEAD\ \|\ grep\ -q\ \"\^D\[\[:space:\]\]\"\;\ echo\ \"version\ unchanged\;\ no\ v1.0.0\ tag\;\ no\ tracked\ deletion\"
+started_at_utc=2026-10-16T05:08:02Z
+version unchanged; no v1.0.0 tag; no tracked deletion
+ended_at_utc=2026-10-16T05:08:02Z
+exit_code=0

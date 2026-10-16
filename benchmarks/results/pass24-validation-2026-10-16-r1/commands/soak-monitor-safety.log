@@ -1,0 +1,5 @@
+command=./tests/soak-monitor.sh
+started_at_utc=2026-10-16T05:07:29Z
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)
+ended_at_utc=2026-10-16T05:07:59Z
+exit_code=0

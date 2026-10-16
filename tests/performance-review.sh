@@ -37,7 +37,11 @@ with result.open('w',newline='') as out, result.with_suffix('.samples.tsv').open
     samples.writerow({'mode':mode,'rep':rep,'relative_s':f'{i*0.02:.6f}',
       'wakeup_lateness_ms':'0.1','work_duration_ms':'0.2'})
 PY
+printf 'fixture router log\n' > "$TMP/$name.router.log"
+printf 'mode\trep\telapsed_s\tcgroup_kind\thost_psi_some_avg10\n' > "$TMP/$name.telemetry.tsv"
+printf 'mode\trep\tworker\telapsed_s\tcounter\tmetric_kind\n' > "$TMP/$name.throughput.tsv"
   printf 'result_status=%s\nworkers=1\nworkload_kind=synthetic\ngit_revision=fixture\nhost=test-host\npython=python-test\ncpu_model=test-cpu\nlogical_cpus=8\nsystemd=systemd-test\ncgroup_mode=v2\ncgroup_controllers=cpu\nrepetitions=5\nduration_seconds=30\nparent_cpu_quota=100-percent\n' "$status" > "$TMP/$name.environment.txt"
+  PYTHONPATH="$ROOT/benchmarks" python3 -c 'import sys; from evidence_integrity import write_manifest; write_manifest(sys.argv[1])' "$result"
   printf '%s\n' "$result"
 }
 
@@ -175,9 +179,11 @@ PY
 # End-to-end status classification with a fully shaped interval telemetry
 # fixture: a quiet run may PASS; the same metrics with PSI above the predeclared
 # 5% noise limit must remain CONFOUNDED_INCONCLUSIVE, not PASS or causal FAIL.
-python3 - "$TMP" <<'PY'
+python3 - "$TMP" "$ROOT" <<'PY'
 import csv, pathlib, sys
 root=pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(pathlib.Path(sys.argv[2])/'benchmarks'))
+from evidence_integrity import write_manifest
 summary_fields=['mode','rep','samples','elapsed_s','routed_at_s','workers_in_heavy','worker_count','trial_valid','validity_reason',
  'all_mean_ms','all_p50_ms','all_p95_ms','all_p99_ms','all_max_ms','work_p95_ms','steady_n','steady_mean_ms',
  'steady_p50_ms','steady_p95_ms','steady_p99_ms','steady_max_ms','steady_work_p95_ms','worker_iterations_per_sec','worker_throughput_per_sec',
@@ -235,6 +241,8 @@ for name, psi in [('quiet-telemetry',1.0),('noisy-telemetry',27.0)]:
         'repetitions=5','duration_seconds=30','parent_cpu_quota=100-percent',f'interval_telemetry={telemetry}; test fixture',
         f'throughput_raw={throughput}; test fixture',
         'aggregate_routing=CPUWeight=20 per sample','']))
+    result.with_suffix('.router.log').write_text('fixture router log\n')
+    write_manifest(result)
 PY
 quiet="$TMP/quiet-telemetry.tsv"
 python3 "$REVIEW" "$quiet" > "$TMP/quiet-telemetry.out"
@@ -246,6 +254,8 @@ grep -q '^acceptance_status=PASS$' "$TMP/quiet-telemetry.out"
 python3 - "$TMP" "$ROOT/benchmarks/preregister_abba.py" <<'PY'
 import csv, importlib.util, pathlib, shutil, sys
 root=pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(pathlib.Path(sys.argv[2]).parent))
+from evidence_integrity import write_manifest
 spec=importlib.util.spec_from_file_location('preregister_abba', pathlib.Path(sys.argv[2]))
 module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 source={'revision':'a'*40,'tracked_dirty':False,'tracked_diff_sha256':'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
@@ -255,7 +265,7 @@ payload=module.protocol_payload('host-fixture','operator-fixture','terminal-buil
 sealed=root/'prereg-sealed'; digest=module.write_sealed_preregistration(sealed,payload)
 (root/'preregistration.sha256').write_text(digest+'\n')
 def clone_result(prefix):
-    for suffix in ('.tsv','.samples.tsv','.telemetry.tsv','.throughput.tsv','.environment.txt'):
+    for suffix in ('.tsv','.samples.tsv','.telemetry.tsv','.throughput.tsv','.environment.txt','.router.log'):
         source_path=root/('quiet-telemetry'+suffix)
         target_path=root/(prefix+suffix)
         shutil.copyfile(source_path,target_path)
@@ -273,6 +283,7 @@ with (root/'prereg-accepted.environment.txt').open('a') as stream:
         'preregistration_block=A','preregistration_cpu_weight=20',
         'preregistration_source_revision='+'a'*40,'preregistration_host=test-host',''
     ]))
+write_manifest(accepted)
 tampered=root/'prereg-tampered'; shutil.copytree(sealed,tampered)
 protocol=tampered/'protocol.json'; protocol.chmod(0o644)
 protocol.write_text(protocol.read_text().replace('"minimum_median_paired_throughput_ratio": 0.9',
@@ -287,6 +298,7 @@ text += '\n'.join([
     'preregistration_source_revision='+'a'*40,'preregistration_host=test-host',''
 ])
 env_path.write_text(text)
+write_manifest(bad)
 print(accepted)
 print(bad)
 PY
@@ -384,4 +396,69 @@ else [ "$?" -eq 2 ]; fi
 grep -q '^acceptance_status=INCOMPLETE$' "$TMP/unordered-throughput.out"
 grep -q 'throughput raw: throughput raw timestamps are not strictly increasing' "$TMP/unordered-throughput.out"
 
-printf '%s\n' 'performance review tests: ok (PASS/FAIL/INCOMPLETE/CONFOUNDED_INCONCLUSIVE/INCONCLUSIVE, legacy PSI gate, paired ratios and evidence-order guards)'
+# A checksum manifest is mandatory for a complete telemetry-backed PASS. The
+# evaluator verifies the exact run artifact set and rejects a post-seal edit.
+python3 - "$TMP" "$ROOT" <<'PY'
+import pathlib, shutil, sys
+root=pathlib.Path(sys.argv[1]); repo=pathlib.Path(sys.argv[2])
+sys.path.insert(0, str(repo/'benchmarks'))
+from evidence_integrity import write_manifest
+source=root/'quiet-telemetry.tsv'
+suffixes=('.tsv','.samples.tsv','.environment.txt','.router.log','.telemetry.tsv','.throughput.tsv')
+def clone(prefix, duplicate_manifest_key=False):
+    result=root/(prefix+'.tsv')
+    for suffix in suffixes:
+        shutil.copyfile(source.with_suffix(suffix), result.with_suffix(suffix))
+    env=result.with_suffix('.environment.txt')
+    text=env.read_text()
+    text=text.replace(str(source.with_suffix('.telemetry.tsv')), str(result.with_suffix('.telemetry.tsv')))
+    text=text.replace(str(source.with_suffix('.throughput.tsv')), str(result.with_suffix('.throughput.tsv')))
+    if duplicate_manifest_key:
+        text += 'result_status=INCOMPLETE\n'
+    env.write_text(text)
+    write_manifest(result)
+    return result
+tampered=clone('tampered-evidence')
+telemetry=tampered.with_suffix('.telemetry.tsv')
+telemetry.write_text(telemetry.read_text() + '# modified after sealing\n')
+duplicate=clone('duplicate-env-key', True)
+unsealed=clone('unsealed-pass')
+unsealed.with_suffix('.evidence.sha256').unlink()
+print(tampered)
+print(duplicate)
+print(unsealed)
+PY
+if python3 "$REVIEW" "$TMP/tampered-evidence.tsv" > "$TMP/tampered-evidence.out" 2>&1; then
+  echo 'performance reviewer accepted post-seal telemetry modification' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/tampered-evidence.out"
+grep -q 'SHA-256 mismatch: .*tampered-evidence.telemetry.tsv' "$TMP/tampered-evidence.out"
+if python3 "$REVIEW" "$TMP/duplicate-env-key.tsv" > "$TMP/duplicate-env-key.out" 2>&1; then
+  echo 'performance reviewer accepted duplicate environment manifest keys' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q 'environment manifest contains duplicate key' "$TMP/duplicate-env-key.out"
+if python3 "$REVIEW" "$TMP/unsealed-pass.tsv" > "$TMP/unsealed-pass.out" 2>&1; then
+  echo 'performance reviewer passed complete telemetry without a checksum manifest' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/unsealed-pass.out"
+grep -q 'requires a run evidence checksum manifest' "$TMP/unsealed-pass.out"
+
+# Symlinked input/report paths are not regular evidence files, even if their
+# targets exist. In particular, do not write an acceptance report through a
+# dangling output symlink.
+ln -s "$TMP/quiet-telemetry.tsv" "$TMP/result-link.tsv"
+for suffix in '.samples.tsv' '.environment.txt'; do
+  cp "$TMP/quiet-telemetry${suffix}" "$TMP/result-link${suffix}"
+done
+if python3 "$REVIEW" "$TMP/result-link.tsv" > "$TMP/result-link.out" 2>&1; then
+  echo 'performance reviewer accepted a symlinked result input' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q 'missing/unsafe' "$TMP/result-link.out"
+ln -s "$TMP/should-not-be-created.acceptance.txt" "$TMP/report-link.txt"
+if python3 "$REVIEW" "$TMP/quiet-telemetry.tsv" "$TMP/report-link.txt" > "$TMP/report-link.out" 2>&1; then
+  echo 'performance reviewer accepted a dangling report symlink' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q 'refusing to overwrite acceptance report' "$TMP/report-link.out"
+[ ! -e "$TMP/should-not-be-created.acceptance.txt" ]
+
+printf '%s\n' 'performance review tests: ok (status/PSI gates, preregistration binding, duplicate-key rejection, create-only SHA-256 integrity and missing/tampered-evidence fail-closed behavior)'

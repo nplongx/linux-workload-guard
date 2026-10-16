@@ -52,6 +52,146 @@ check(router.route_process_matches(tracked_route, "python new-image", 4567),
       "exec-style command change must not invalidate a stable PID starttime")
 check(not router.route_process_matches(tracked_route, "python worker", 4568), "PID reuse with same command must be rejected")
 check(not router.route_process_matches(tracked_route[:5] + (None,), "python worker", 4567), "legacy identity-less route must not be trusted")
+check(router.route_membership_action("gone") == "prune", "confirmed exit must prune route state")
+check(router.route_membership_action("outside") == "prune", "confirmed cgroup departure must prune route state")
+check(router.route_membership_action("inside") == "retain", "confirmed in-tree membership must retain route state")
+check(router.route_membership_action("unknown") == "unknown",
+      "final moved-route cleanup must preserve state when proc membership is unreadable")
+check(router.route_membership_action(None) == "unknown", "invalid membership must fail closed")
+pid=9876
+moved={pid}; routes={pid:tracked_route}; route_prev={pid:(4567,100,10.0)}
+recovery_hot={pid:4}; recovery_since={pid:9.0}
+unknown, changed=router.reconcile_moved_membership(
+    moved, routes, route_prev, recovery_hot, recovery_since, lambda _pid: "unknown")
+check(unknown=={pid} and not changed and pid in moved and pid in routes,
+      "fault-injected unreadable membership must preserve both moved and persisted route state")
+check(pid not in route_prev and recovery_hot[pid]==0 and pid not in recovery_since,
+      "unknown membership must reset CPU/recovery baselines instead of fabricating idle recovery")
+unknown, changed=router.reconcile_moved_membership(
+    moved, routes, route_prev, recovery_hot, recovery_since, lambda _pid: "inside")
+check(not unknown and not changed and pid in moved and pid in routes,
+      "recovered in-tree membership must preserve the existing route identity")
+unknown, changed=router.reconcile_moved_membership(
+    moved, routes, route_prev, recovery_hot, recovery_since, lambda _pid: "gone")
+check(not unknown and changed and pid not in moved and pid not in routes,
+      "confirmed process exit must prune persisted route and movement state")
+
+# Graceful interruption must not strand verified routed processes in the
+# standalone heavy slice. Use injected proc/cgroup/move adapters: no real PID
+# or systemd unit is touched by this shutdown/recovery regression.
+with tempfile.TemporaryDirectory(prefix="lwg-shutdown-route-") as tempdir:
+    heavy = os.path.join(tempdir, "heavy-workload.slice")
+    recovery = os.path.join(tempdir, "protected-workload-recovery.slice")
+    os.mkdir(heavy); os.mkdir(recovery)
+    pid = 9877
+    source_route = (80.0, "known-heavy", os.path.join(tempdir, "protected-workload.slice"),
+                    heavy, "cargo test", 5555)
+    state = {pid: source_route}; moved = {pid}
+    actual_group = {pid: heavy}
+    moves = []
+    def membership_reader(candidate_pid, target):
+        if candidate_pid not in actual_group:
+            return "gone"
+        return "inside" if actual_group[candidate_pid] == target else "outside"
+    def stat_reader(candidate_pid):
+        return (0, 100, 50, 5555) if candidate_pid in actual_group else None
+    def mover(candidate_pid, target, reason):
+        moves.append((candidate_pid, target, reason))
+        actual_group[candidate_pid] = target
+        return True
+    changed = router.restore_routes_on_shutdown(
+        state, moved, heavy, recovery, membership_reader, stat_reader, mover)
+    check(changed and not state and not moved and actual_group[pid] == recovery,
+          "graceful shutdown must return same-starttime processes to the bounded recovery cgroup and clear recovered state")
+    check(moves == [(pid, recovery, "shutdown-recovery")],
+          "shutdown recovery must use the protected recovery child, not an arbitrary old source path")
+
+    # Missing cgroup membership never triggers a speculative move or deletes
+    # the record needed for a later service start to reconcile.
+    pid_unknown = 9878
+    state_unknown = {pid_unknown: source_route}; moved_unknown = {pid_unknown}
+    unknown_moves = []
+    changed = router.restore_routes_on_shutdown(
+        state_unknown, moved_unknown, heavy, recovery,
+        lambda _pid, _target: "unknown", stat_reader,
+        lambda *args: unknown_moves.append(args) or True)
+    check(not changed and pid_unknown in state_unknown and pid_unknown in moved_unknown and not unknown_moves,
+          "unknown membership during shutdown must preserve persisted state and must not move an unverified PID")
+
+    # PID reuse must prune stale state without moving the new process instance.
+    pid_reused = 9879
+    state_reused = {pid_reused: source_route}; moved_reused = {pid_reused}
+    reused_moves = []
+    changed = router.restore_routes_on_shutdown(
+        state_reused, moved_reused, heavy, recovery,
+        lambda _pid, _target: "inside",
+        lambda _pid: (0, 100, 50, 7777),
+        lambda *args: reused_moves.append(args) or True)
+    check(changed and pid_reused not in state_reused and pid_reused not in moved_reused and not reused_moves,
+          "shutdown recovery must reject PID reuse by starttime before moving")
+
+    # A successful write isn't enough; membership and starttime readback must
+    # verify the destination before state can be dropped.
+    pid_failed_readback = 9880
+    state_bad = {pid_failed_readback: source_route}; moved_bad = {pid_failed_readback}
+    observed = {"n": 0}
+    def stale_membership(_pid, _target):
+        observed["n"] += 1
+        return "inside" if observed["n"] == 1 else "unknown"
+    changed = router.restore_routes_on_shutdown(
+        state_bad, moved_bad, heavy, recovery, stale_membership, stat_reader,
+        lambda *_args: True)
+    check(not changed and pid_failed_readback in state_bad and pid_failed_readback in moved_bad,
+          "unconfirmed shutdown move must retain its state journal for the next start")
+
+    # The stop deadline also bounds large route sets. A slow route snapshot may
+    # restore some verified PIDs, but must leave the remaining records intact.
+    first_pid, second_pid = 9881, 9882
+    state_bounded = {first_pid: source_route, second_pid: source_route}
+    moved_bounded = {first_pid, second_pid}
+    groups_bounded = {first_pid: heavy, second_pid: heavy}
+    with patch.object(router.time, "monotonic", side_effect=[0.0, 1.0, 7.0]):
+        changed = router.restore_routes_on_shutdown(
+            state_bounded, moved_bounded, heavy, recovery,
+            lambda candidate, target: "inside" if groups_bounded.get(candidate) == target else "outside",
+            lambda candidate: (0, 100, 50, 5555),
+            lambda candidate, target, _reason: groups_bounded.__setitem__(candidate, target) is None,
+            deadline=10.0)
+    check(changed and first_pid not in state_bounded and second_pid in state_bounded and
+          second_pid in moved_bounded and groups_bounded[second_pid] == heavy,
+          "shutdown route restoration must stop at its deadline and preserve unprocessed state")
+check(not router.command_heavy("python worker.py --label 'cargo test'"),
+      "arbitrary command argument text must not classify an ordinary Python process as a build")
+check(not router.command_heavy("node app.js --description 'npm run build'"),
+      "ordinary Node.js program arguments must not trigger known-heavy routing")
+check(not router.command_heavy("python inference.py --mode inference"),
+      "a generic inference argument must not bypass CPU thresholds")
+check(router.command_heavy("/usr/bin/cargo test"), "direct cargo test invocation should remain recognized")
+check(router.command_heavy("npm run build"), "direct npm build invocation should remain recognized")
+check(router.command_heavy("bash -lc 'cargo test --workspace'"),
+      "common bash -c build invocation should remain recognized")
+check(router.command_heavy("bash -lc cargo test --workspace"),
+      "NUL-joined /proc cmdline representation of shell build invocation should remain recognized")
+with tempfile.TemporaryDirectory() as tempdir:
+    lock_path = os.path.join(tempdir, "router.lock")
+    first_lock = router.acquire_instance_lock(lock_path)
+    check(first_lock is not None, "first controller instance should acquire an unused lock")
+    check((os.stat(lock_path).st_mode & 0o777) == 0o600, "controller lock file must be owner-only")
+    check(router.acquire_instance_lock(lock_path) is None,
+          "second concurrent controller instance must fail before state/actuation operations")
+    first_lock.close()
+    released_lock = router.acquire_instance_lock(lock_path)
+    check(released_lock is not None, "lock should become available after previous owner exits")
+    released_lock.close()
+    protected_target = os.path.join(tempdir, "do-not-truncate")
+    symlink_path = os.path.join(tempdir, "router-lock-symlink")
+    with open(protected_target, "w") as stream:
+        stream.write("preserve me\n")
+    os.symlink(protected_target, symlink_path)
+    check(router.acquire_instance_lock(symlink_path) is None,
+          "controller lock acquisition must reject symlink paths")
+    with open(protected_target) as stream:
+        check(stream.read() == "preserve me\n", "refusing lock symlink must not truncate its target")
 with patch.object(router.os, "stat"), patch.object(router, "proc_cgroup", return_value=None):
     check(router.routed_process_membership(123, "/sys/fs/cgroup/protected/heavy.slice") == "unknown",
           "unreadable /proc cgroup membership must remain unknown, not look like an exited/moved process")
@@ -198,23 +338,125 @@ with tempfile.TemporaryDirectory() as tempdir:
     # A same-name cgroup recreation must drop the stale record, never write to
     # the new unit instance based only on its reusable name.
     state["lwg-workload-test-worker.scope"]["inode"] -= 1
-    with patch.object(router, "unit_cpu_weight", return_value=20), patch.object(router, "set_unit_cpu_weight") as set_weight:
+    with patch.object(router, "unit_properties", return_value={"lwg-workload-test-worker.scope": {"CPUWeight": "20"}}), patch.object(router, "set_unit_cpu_weight") as set_weight:
         changed = router.reconcile_scope_routes(state, candidates, False)
         check(changed and not state and not set_weight.called,
               "cgroup recreation must discard stale route identity without restoring the new scope")
     state = {"lwg-workload-test-worker.scope": {"cgroup": scope, "inode": candidates["lwg-workload-test-worker.scope"]["inode"],
                                                 "original_weight": 100, "route_weight": 20, "suppressed": False}}
-    with patch.object(router, "unit_cpu_weight", return_value=20), patch.object(router, "set_unit_cpu_weight", return_value=True) as set_weight:
+    with patch.object(router, "unit_properties", return_value={"lwg-workload-test-worker.scope": {"CPUWeight": "20"}}), patch.object(router, "set_unit_cpu_weight", return_value=True) as set_weight:
         changed = router.reconcile_scope_routes(state, candidates, False)
         check(changed and not state, "scope recovery must clear a controller-owned route record")
         set_weight.assert_called_once_with("lwg-workload-test-worker.scope", 100, scope,
-                                           candidates["lwg-workload-test-worker.scope"]["inode"])
+                                           candidates["lwg-workload-test-worker.scope"]["inode"],
+                                           expected_current_weight=20, timeout=3.0)
     state = {"lwg-workload-test-worker.scope": {"cgroup": scope, "inode": candidates["lwg-workload-test-worker.scope"]["inode"],
                                                 "original_weight": 100, "route_weight": 20, "suppressed": False}}
-    with patch.object(router, "unit_cpu_weight", return_value=55), patch.object(router, "set_unit_cpu_weight") as set_weight:
+    with patch.object(router, "unit_properties", return_value={"lwg-workload-test-worker.scope": {"CPUWeight": "55"}}), patch.object(router, "set_unit_cpu_weight") as set_weight:
         router.reconcile_scope_routes(state, candidates, False)
         check(state["lwg-workload-test-worker.scope"]["suppressed"] and not set_weight.called,
               "recovery must not overwrite a scope weight changed externally and must persist suppression")
+
+    # One timed-out batched systemd property query must preserve all records and
+    # make no write, not fan out into one timeout per tracked scope.
+    state = {"lwg-workload-test-worker.scope": {"cgroup": scope, "inode": candidates["lwg-workload-test-worker.scope"]["inode"],
+                                                "original_weight": 100, "route_weight": 20, "suppressed": False}}
+    with patch.object(router, "unit_properties", return_value=None) as batched, patch.object(router, "set_unit_cpu_weight") as set_weight:
+        changed = router.reconcile_scope_routes(state, candidates, False)
+        check(not changed and state and not set_weight.called and batched.call_count == 1,
+              "unavailable batched weight telemetry must defer restoration without dropping state or trying N queries")
+
+    # A large exit/recovery batch can restore only one candidate per poll so a
+    # degraded systemd manager cannot starve controller sampling for minutes.
+    multi_state = {}
+    multi_candidates = {}
+    for index in range(3):
+        unit = f"lwg-workload-batch{index}.scope"
+        path = f"{parent}/{unit}"
+        multi_state[unit] = {"cgroup": path, "inode": 100 + index,
+                             "original_weight": 100, "route_weight": 20, "suppressed": False}
+        multi_candidates[unit] = {"path": path, "inode": 100 + index, "usage_usec": 1000}
+    def batched_weights(units, requested_properties, timeout=3.0):
+        check(len(units) == 3 and requested_properties == ("CPUWeight",),
+              "scope weight reads should be a single batched systemd request")
+        check(timeout > 0, "batched systemd property reads must have a positive timeout")
+        return {unit: {"CPUWeight": "20"} for unit in units}
+    with patch.object(router, "unit_properties", side_effect=batched_weights) as batched, \
+            patch.object(router, "set_unit_cpu_weight", return_value=True) as set_weight:
+        changed = router.reconcile_scope_routes(multi_state, multi_candidates, False)
+        check(changed and batched.call_count == 1 and set_weight.call_count == 1 and len(multi_state) == 2,
+              "scope reconciliation must batch one property read and limit restoration to one actuation per cycle")
+
+with tempfile.TemporaryDirectory() as tempdir:
+    unit = "lwg-workload-weight-test.scope"
+    inode = os.stat(tempdir).st_ino
+    before = {unit: {"ControlGroup": tempdir, "Description": router.AGGREGATE_SCOPE_DESCRIPTION,
+                     "ActiveState": "active", "CPUWeight": "100"}}
+    after = {unit: {"ControlGroup": tempdir, "CPUWeight": "20"}}
+    with patch.object(router, "unit_properties", side_effect=[before, after]) as properties, \
+            patch.object(router.subprocess, "run") as set_property:
+        check(router.set_unit_cpu_weight(unit, 20, tempdir, inode),
+              "scope CPUWeight set should pass only after matching systemd readback and inode")
+        check(properties.call_count == 2 and set_property.call_count == 1,
+              "scope CPUWeight write should batch its precheck/readback instead of serial property queries")
+        set_property.assert_called_once()
+        check(set_property.call_args.kwargs.get("timeout") == 3,
+              "scope actuation subprocess must remain time bounded")
+    with patch.object(router, "unit_properties", return_value=before), \
+            patch.object(router.subprocess, "run") as set_property:
+        check(not router.set_unit_cpu_weight(unit, 20, tempdir, inode, expected_current_weight=55),
+              "changed-before-actuation CPUWeight must fail its precondition")
+        set_property.assert_not_called()
+    with patch.object(router, "unit_properties", side_effect=[before,
+            {unit: {"ControlGroup": tempdir, "CPUWeight": "21"}}]), \
+            patch.object(router.subprocess, "run"):
+        check(not router.set_unit_cpu_weight(unit, 20, tempdir, inode),
+              "mismatched scope CPUWeight readback must fail closed")
+    bad_description = {unit: {"ControlGroup": tempdir, "Description": "ordinary user workload",
+                              "ActiveState": "active", "CPUWeight": "100"}}
+    with patch.object(router, "unit_properties", return_value=bad_description), \
+            patch.object(router.subprocess, "run") as set_property:
+        check(not router.set_unit_cpu_weight(unit, 20, tempdir, inode),
+              "ordinary scopes must not receive workload-guard CPUWeight changes")
+        set_property.assert_not_called()
+
+# Existing controller-owned scope routes must never reassert a CPUWeight after
+# an operator/external unit manager has changed the effective value.
+scope_unit = "lwg-workload-external-override.scope"
+scope_candidate = {"path": "/sys/fs/cgroup/protected/lwg-workload-external-override.scope",
+                   "inode": 4242, "usage_usec": 100000}
+scope_state = {scope_unit: {"cgroup": scope_candidate["path"], "inode": 4242,
+                            "original_weight": 100, "route_weight": 20, "suppressed": False}}
+with patch.object(router, "unit_cpu_weight", return_value=55), \
+        patch.object(router, "set_unit_cpu_weight") as set_weight:
+    applied, reason = router.apply_scope_route(scope_state, scope_unit, scope_candidate)
+    check(not applied and reason == "scope-weight-external-override" and scope_state[scope_unit]["suppressed"],
+          "external CPUWeight change must suppress a previously routed scope")
+    set_weight.assert_not_called()
+scope_state[scope_unit]["suppressed"] = False
+with patch.object(router, "unit_cpu_weight", return_value=20), \
+        patch.object(router, "set_unit_cpu_weight") as set_weight:
+    applied, reason = router.apply_scope_route(scope_state, scope_unit, scope_candidate)
+    check(not applied and reason == "scope-already-routed", "unchanged route weight should be a no-op")
+    set_weight.assert_not_called()
+scope_state[scope_unit]["suppressed"] = False
+with patch.object(router, "unit_cpu_weight", return_value=None), \
+        patch.object(router, "set_unit_cpu_weight") as set_weight:
+    applied, reason = router.apply_scope_route(scope_state, scope_unit, scope_candidate)
+    check(not applied and reason == "scope-weight-unavailable" and not scope_state[scope_unit]["suppressed"],
+          "unavailable weight must defer without overwriting or falsely suppressing state")
+    set_weight.assert_not_called()
+new_scope_state = {}
+with patch.object(router, "unit_cpu_weight", return_value=100), \
+        patch.object(router, "set_unit_cpu_weight", return_value=True) as set_weight:
+    applied, reason = router.apply_scope_route(new_scope_state, scope_unit, scope_candidate)
+    check(applied and reason == "aggregate-scope-weight" and
+          new_scope_state[scope_unit]["original_weight"] == 100 and
+          new_scope_state[scope_unit]["route_weight"] == 20,
+          "new controller-owned route must retain the confirmed original weight")
+    set_weight.assert_called_once_with(scope_unit, router.AGGREGATE_SCOPE_WEIGHT,
+                                       scope_candidate["path"], scope_candidate["inode"],
+                                       expected_current_weight=100)
 
 with tempfile.TemporaryDirectory() as tempdir:
     for index in range(router.AGGREGATE_MAX_SCOPES + 1):

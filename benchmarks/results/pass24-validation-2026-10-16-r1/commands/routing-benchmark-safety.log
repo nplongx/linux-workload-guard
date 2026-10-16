@@ -1,0 +1,7 @@
+command=./tests/routing-benchmark-safety.sh
+started_at_utc=2026-10-16T05:07:23Z
+benchmark provenance dirty/untracked accounting: ok
+benchmark provenance clean revision accounting: ok
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)
+ended_at_utc=2026-10-16T05:07:24Z
+exit_code=0

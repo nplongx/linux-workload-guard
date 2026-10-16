@@ -7,12 +7,22 @@ visible but cannot contribute CPU-normalized or PSI-confound analysis.
 """
 import argparse
 import csv
+import importlib.util
 import math
 import pathlib
 import random
 import re
 import statistics
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from evidence_integrity import digest_file, manifest_path as evidence_manifest_path, verify_manifest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+_REVIEW_SPEC = importlib.util.spec_from_file_location(
+    "aggregate_recomputed_performance_review", pathlib.Path(__file__).with_name("performance-review.py"))
+_REVIEW_MODULE = importlib.util.module_from_spec(_REVIEW_SPEC)
+_REVIEW_SPEC.loader.exec_module(_REVIEW_MODULE)
 
 
 def read_tsv(path):
@@ -22,11 +32,77 @@ def read_tsv(path):
 
 def manifest_values(path):
     values = {}
-    for line in path.read_text().splitlines():
+    for line_number, line in enumerate(path.read_text().splitlines(), 1):
         if "=" in line:
             key, value = line.split("=", 1)
+            if key in values:
+                raise ValueError(f"duplicate key {key!r} in {path} at line {line_number}")
             values[key] = value
     return values
+
+
+def verify_acceptance_binding(result, manifest, acceptance_path, env, acceptance):
+    """Reject stale/copy-pasted evaluator reports for another result artifact."""
+    errors = []
+    result = pathlib.Path(result)
+    manifest = pathlib.Path(manifest)
+    expected_paths = {
+        "result_tsv": result,
+        "raw_samples_tsv": result.with_suffix(".samples.tsv"),
+        "manifest": manifest,
+    }
+    for key, expected in expected_paths.items():
+        recorded = acceptance.get(key, "").strip()
+        if not recorded:
+            errors.append(f"acceptance report missing {key}")
+            continue
+        recorded_path = pathlib.Path(recorded)
+        if not recorded_path.is_absolute():
+            recorded_path = pathlib.Path.cwd() / recorded_path
+        if recorded_path.resolve() != expected.resolve():
+            errors.append(f"acceptance report {key} does not bind to supplied result")
+    for key in ("git_revision", "host", "workload_kind", "duration_seconds", "workers"):
+        if key not in acceptance or acceptance.get(key) != env.get(key):
+            errors.append(f"acceptance report {key} does not match the current environment manifest")
+    status = acceptance.get("acceptance_status")
+    if status not in {"PASS", "FAIL", "INCOMPLETE", "CONFOUNDED_INCONCLUSIVE", "INCONCLUSIVE"}:
+        errors.append("acceptance report has missing/unknown acceptance_status")
+
+    checksum = evidence_manifest_path(result)
+    recorded_checksum_digest = acceptance.get("evidence_checksum_manifest_sha256", "unavailable")
+    preregistration_required = env.get("preregistration_required", "false").strip().lower() in ("1", "true", "yes", "on")
+    recorded_checksum_path = acceptance.get("evidence_checksum_manifest", "unavailable").strip()
+    if preregistration_required and recorded_checksum_digest in ("", "unavailable"):
+        errors.append("preregistered acceptance report is missing the per-run evidence checksum digest")
+    if preregistration_required and recorded_checksum_path in ("", "unavailable"):
+        errors.append("preregistered acceptance report is missing the per-run evidence checksum path")
+    if recorded_checksum_digest not in ("", "unavailable"):
+        if not re.fullmatch(r"[0-9a-f]{64}", recorded_checksum_digest):
+            errors.append("acceptance report has malformed evidence checksum manifest digest")
+        elif checksum.is_symlink() or not checksum.is_file():
+            errors.append("acceptance report references a missing/unsafe evidence checksum manifest")
+        else:
+            recorded_path = pathlib.Path(recorded_checksum_path)
+            if not recorded_path.is_absolute():
+                recorded_path = pathlib.Path.cwd() / recorded_path
+            if recorded_path.resolve() != checksum.resolve():
+                errors.append("acceptance report evidence checksum path does not bind to supplied result")
+            if digest_file(checksum) != recorded_checksum_digest:
+                errors.append("evidence checksum manifest digest differs from acceptance report")
+            errors.extend(verify_manifest(result))
+    elif checksum.exists() or checksum.is_symlink():
+        errors.extend(verify_manifest(result))
+
+    # An acceptance report cannot relabel PSI status independently of the
+    # underlying referenced interval telemetry. Recalculate the noise state.
+    try:
+        repetitions = int(env.get("repetitions", ""))
+        psi_status, _ = _REVIEW_MODULE.steady_host_psi_noise(env, manifest, repetitions)
+        if acceptance.get("psi_noise_status") and acceptance.get("psi_noise_status") != psi_status:
+            errors.append("acceptance report PSI classification differs from recomputed telemetry classification")
+    except (TypeError, ValueError, KeyError) as exc:
+        errors.append(f"could not recompute acceptance PSI classification: {exc}")
+    return errors
 
 
 def number(value):
@@ -200,16 +276,26 @@ def main():
     block_data = {}
     block_status = {}
     for result in args.results:
-        if not result.is_file():
-            print(f"missing result TSV: {result}", file=sys.stderr)
+        if result.is_symlink() or not result.is_file():
+            print(f"missing or unsafe result TSV: {result}", file=sys.stderr)
             return 2
         manifest = result.with_suffix(".environment.txt")
         acceptance = result.with_suffix(".acceptance.txt")
-        if not manifest.is_file() or not acceptance.is_file():
-            print(f"missing manifest/evaluator output for {result}", file=sys.stderr)
+        if (any(path.is_symlink() for path in (manifest, acceptance)) or
+                not manifest.is_file() or not acceptance.is_file()):
+            print(f"missing or unsafe manifest/evaluator output for {result}", file=sys.stderr)
             return 2
-        env = manifest_values(manifest)
-        acceptance_status = manifest_values(acceptance).get("acceptance_status", "UNKNOWN")
+        try:
+            env = manifest_values(manifest)
+            acceptance_values = manifest_values(acceptance)
+        except (OSError, ValueError, UnicodeError) as exc:
+            print(f"invalid evidence manifest/report for {result}: {exc}", file=sys.stderr)
+            return 2
+        binding_errors = verify_acceptance_binding(result, manifest, acceptance, env, acceptance_values)
+        if binding_errors:
+            print(f"invalid evaluator binding for {result}: " + "; ".join(binding_errors), file=sys.stderr)
+            return 2
+        acceptance_status = acceptance_values["acceptance_status"]
         match = re.search(r"CPUWeight=(\d+) per sample", env.get("aggregate_routing", ""))
         weight = int(match.group(1)) if match else None
         block_match = re.search(r"weight(20|80)-block([AB]\d?)", result.name)

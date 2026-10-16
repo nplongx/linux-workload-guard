@@ -1,0 +1,5 @@
+command=python3 tests/evidence-integrity.py
+started_at_utc=2026-10-16T05:07:15Z
+evidence integrity: ok (complete artifact set, create-only manifest, 0600 permissions, tamper and manifest-shape rejection)
+ended_at_utc=2026-10-16T05:07:15Z
+exit_code=0
