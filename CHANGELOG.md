@@ -4,6 +4,7 @@
 
 ### Added
 
+- Pass 30 extracts runtime evidence finalization into a create-only helper that verifies exact bundle file-set equality, SHA-256 hashes and the verification report's own PASS status; it refuses stale-path/reserved-metadata overwrite and rejects symlinked parent paths. Fixture regressions cover collision, symlink, tampering and unmanifested files; see [`docs/rc-gate-execution-pass30.md`](docs/rc-gate-execution-pass30.md).
 - Pass 29 adds a hosted runtime-Environment policy preflight requiring a read-only API credential, required reviewer with self-review disabled, and an exact `main`-only deployment policy before the self-hosted job can become eligible; it also prevents finalizer/upload from touching a pre-existing run/attempt path and validates complete ordered G6 sample traces before correlation.
 - Added deterministic runtime-Environment policy tests and G6 trace-order/schema regressions; see [`docs/rc-gate-execution-pass29.md`](docs/rc-gate-execution-pass29.md).
 - Added the Pass 27 [operational G1–G7 release-gate execution plan](docs/rc-gate-execution-pass27.md), with exact entry points, sealed ABBA commands, inputs/outputs, thresholds, fail-closed classifications, independent review and CI-only evidence exclusions.

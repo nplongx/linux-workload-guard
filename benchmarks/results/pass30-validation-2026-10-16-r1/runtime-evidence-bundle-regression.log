@@ -1,0 +1,3 @@
+Finalizer refused to touch/upload a run path because unique-directory preparation did not succeed.
+Runtime evidence finalizer refused to overwrite reserved path: provenance-and-status.txt
+runtime evidence bundle regressions: ok (collision no-touch, reserved-path no-overwrite, exact file set, tamper, symlink fail-closed)

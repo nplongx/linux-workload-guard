@@ -61,6 +61,8 @@ jobs:
         id: prepare
         run: |
           set -eu
+          test -d benchmarks && test ! -L benchmarks
+          test -d benchmarks/results && test ! -L benchmarks/results
           test ! -e "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
           test ! -L "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
           mkdir -m 700 "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
@@ -113,46 +115,11 @@ jobs:
           PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
           CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
           ROUTING_OUTCOME: ${{ steps.routing.outcome }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_REF: ${{ github.ref }}
         run: |
-          set -eu
-          out="$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
-          if [ "${PREPARE_OUTCOME:-}" != success ]; then
-            echo 'Finalizer refused to touch/upload a run path because unique-directory preparation did not succeed.' >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          test -d "$out" && test ! -L "$out"
-          {
-            printf 'recorded_at=%s\n' "$(date --iso-8601=seconds)"
-            printf 'workflow_run_id=%s\n' '${{ github.run_id }}'
-            printf 'workflow_run_attempt=%s\n' '${{ github.run_attempt }}'
-            printf 'source_revision=%s\n' "$(git rev-parse HEAD)"
-            printf 'ref=%s\n' '${{ github.ref }}'
-            printf 'preflight_step_outcome=%s\n' "${PREFLIGHT_OUTCOME:-unknown}"
-            printf 'controller_step_outcome=%s\n' "${CONTROLLER_OUTCOME:-unknown}"
-            printf 'routing_step_outcome=%s\n' "${ROUTING_OUTCOME:-unknown}"
-            printf 'host=%s\n' "$(hostname)"
-            printf 'kernel=%s\n' "$(uname -srmo)"
-            grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release || true
-            printf 'cgroup_mode=%s\n' "$(stat -fc %T /sys/fs/cgroup 2>/dev/null || echo unavailable)"
-            printf 'release_gate_decision=OPEN_PENDING_INDEPENDENT_REVIEW_AND_EXTERNAL_DIGEST_RETENTION'
-          } > "$out/provenance-and-status.txt"
-          (
-            cd "$out"
-            unsafe_entry=$(find . -mindepth 1 ! -type d ! -type f -print -quit)
-            if [ -n "$unsafe_entry" ]; then
-              printf 'verification_status=FAIL\nunsafe evidence entry (symlink or non-regular file): %s\n' "$unsafe_entry" > manifest-verification.txt
-              exit 1
-            fi
-            find . -type f ! -name SHA256SUMS.txt ! -name manifest-verification.txt ! -name manifest-digest.txt \
-              ! -name .manifest-inputs.tmp ! -name .manifest-sorted.tmp -print0 > .manifest-inputs.tmp
-            sort -z .manifest-inputs.tmp > .manifest-sorted.tmp
-            xargs -0 -r sha256sum < .manifest-sorted.tmp > SHA256SUMS.txt
-            rm -f .manifest-inputs.tmp .manifest-sorted.tmp
-            sha256sum -c SHA256SUMS.txt > manifest-verification.txt
-            sha256sum SHA256SUMS.txt > manifest-digest.txt
-          )
-          printf 'Runtime evidence manifest digest (record separately for review):\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$out/manifest-digest.txt" >> "$GITHUB_STEP_SUMMARY"
+          python3 benchmarks/runtime-evidence-bundle.py finalize "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
       - name: Upload runtime evidence (including failures)
         if: ${{ always() && steps.prepare.outcome == 'success' }}
         uses: actions/upload-artifact@v4

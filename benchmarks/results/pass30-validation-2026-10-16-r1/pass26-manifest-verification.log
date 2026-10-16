@@ -1,0 +1,17 @@
+./changed-source-doc-hashes.txt: OK
+./command-status.tsv: OK
+./controller-skip-safety.log: OK
+./evidence-classification.txt: OK
+./full-test-suite.log: OK
+./gate-matrix.tsv: OK
+./preflight-safety.log: OK
+./provenance.txt: OK
+./python-compile.log: OK
+./repository-status.txt: OK
+./runtime-workflow-safety.log: OK
+./shell-syntax.log: OK
+./soak-collector-regressions.log: OK
+./summary.txt: OK
+./tracked-diff-stat.txt: OK
+./whitespace-check.log: OK
+./yaml-parse.log: OK

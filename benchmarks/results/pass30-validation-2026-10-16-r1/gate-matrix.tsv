@@ -1,0 +1,9 @@
+gate	status	missing_acceptance_evidence
+G1	OPEN	Approved Ubuntu 22.04 runner, delegated cpu.stat progress and exact effective quota readback, independent review
+G2	OPEN	Approved controller/routing integration on dedicated runner, all cleanup verified, independent review
+G3	OPEN	Sealed protocol and actual independent-host A/B/B2/A2 execution with five valid pairs per block, reviewer validation
+G4	OPEN	All preregistered throughput/latency/work/PSI thresholds pass on valid raw evidence; independent recomputation
+G5	OPEN	Approved disposable-host rollback, exact config/mode restore, service health and effective quota readback
+G6	OPEN	Natural some avg10 >=40% event with exact controller decision and old/new effective quota readbacks; independent review
+G7	OPEN	Uninterrupted >=86400s (target 259200s), phase logs, telemetry/journal, hashes and independent human review
+release	NO-GO	All seven mandatory gates remain OPEN

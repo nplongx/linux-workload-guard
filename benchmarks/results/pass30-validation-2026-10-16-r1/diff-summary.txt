@@ -1,0 +1,23 @@
+ .github/workflows/approved-controller-runtime.yml |  45 +---
+ CHANGELOG.md                                      |   1 +
+ README.md                                         |   2 +-
+ ROADMAP.md                                        |   8 +
+ benchmarks/runtime-evidence-bundle.py             | 285 ++++++++++++++++++++++
+ docs/rc-gate-execution-pass30.md                  |  22 ++
+ test.sh                                           |   3 +
+ tests/ci-runtime-gate-safety.sh                   |  19 +-
+ tests/runtime-evidence-bundle.py                  |  87 +++++++
+ 9 files changed, 424 insertions(+), 48 deletions(-)
+
+Implementation paths:
+.github/workflows/approved-controller-runtime.yml
+CHANGELOG.md
+README.md
+ROADMAP.md
+benchmarks/runtime-evidence-bundle.py
+docs/rc-gate-execution-pass30.md
+test.sh
+tests/ci-runtime-gate-safety.sh
+tests/runtime-evidence-bundle.py
+
+Historical artifacts touched: no
