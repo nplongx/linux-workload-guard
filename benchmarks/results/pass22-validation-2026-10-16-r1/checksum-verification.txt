@@ -1,12 +1,16 @@
+./ci-safety-followup.patch.gz: OK
 ./commands.txt: OK
 ./environment.txt: OK
 ./evidence-classification.tsv: OK
 ./gates.tsv: OK
 ./logs/aggregate-evidence-regression.log: OK
 ./logs/bash-syntax.log: OK
+./logs/ci-runtime-gate-safety.log: OK
 ./logs/controller-hardening-final.log: OK
 ./logs/controller-hardening.log: OK
 ./logs/full-test-suite.log: OK
+./logs/hosted-ci-pass22-ubuntu22.log.gz: OK
+./logs/hosted-ci-pass22-ubuntu24.log.gz: OK
 ./logs/install-uninstall-isolated.log: OK
 ./logs/python-compileall.log: OK
 ./logs/python-explicit-compile.log: OK

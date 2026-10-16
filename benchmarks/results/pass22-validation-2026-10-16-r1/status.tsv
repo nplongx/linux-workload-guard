@@ -12,3 +12,5 @@ telemetry-parser	0	python3 tests/routing-telemetry.py
 aggregate-evidence-regression	0	./tests/analyze-aggregate-routing.sh
 whitespace-diff	0	git diff --check
 controller-hardening-final	0	python3 tests/controller-hardening.py (after final controller diff)
+ci-runtime-gate-safety	0	./tests/ci-runtime-gate-safety.sh
+shell-syntax-followup	0	sh -n tests/ci-runtime-gate-safety.sh test.sh

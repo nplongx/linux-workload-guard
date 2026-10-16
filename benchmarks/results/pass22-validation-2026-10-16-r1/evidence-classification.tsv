@@ -4,3 +4,5 @@ HISTORICAL	Pass 20/21 bundles and 254 prior untracked artifact entries were pres
 SIMULATION	Deterministic/mocked regression cases only; not runtime quota/PSI/rollback acceptance
 LOCAL_ISOLATED_RUNTIME_TEST	Strict controller-integration command returned 0 and exercised a temporary user-slice controller with synthetic CPU workers and quota transitions; not approved-host or external release-gate evidence
 SKIPPED_OR_NOT_RUN	Independent-host ABBA, dedicated rollback, natural production PSI crossing, and 24/72h soak
+HOSTED_CI_INITIAL_COMMIT	Run 38841956731: Ubuntu 22.04 runtime gate SKIP/OPEN; Ubuntu 24.04 temporary-slice integration completed; workflow cancelled after requested safety stop; not a clean overall CI pass
+CI_SAFETY_REGRESSION	New tests/ci-runtime-gate-safety.sh passes and guards future generic hosted runs from quota actuation

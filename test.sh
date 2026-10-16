@@ -13,7 +13,7 @@ python3 -m py_compile "$ROOT/benchmarks/controller-replay.py"
 python3 -m py_compile "$ROOT/benchmarks/quota-pressure-replay.py"
 python3 -m py_compile "$ROOT/tests/controller-hardening.py"
 python3 "$ROOT/tests/controller-hardening.py"
-sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/controller-integration-safety.sh" "$ROOT/tests/aggregate-scope-integration.sh" "$ROOT/tests/recovery-unit.sh" "$ROOT/tests/soak-monitor.sh" "$ROOT/tests/routing-benchmark-safety.sh" "$ROOT/tests/quota-benchmark-safety.sh" "$ROOT/tests/live-psi-observe-safety.sh" "$ROOT/tests/rc-gate-preflight-safety.sh" "$ROOT/tests/performance-review.sh" "$ROOT/tests/analyze-aggregate-routing.sh" "$ROOT/tests/run-workload-scope.sh" "$ROOT/benchmarks/soak-monitor.sh" "$ROOT/benchmarks/rc-gate-preflight.sh"
+sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/controller-integration-safety.sh" "$ROOT/tests/ci-runtime-gate-safety.sh" "$ROOT/tests/aggregate-scope-integration.sh" "$ROOT/tests/recovery-unit.sh" "$ROOT/tests/soak-monitor.sh" "$ROOT/tests/routing-benchmark-safety.sh" "$ROOT/tests/quota-benchmark-safety.sh" "$ROOT/tests/live-psi-observe-safety.sh" "$ROOT/tests/rc-gate-preflight-safety.sh" "$ROOT/tests/performance-review.sh" "$ROOT/tests/analyze-aggregate-routing.sh" "$ROOT/tests/run-workload-scope.sh" "$ROOT/benchmarks/soak-monitor.sh" "$ROOT/benchmarks/rc-gate-preflight.sh"
 bash -n "$ROOT/benchmarks/quota-benchmark.sh" "$ROOT/benchmarks/routing-contention-isolated.sh"
 if grep -Eq 'systemctl --user (start|stop|restart|try-restart|reload|set-property) workload-router\.service|systemctl --user set-property (protected-workload\.slice|heavy-workload\.slice)' \
   "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/aggregate-scope-integration.sh"; then
@@ -27,6 +27,7 @@ if grep -Eq 'WORKLOAD_GUARD_PARENT_UNIT=protected-workload\.slice|WORKLOAD_GUARD
 fi
 "$ROOT/tests/quota-benchmark-safety.sh"
 "$ROOT/tests/controller-integration-safety.sh"
+"$ROOT/tests/ci-runtime-gate-safety.sh"
 "$ROOT/tests/routing-benchmark-safety.sh"
 "$ROOT/tests/soak-monitor.sh"
 "$ROOT/tests/live-psi-observe-safety.sh"

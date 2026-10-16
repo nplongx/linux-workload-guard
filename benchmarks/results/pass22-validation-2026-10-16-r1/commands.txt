@@ -50,3 +50,11 @@ log=benchmarks/results/pass22-validation-2026-10-16-r1/logs/whitespace-diff.log
 [post-validation-runtime-audit] read-only systemctl observations
 exit_status=0
 production router observed active/running, MainPID=358400, NRestarts=0; production heavy quota property=1s. Several lwg-prefixed user slices remain active; provenance is uncertain and no cleanup action was taken.
+
+[ci-runtime-gate-safety] ./tests/ci-runtime-gate-safety.sh
+exit_status=0
+This regression verifies generic hosted matrix jobs only report SKIP/OPEN and live actuation requires two repository approval variables plus the dedicated self-hosted runner label.
+
+[hosted-ci-pass22] gh run view 38841956731 --log --job 116783849245; gh run view 38841956731 --log --job 116783849362
+run_conclusion=cancelled after the Ubuntu 24.04 controller integration step and remaining tests had already completed successfully; the Ubuntu 22.04 controller integration explicitly skipped for missing nr_periods/nr_throttled.
+The Ubuntu 24.04 integration performed temporary-slice quota transitions and synthetic CPU worker activity; this was not approved external gate evidence and is disclosed in summary.txt.

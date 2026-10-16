@@ -19,6 +19,8 @@ jobs:
         run: ./tests/soak-monitor.sh
       - name: RC gate preflight evidence safety (read-only)
         run: ./tests/rc-gate-preflight-safety.sh
+      - name: CI runtime gate safety
+        run: ./tests/ci-runtime-gate-safety.sh
       - name: Python compile checks
         run: python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py
       - name: Strict benchmark telemetry parser regressions
@@ -32,7 +34,7 @@ jobs:
         run: systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
       - name: Shell syntax
         run: |
-          sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/integration-routing.sh tests/recovery-routing.sh tests/shadow-routing.sh tests/install-uninstall.sh tests/controller-integration.sh tests/recovery-unit.sh tests/soak-monitor.sh tests/routing-benchmark-safety.sh tests/quota-benchmark-safety.sh tests/live-psi-observe-safety.sh tests/performance-review.sh benchmarks/soak-monitor.sh
+          sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/integration-routing.sh tests/recovery-routing.sh tests/shadow-routing.sh tests/install-uninstall.sh tests/controller-integration.sh tests/recovery-unit.sh tests/soak-monitor.sh tests/routing-benchmark-safety.sh tests/quota-benchmark-safety.sh tests/live-psi-observe-safety.sh tests/performance-review.sh tests/ci-runtime-gate-safety.sh benchmarks/soak-monitor.sh
           bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
       - name: Patch whitespace validation
         run: git diff --check
@@ -47,8 +49,30 @@ jobs:
       - name: Shadow routing
         run: ./tests/shadow-routing.sh
       - name: Delegated CPU runtime gate (SKIP is not PASS)
-        run: ./tests/controller-integration.sh
+        run: |
+          {
+            echo '### Delegated CPU runtime gate'
+            echo 'Status: **SKIP / OPEN** — generic hosted CI does not actuate CPU quota or generate controller-integration load.'
+            echo 'The runtime gate requires the separately approved self-hosted runner job; CI success does not close this gate.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo 'Delegated CPU runtime gate: SKIP / OPEN (no quota actuation on generic hosted CI)'
       - name: Aggregate scope integration
         run: ./tests/aggregate-scope-integration.sh
       - name: Aggregate benchmark evidence integrity regressions
         run: ./tests/analyze-aggregate-routing.sh
+
+  approved-controller-runtime:
+    # This is intentionally separate from the generic Ubuntu matrix. It runs
+    # quota actuation and bounded CPU workloads, so both explicit repository
+    # approvals and a dedicated, labelled self-hosted runner are required.
+    if: ${{ vars.RUN_APPROVED_CONTROLLER_INTEGRATION == 'true' && vars.APPROVED_CONTROLLER_RUNTIME_APPROVED == 'true' }}
+    runs-on: [self-hosted, linux, x64, lwg-approved-controller-test]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Approved isolated delegated CPU controller integration
+        run: |
+          {
+            echo '### Delegated CPU runtime gate'
+            echo 'This result is limited to the approved dedicated runner and temporary test slices; it does not close ABBA, throughput, rollback, PSI-crossing, or soak gates.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh
