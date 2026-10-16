@@ -1,0 +1,2 @@
+G6 PSI correlation regression: ok (service identity continuity, exact unit/time/pressure and quota readback binding)
+live PSI collector safety: ok (arguments/no-overwrite/symlink guard, passive-only, provenance and SHA-256 sealing, tamper detection, interruption and missing telemetry fail-closed)

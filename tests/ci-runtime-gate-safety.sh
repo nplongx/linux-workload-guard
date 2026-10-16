@@ -44,6 +44,18 @@ grep -q 'group: lwg-approved-controller-runtime' "$RUNTIME_WORKFLOW"
 grep -q 'cancel-in-progress: false' "$RUNTIME_WORKFLOW"
 grep -q 'timeout-minutes: 30' "$RUNTIME_WORKFLOW"
 grep -q 'name: approved-controller-runtime' "$RUNTIME_WORKFLOW"
+grep -q '^  policy-preflight:' "$RUNTIME_WORKFLOW"
+sed -n '/^  policy-preflight:/,/^  approved-controller-runtime:/p' "$RUNTIME_WORKFLOW" | grep -q '^    runs-on: ubuntu-latest$'
+grep -q 'needs: policy-preflight' "$RUNTIME_WORKFLOW"
+grep -q 'RUNTIME_ENVIRONMENT_POLICY_TOKEN' "$RUNTIME_WORKFLOW"
+grep -q 'verify-runtime-environment.py' "$RUNTIME_WORKFLOW"
+grep -q 'deployment-branch-policies' "$RUNTIME_WORKFLOW"
+grep -q 'PREPARE_OUTCOME:' "$RUNTIME_WORKFLOW"
+grep -q 'Finalizer refused to touch/upload a run path' "$RUNTIME_WORKFLOW"
+grep -q "steps.prepare.outcome == 'success'" "$RUNTIME_WORKFLOW"
+guard_line=$(grep -n 'Finalizer refused to touch/upload a run path' "$RUNTIME_WORKFLOW" | cut -d: -f1)
+touch_line=$(grep -n 'test -d "$out" && test ! -L "$out"' "$RUNTIME_WORKFLOW" | cut -d: -f1)
+[ "$guard_line" -lt "$touch_line" ] || { echo 'runtime finalizer must refuse failed preparation before inspecting or writing the run path' >&2; exit 1; }
 grep -q 'WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR: benchmarks/results/approved-runtime-' "$RUNTIME_WORKFLOW"
 grep -q 'Prepare unique runtime evidence directory' "$RUNTIME_WORKFLOW"
 grep -q 'Verify approved runner prerequisites' "$RUNTIME_WORKFLOW"

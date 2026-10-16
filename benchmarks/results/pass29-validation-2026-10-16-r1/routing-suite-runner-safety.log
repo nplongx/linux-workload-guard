@@ -1,0 +1,1 @@
+routing suite runner safety: ok (all suites execute after failure, per-suite logs/status, create-only outputs)

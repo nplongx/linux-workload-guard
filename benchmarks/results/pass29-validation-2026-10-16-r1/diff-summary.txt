@@ -1,0 +1,29 @@
+ .github/workflows/approved-controller-runtime.yml | 41 +++++++++++++++-
+ CHANGELOG.md                                      |  2 +
+ README.md                                         |  2 +-
+ ROADMAP.md                                        |  9 ++++
+ benchmarks/live-psi-observe.py                    | 49 +++++++++++++++++++
+ benchmarks/verify-runtime-environment.py          | 57 +++++++++++++++++++++++
+ docs/rc-gate-execution-pass27.md                  |  6 +--
+ docs/rc-gate-execution-pass29.md                  | 27 +++++++++++
+ test.sh                                           |  3 ++
+ tests/ci-runtime-gate-safety.sh                   | 12 +++++
+ tests/live-psi-observe-safety.sh                  | 21 ++++++++-
+ tests/runtime-environment-policy.py               | 31 ++++++++++++
+ 12 files changed, 252 insertions(+), 8 deletions(-)
+
+Changed tracked paths:
+.github/workflows/approved-controller-runtime.yml
+CHANGELOG.md
+README.md
+ROADMAP.md
+benchmarks/live-psi-observe.py
+benchmarks/verify-runtime-environment.py
+docs/rc-gate-execution-pass27.md
+docs/rc-gate-execution-pass29.md
+test.sh
+tests/ci-runtime-gate-safety.sh
+tests/live-psi-observe-safety.sh
+tests/runtime-environment-policy.py
+
+Historical untracked artifacts touched: no

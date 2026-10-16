@@ -101,11 +101,12 @@ grep -q '^acceptance_status=NOT_RUN$' "$TMP/symlink-entry/manifest.txt"
 # becomes a review candidate when the same heavy unit logs a nearby decision
 # whose old/new percentages match the effective quota readbacks around it.
 python3 - "$COLLECTOR" <<'PY'
-import importlib.util, pathlib, sys
+import importlib.util, pathlib, sys, datetime
 spec=importlib.util.spec_from_file_location('live_psi',sys.argv[1])
 module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 def row(stamp, psi, quota='1s', pid='123', restarts='0'):
-    return [stamp, '0.0', str(psi), '1', '1', '1', '1', '1', 'active', pid, restarts, quota]
+    mono = str(datetime.datetime.fromisoformat(stamp).timestamp())
+    return [stamp, mono, str(psi), '1', '1', '1', '1', '1', 'active', pid, restarts, quota]
 rows=[row('2026-01-01T00:00:00.000+00:00',10),
       row('2026-01-01T00:00:01.000+00:00',41),
       row('2026-01-01T00:00:03.000+00:00',10,'1.5s')]
@@ -122,6 +123,22 @@ assert any('MainPID discontinuity' in e for e in module.service_identity_errors(
 restarted=[rows[0],row('2026-01-01T00:00:01.000+00:00',41,restarts='1'),rows[2]]
 assert any('restart-counter discontinuity' in e for e in module.service_identity_errors(restarted,'123','0','123','0','1s','1.5s'))
 assert any('quota baseline' in e for e in module.service_identity_errors(rows,'123','0','123','0','infinity','1.5s'))
+assert module.sample_trace_errors(rows) == []
+assert module.sample_trace_errors([rows[1], rows[0], rows[2]])
+assert module.sample_trace_errors([rows[0], rows[0], rows[2]])
+bad_psi = [list(row) for row in rows]
+bad_psi[1][2] = 'nan'
+assert module.sample_trace_errors(bad_psi)
+bad_width = [list(row) for row in rows]
+bad_width[1].append('unexpected')
+assert module.sample_trace_errors(bad_width)
+no_timezone = [list(row) for row in rows]
+no_timezone[1][0] = '2026-01-01T00:00:01.000'
+assert module.sample_trace_errors(no_timezone)
+bad_monotonic = [list(row) for row in rows]
+bad_monotonic[1][1] = 'inf'
+assert module.sample_trace_errors(bad_monotonic)
+assert not module.correlate_crossings([rows[1], rows[0], rows[2]], decision, 1), 'out-of-order trace must not create a G6 review candidate'
 print('G6 PSI correlation regression: ok (service identity continuity, exact unit/time/pressure and quota readback binding)')
 PY
 

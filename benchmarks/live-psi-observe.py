@@ -82,12 +82,60 @@ def service_identity_errors(rows, start_pid, start_restarts, end_pid, end_restar
     return sorted(set(errors))
 
 
+def sample_trace_errors(rows):
+    """Validate the full sample sequence before it can support G6 correlation."""
+    errors = []
+    previous_wall = None
+    previous_mono = None
+    for number, columns in enumerate(rows, 1):
+        if len(columns) != 12:
+            errors.append(f"sample {number} has {len(columns)} columns; expected exactly 12")
+            continue
+        try:
+            wall = datetime.datetime.fromisoformat(columns[0].replace("Z", "+00:00"))
+            mono = float(columns[1])
+            wall_valid = wall.tzinfo is not None and wall.utcoffset() is not None
+            if not wall_valid:
+                errors.append(f"sample {number} wall timestamp has no timezone")
+            if not math.isfinite(mono) or mono < 0:
+                errors.append(f"sample {number} monotonic timestamp is invalid")
+            if wall_valid and previous_wall is not None and wall <= previous_wall:
+                errors.append("wall timestamps are duplicate or out of order")
+            if math.isfinite(mono) and mono >= 0 and previous_mono is not None and mono <= previous_mono:
+                errors.append("monotonic timestamps are duplicate or out of order")
+            if wall_valid:
+                previous_wall = wall
+            if math.isfinite(mono) and mono >= 0:
+                previous_mono = mono
+        except (ValueError, OverflowError):
+            errors.append(f"sample {number} timestamp is malformed")
+        for column in columns[2:8]:
+            try:
+                value = float(column)
+                if not math.isfinite(value) or not 0 <= value <= 100:
+                    raise ValueError
+            except ValueError:
+                errors.append(f"sample {number} contains missing or invalid PSI value")
+                break
+        if columns[8] != "active":
+            errors.append(f"sample {number} service is not active")
+        if not columns[9].isdigit() or int(columns[9]) <= 0:
+            errors.append(f"sample {number} MainPID is invalid")
+        if not columns[10].isdigit():
+            errors.append(f"sample {number} restart counter is invalid")
+        if not valid_quota_readback(columns[11]):
+            errors.append(f"sample {number} effective quota is invalid")
+    return sorted(set(errors))
+
+
 def correlate_crossings(rows, journal_text, interval, expected_unit="heavy-workload.slice"):
     """Find PSI crossings with a nearby decision and changed effective quota readback.
 
     This emits review candidates, never acceptance. Timestamp, exact unit, logged
     pressure, and before/after effective quota samples must all agree.
     """
+    if sample_trace_errors(rows):
+        return []
     parsed_samples = []
     for columns in rows:
         try:
@@ -352,6 +400,7 @@ def main():
                 crossings.append((columns[0], columns[2], columns[11]))
         except (ValueError, IndexError):
             integrity_errors.append("malformed sample row or PSI value")
+    integrity_errors.extend(sample_trace_errors([row.split("\t") for row in rows]))
     integrity_errors.extend(service_identity_errors(
         [row.split("\t") for row in rows], start_pid, start_restarts, end_pid, end_restarts,
         start_quota, end_quota

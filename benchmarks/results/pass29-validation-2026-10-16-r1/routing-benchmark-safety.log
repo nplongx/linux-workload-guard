@@ -1,0 +1,3 @@
+benchmark provenance dirty/untracked accounting: ok
+benchmark provenance clean revision accounting: ok
+routing benchmark safety: ok (minimum window, no-overwrite, executable wrapper)

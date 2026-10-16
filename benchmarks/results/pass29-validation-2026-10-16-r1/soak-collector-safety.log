@@ -1,0 +1,1 @@
+soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness, symlink/non-regular-entry rejection)

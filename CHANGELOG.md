@@ -4,6 +4,8 @@
 
 ### Added
 
+- Pass 29 adds a hosted runtime-Environment policy preflight requiring a read-only API credential, required reviewer with self-review disabled, and an exact `main`-only deployment policy before the self-hosted job can become eligible; it also prevents finalizer/upload from touching a pre-existing run/attempt path and validates complete ordered G6 sample traces before correlation.
+- Added deterministic runtime-Environment policy tests and G6 trace-order/schema regressions; see [`docs/rc-gate-execution-pass29.md`](docs/rc-gate-execution-pass29.md).
 - Added the Pass 27 [operational G1–G7 release-gate execution plan](docs/rc-gate-execution-pass27.md), with exact entry points, sealed ABBA commands, inputs/outputs, thresholds, fail-closed classifications, independent review and CI-only evidence exclusions.
 - Passive PSI and soak collectors now capture source/host provenance, seal finalized run files with SHA-256 manifests, verify the manifests, and expose the manifest digest for independent retention. Regressions cover tampering and dangling-symlink refusal.
 - Added a no-op `--help`/unexpected-argument guard to the active routing benchmark. Previously `--help` was ignored and could launch the default CPU workload; a fake-systemctl regression proves help/argument checks do not reach systemd or create results.

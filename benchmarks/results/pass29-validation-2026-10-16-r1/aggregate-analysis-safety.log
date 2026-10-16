@@ -1,0 +1,3 @@
+aggregate analysis regression: ok
+preregistered evidence binding regression: ok (missing manifest digest/path cannot close gate)
+aggregate PSI gate regression: ok (per-pair threshold, condition medians, missing-data inconclusive)
