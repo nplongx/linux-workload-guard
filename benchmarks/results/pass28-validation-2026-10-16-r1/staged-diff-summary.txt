@@ -1,0 +1,39 @@
+ .github/workflows/approved-controller-runtime.yml |  20 +--
+ CHANGELOG.md                                      |   2 +
+ README.md                                         |   2 +-
+ ROADMAP.md                                        |  10 ++
+ benchmarks/analyze-aggregate-routing.py           |  47 ++++++-
+ benchmarks/live-psi-observe.py                    | 151 ++++++++++++++++++++--
+ benchmarks/performance-review.py                  |  21 ++-
+ benchmarks/soak-monitor.sh                        |   5 +
+ docs/rc-gate-execution-pass27.md                  |  17 +--
+ test.sh                                           |   3 +-
+ tests/analyze-aggregate-routing.sh                |  14 ++
+ tests/ci-runtime-gate-safety.sh                   |  16 ++-
+ tests/live-psi-observe-safety.sh                  |  46 +++++++
+ tests/performance-review.sh                       |   9 ++
+ tests/routing-suite-runner-safety.sh              |  42 ++++++
+ tests/run-approved-routing-suites.sh              |  45 +++++++
+ tests/soak-monitor.sh                             |  11 +-
+ 17 files changed, 420 insertions(+), 41 deletions(-)
+
+Staged paths before evidence bundle:
+.github/workflows/approved-controller-runtime.yml
+CHANGELOG.md
+README.md
+ROADMAP.md
+benchmarks/analyze-aggregate-routing.py
+benchmarks/live-psi-observe.py
+benchmarks/performance-review.py
+benchmarks/soak-monitor.sh
+docs/rc-gate-execution-pass27.md
+test.sh
+tests/analyze-aggregate-routing.sh
+tests/ci-runtime-gate-safety.sh
+tests/live-psi-observe-safety.sh
+tests/performance-review.sh
+tests/routing-suite-runner-safety.sh
+tests/run-approved-routing-suites.sh
+tests/soak-monitor.sh
+
+Historical untracked path count before evidence bundle: 254

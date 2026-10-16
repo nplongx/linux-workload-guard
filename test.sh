@@ -19,7 +19,7 @@ python3 -m py_compile "$ROOT/tests/controller-sample-flow.py"
 python3 "$ROOT/tests/controller-hardening.py"
 python3 "$ROOT/tests/evidence-integrity.py"
 python3 "$ROOT/tests/controller-sample-flow.py"
-sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/controller-integration-safety.sh" "$ROOT/tests/ci-runtime-gate-safety.sh" "$ROOT/tests/preregister-abba.sh" "$ROOT/tests/aggregate-scope-integration.sh" "$ROOT/tests/recovery-unit.sh" "$ROOT/tests/soak-monitor.sh" "$ROOT/tests/routing-benchmark-safety.sh" "$ROOT/tests/quota-benchmark-safety.sh" "$ROOT/tests/live-psi-observe-safety.sh" "$ROOT/tests/rc-gate-preflight-safety.sh" "$ROOT/tests/performance-review.sh" "$ROOT/tests/analyze-aggregate-routing.sh" "$ROOT/tests/run-workload-scope.sh" "$ROOT/benchmarks/soak-monitor.sh" "$ROOT/benchmarks/rc-gate-preflight.sh"
+sh -n "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/controller-integration-safety.sh" "$ROOT/tests/ci-runtime-gate-safety.sh" "$ROOT/tests/preregister-abba.sh" "$ROOT/tests/aggregate-scope-integration.sh" "$ROOT/tests/recovery-unit.sh" "$ROOT/tests/soak-monitor.sh" "$ROOT/tests/routing-benchmark-safety.sh" "$ROOT/tests/routing-suite-runner-safety.sh" "$ROOT/tests/run-approved-routing-suites.sh" "$ROOT/tests/quota-benchmark-safety.sh" "$ROOT/tests/live-psi-observe-safety.sh" "$ROOT/tests/rc-gate-preflight-safety.sh" "$ROOT/tests/performance-review.sh" "$ROOT/tests/analyze-aggregate-routing.sh" "$ROOT/tests/run-workload-scope.sh" "$ROOT/benchmarks/soak-monitor.sh" "$ROOT/benchmarks/rc-gate-preflight.sh"
 bash -n "$ROOT/benchmarks/quota-benchmark.sh" "$ROOT/benchmarks/routing-contention-isolated.sh"
 if grep -Eq 'systemctl --user (start|stop|restart|try-restart|reload|set-property) workload-router\.service|systemctl --user set-property (protected-workload\.slice|heavy-workload\.slice)' \
   "$ROOT/tests/integration-routing.sh" "$ROOT/tests/recovery-routing.sh" "$ROOT/tests/shadow-routing.sh" "$ROOT/tests/controller-integration.sh" "$ROOT/tests/aggregate-scope-integration.sh"; then
@@ -34,6 +34,7 @@ fi
 "$ROOT/tests/quota-benchmark-safety.sh"
 "$ROOT/tests/controller-integration-safety.sh"
 "$ROOT/tests/ci-runtime-gate-safety.sh"
+"$ROOT/tests/routing-suite-runner-safety.sh"
 "$ROOT/tests/preregister-abba.sh"
 "$ROOT/tests/routing-benchmark-safety.sh"
 "$ROOT/tests/soak-monitor.sh"

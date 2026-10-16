@@ -17,6 +17,10 @@ jobs:
   approved-controller-runtime:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && vars.RUN_APPROVED_CONTROLLER_INTEGRATION == 'true' && vars.APPROVED_CONTROLLER_RUNTIME_APPROVED == 'true' }}
     runs-on: [self-hosted, linux, x64, lwg-approved-controller-test]
+    # Repository owner must configure this environment with required reviewers
+    # and main-only deployment policy before enabling the repository variables.
+    environment:
+      name: approved-controller-runtime
     timeout-minutes: 30
     env:
       WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR: benchmarks/results/approved-runtime-${{ github.run_id }}-${{ github.run_attempt }}
@@ -68,13 +72,8 @@ jobs:
       - name: Approved routing lifecycle integration
         id: routing
         run: |
-          set -o pipefail
-          {
-            ./tests/integration-routing.sh &&
-              ./tests/recovery-routing.sh &&
-              ./tests/shadow-routing.sh &&
-              ./tests/aggregate-scope-integration.sh
-          } 2>&1 | tee "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR/routing-step.log"
+          set -eu
+          ./tests/run-approved-routing-suites.sh "$WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR"
       - name: Finalize runtime evidence bundle
         if: ${{ always() }}
         env:
@@ -98,10 +97,15 @@ jobs:
             printf 'kernel=%s\n' "$(uname -srmo)"
             grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release || true
             printf 'cgroup_mode=%s\n' "$(stat -fc %T /sys/fs/cgroup 2>/dev/null || echo unavailable)"
-            printf 'release_gate_decision=OPEN_PENDING_INDEPENDENT_REVIEW'
+            printf 'release_gate_decision=OPEN_PENDING_INDEPENDENT_REVIEW_AND_EXTERNAL_DIGEST_RETENTION'
           } > "$out/provenance-and-status.txt"
           (
             cd "$out"
+            unsafe_entry=$(find . -mindepth 1 ! -type d ! -type f -print -quit)
+            if [ -n "$unsafe_entry" ]; then
+              printf 'verification_status=FAIL\nunsafe evidence entry (symlink or non-regular file): %s\n' "$unsafe_entry" > manifest-verification.txt
+              exit 1
+            fi
             find . -type f ! -name SHA256SUMS.txt ! -name manifest-verification.txt ! -name manifest-digest.txt \
               ! -name .manifest-inputs.tmp ! -name .manifest-sorted.tmp -print0 > .manifest-inputs.tmp
             sort -z .manifest-inputs.tmp > .manifest-sorted.tmp

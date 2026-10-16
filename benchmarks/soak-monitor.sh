@@ -335,6 +335,7 @@ finish() {
   manifest_rc=0
   (
     cd "$OUT" || exit 1
+    unsafe_entry=$(find . -mindepth 1 ! -type f -print -quit) || exit 1
     find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name manifest-verification.txt ! -name manifest-digest.txt \
       ! -name .manifest-inputs.tmp ! -name .manifest-sorted.tmp -printf '%f\0' > .manifest-inputs.tmp || exit 1
     sort -z .manifest-inputs.tmp > .manifest-sorted.tmp || exit 1
@@ -342,6 +343,10 @@ finish() {
     rm -f .manifest-inputs.tmp .manifest-sorted.tmp || exit 1
     sha256sum -c SHA256SUMS.txt > manifest-verification.txt || exit 2
     sha256sum SHA256SUMS.txt > manifest-digest.txt
+    if [ -n "$unsafe_entry" ]; then
+      printf 'unsafe evidence entry (symlink, directory, or non-regular file): %s\n' "$unsafe_entry" > manifest-verification.txt
+      exit 3
+    fi
   ) || manifest_rc=$?
   if [ "$manifest_rc" -eq 0 ]; then
     printf 'verification_status=PASS\n' >> "$OUT/manifest-verification.txt"

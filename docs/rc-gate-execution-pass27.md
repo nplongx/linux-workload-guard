@@ -13,7 +13,7 @@ The approved runtime workflow is **Actions → Approved controller runtime (manu
 
 It also requires a dedicated registered runner labelled `self-hosted`, `linux`, `x64`, and `lwg-approved-controller-test`. The runner must be isolated from production workloads. The job preflight rejects anything other than Ubuntu 22.04, cgroup v2 with the CPU controller, and a functioning user systemd manager. Missing prerequisites mean **OPEN / NOT RUN**; do not enable the variables merely to make the job start.
 
-Each workflow attempt writes to `benchmarks/results/approved-runtime-<run-id>-<attempt>/`. The directory is create-only. Step output is retained as `controller-step.log` and `routing-step.log`; the finalizer records run/source/host/step outcomes, writes `SHA256SUMS.txt`, verifies it, records `manifest-digest.txt`, and leaves the decision `OPEN_PENDING_INDEPENDENT_REVIEW`. The digest must also be retained in the review/ticket system independently of the artifact. Upload retention is 90 days. Workflow success does not itself close any gate.
+Each workflow attempt writes to `benchmarks/results/approved-runtime-<run-id>-<attempt>/`. The directory is create-only. Step output is retained as `controller-step.log` and `routing-step.log`; each routing suite also gets a separate log and exit-status row so an early failure cannot silently skip the remaining suites. The finalizer records run/source/host/step outcomes, rejects symlinks and special files, writes `SHA256SUMS.txt`, verifies it, records `manifest-digest.txt`, and leaves the decision `OPEN_PENDING_INDEPENDENT_REVIEW_AND_EXTERNAL_DIGEST_RETENTION`. The digest appears in the GitHub job summary but must also be retained in the review/ticket system independently of the artifact. The repository currently has no `approved-controller-runtime` Environment; before enabling either repository variable, the owner must create it with required reviewers and a `main`-only deployment branch policy. Upload retention is 90 days. Workflow success does not itself close any gate.
 
 ## Gate matrix and executable procedures
 
@@ -51,25 +51,26 @@ mkdir -m 700 "$OUT"  # create once; choose a unique path that does not exist
 BENCH_REQUIRE_PREREGISTRATION=1 BENCH_PREREGISTRATION_DIR="$PREREG" \
   BENCH_PREREGISTRATION_BLOCK=A BENCH_AGGREGATE_ROUTING=true \
   BENCH_AGGREGATE_SCOPE_WEIGHT=20 WORKLOAD_KIND=terminal-build \
-  REPS=5 DURATION=30 WORKERS=2 RESULT="$OUT/A.tsv" \
+  REPS=5 DURATION=30 WORKERS=2 RESULT="$OUT/weight20-blockA.tsv" \
   benchmarks/routing-contention-isolated.sh
 ```
 
-Repeat with `BENCH_PREREGISTRATION_BLOCK=B` and weight `80`, then `B2` and weight `80`, then `A2` and weight `20`; use unique output filenames for each. Preserve each command's full stdout/stderr and exit status. Evaluate each result with `python3 benchmarks/performance-review.py "$OUT/<BLOCK>.tsv"`; then analyze the full four-block set with:
+Repeat with `BENCH_PREREGISTRATION_BLOCK=B` and weight `80`, then `B2` and weight `80`, then `A2` and weight `20`; use the exact filename/weight pairs `weight80-blockB.tsv`, `weight80-blockB2.tsv`, and `weight20-blockA2.tsv`. The A result must be `weight20-blockA.tsv`. Preserve each command's full stdout/stderr and exit status. Evaluate each result in **release-gate mode**, which refuses absent or invalid preregistration, with `python3 benchmarks/performance-review.py --require-preregistration "$OUT/<WEIGHT-BLOCK>.tsv"`; then analyze the full four-block set with:
 
 ```sh
-python3 benchmarks/analyze-aggregate-routing.py \
+python3 benchmarks/analyze-aggregate-routing.py --require-preregistration \
   --out "$OUT/aggregate-pairs.tsv" --summary "$OUT/aggregate-summary.txt" \
-  "$OUT/A.tsv" "$OUT/B.tsv" "$OUT/B2.tsv" "$OUT/A2.tsv"
+  "$OUT/weight20-blockA.tsv" "$OUT/weight80-blockB.tsv" \
+  "$OUT/weight80-blockB2.tsv" "$OUT/weight20-blockA2.tsv"
 ```
 
-The result/evaluator tools use create-only output paths. An evaluator PASS is workload-scoped and still needs independent review. Preserve all adverse and confounded samples; do not rerun only unfavorable blocks or edit the sealed protocol.
+The result/evaluator tools use create-only output paths. `--require-preregistration` requires all four blocks to verify against the same sealed protocol digest, source revision, host and workload, in A/B/B2/A2 order, with matching filename and effective CPUWeight. Descriptive mode remains available for historical artifacts, but is not sufficient for G3/G4. An evaluator PASS is workload-scoped and still needs independent review. Preserve all adverse and confounded samples; do not rerun only unfavorable blocks or edit the sealed protocol.
 
 ## Evidence and release decision rules
 
-1. Every attempt has a new run/attempt path. Existing paths, dangling symlinks, missing inputs, failed checksums and incomplete telemetry are errors, not invitations to overwrite or infer success.
+1. Every attempt has a new run/attempt path. Existing paths, dangling symlinks, symlinks or non-regular entries inside an evidence bundle, missing inputs, failed checksums and incomplete telemetry are errors, not invitations to overwrite or infer success. Passive PSI collection is COMPLETE only if service PID/restart continuity and finite effective quota readbacks are intact; `REVIEW_REQUIRED` additionally requires a nearby exact-unit controller decision whose logged old/new quota agrees with readbacks around that decision.
 2. Verify each bundle with its recorded SHA-256 manifest; record the manifest digest in the independent ticket/review system. A manifest detects drift only if its digest is retained separately.
-3. Keep the runtime workflow's `OPEN_PENDING_INDEPENDENT_REVIEW` decision. Reviewers must be independent of the operator who ran the test and must record gate ID, reviewed commit, host identity, artifact URL/path, manifest digest, raw-evidence findings, decision, reviewer identity and timestamp.
+3. Keep the runtime workflow's `OPEN_PENDING_INDEPENDENT_REVIEW_AND_EXTERNAL_DIGEST_RETENTION` decision. Reviewers must be independent of the operator who ran the test and must record gate ID, reviewed commit, host identity, artifact URL/path, manifest digest, raw-evidence findings, decision, reviewer identity and timestamp. The GitHub job summary is a separate record from the uploaded artifact, but the workflow cannot confirm a digest was copied to the independent review/ticket system.
 4. `PASS` requires all gate-specific conditions above and traceable independent review. `FAIL`, `SKIP`, `NOT RUN`, `INCOMPLETE`, missing artifact, timeout, or review pending leaves the gate OPEN for release purposes.
 5. Generic CI validates repository code and regression tests only. It cannot close G1–G7. Do not change the `0.90` throughput floor, `1.10` latency/work ceilings, PSI confounder rules, quota bounds or opt-in defaults to obtain a passing result.
 6. Do not create `v1.0.0` while any mandatory gate is OPEN. If infrastructure or authorization is absent, leave the gate OPEN and wait for the exact owner/reviewer action above.

@@ -44,6 +44,9 @@ esac
 SH
 cat > "$TMP/mockbin/journalctl" <<'SH'
 #!/bin/sh
+if [ "${MOCK_SYMLINK_OUTPUT:-0}" = 1 ]; then
+  ln -s "$MOCK_SYMLINK_TARGET" "$MOCK_OUTPUT_DIR/unsealed-link"
+fi
 echo 'mock controller journal'
 SH
 chmod 0755 "$TMP/mockbin/systemctl" "$TMP/mockbin/journalctl"
@@ -79,6 +82,49 @@ for run in interrupted unavailable; do
   grep -Eq '^sha256=[0-9a-f]{64}  SHA256SUMS.txt$' "$TMP/$run/manifest-digest.txt"
   (cd "$TMP/$run" && sha256sum -c SHA256SUMS.txt >/dev/null)
 done
+
+# A symlink injected inside an otherwise valid output directory must invalidate
+# the seal rather than silently disappearing from the regular-file manifest.
+set +e
+MOCK_SYMLINK_OUTPUT=1 MOCK_OUTPUT_DIR="$TMP/symlink-entry" MOCK_SYMLINK_TARGET="$TMP/no-target" \
+  PATH="$TMP/mockbin:$PATH" python3 "$COLLECTOR" "$TMP/symlink-entry" 1 0.2 > "$TMP/symlink-entry.stdout" 2>&1
+rc=$?
+set -e
+[ "$rc" -ne 0 ] || { echo 'PSI collector accepted an unsealed symlink inside its evidence directory' >&2; exit 1; }
+grep -q '^verification_status=FAIL$' "$TMP/symlink-entry/manifest-verification.txt"
+grep -q 'unsafe evidence entry.*unsealed-link' "$TMP/symlink-entry/manifest-verification.txt"
+grep -Eq '^sha256=[0-9a-f]{64}  SHA256SUMS.txt$' "$TMP/symlink-entry/manifest-digest.txt"
+grep -q '^collection_status=INCOMPLETE$' "$TMP/symlink-entry/manifest.txt"
+grep -q '^acceptance_status=NOT_RUN$' "$TMP/symlink-entry/manifest.txt"
+
+# Pure fixtures exercise G6 continuity and correlation: a PSI crossing only
+# becomes a review candidate when the same heavy unit logs a nearby decision
+# whose old/new percentages match the effective quota readbacks around it.
+python3 - "$COLLECTOR" <<'PY'
+import importlib.util, pathlib, sys
+spec=importlib.util.spec_from_file_location('live_psi',sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+def row(stamp, psi, quota='1s', pid='123', restarts='0'):
+    return [stamp, '0.0', str(psi), '1', '1', '1', '1', '1', 'active', pid, restarts, quota]
+rows=[row('2026-01-01T00:00:00.000+00:00',10),
+      row('2026-01-01T00:00:01.000+00:00',41),
+      row('2026-01-01T00:00:03.000+00:00',10,'1.5s')]
+decision=('2026-01-01T00:00:02.000+00:00 host workload-router[1]: '
+          'quota changed unit=heavy-workload.slice old=100% new=150% pressure=0.450')
+events=module.correlate_crossings(rows,decision,1)
+assert len(events)==1 and events[0]['effective_quota_before_readback']=='1s' and events[0]['effective_quota_after_readback']=='1.5s', events
+assert not module.correlate_crossings(rows,decision.replace('heavy-workload.slice','other.slice'),1)
+assert not module.correlate_crossings(rows,decision.replace('00:00:02','00:05:02'),1)
+assert not module.correlate_crossings([rows[0],rows[1],row('2026-01-01T00:00:03.000+00:00',10,'2s')],decision,1)
+assert module.service_identity_errors(rows,'123','0','123','0','1s','1.5s') == []
+changed=[rows[0],row('2026-01-01T00:00:01.000+00:00',41,pid='124'),rows[2]]
+assert any('MainPID discontinuity' in e for e in module.service_identity_errors(changed,'123','0','123','0','1s','1.5s'))
+restarted=[rows[0],row('2026-01-01T00:00:01.000+00:00',41,restarts='1'),rows[2]]
+assert any('restart-counter discontinuity' in e for e in module.service_identity_errors(restarted,'123','0','123','0','1s','1.5s'))
+assert any('quota baseline' in e for e in module.service_identity_errors(rows,'123','0','123','0','infinity','1.5s'))
+print('G6 PSI correlation regression: ok (service identity continuity, exact unit/time/pressure and quota readback binding)')
+PY
+
 cp -R "$TMP/unavailable" "$TMP/tampered"
 printf 'tampered\n' >> "$TMP/tampered/samples.tsv"
 if (cd "$TMP/tampered" && sha256sum -c SHA256SUMS.txt >/dev/null 2>&1); then

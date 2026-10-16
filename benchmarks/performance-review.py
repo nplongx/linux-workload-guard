@@ -408,10 +408,12 @@ def steady_host_psi_noise(manifest_values, manifest_path, declared_repetitions):
     )
 
 
-def validate_preregistration_manifest(env):
+def validate_preregistration_manifest(env, required=False):
     """Verify that a preregistered block is still bound to the sealed protocol."""
     requested = env.get("preregistration_required", "false").strip().lower() in ("1", "true", "yes", "on")
     if not requested:
+        if required:
+            return ["release-gate evaluation requires a verified sealed ABBA preregistration"]
         return []
     required = ("preregistration_status", "preregistration_directory", "preregistration_sha256",
                 "preregistration_block", "preregistration_cpu_weight", "preregistration_source_revision",
@@ -464,17 +466,20 @@ def validate_preregistration_manifest(env):
 
 
 def main():
-    if len(sys.argv) not in (2, 3):
-        print("usage: performance-review.py RESULT.tsv [REPORT.txt]", file=sys.stderr)
+    arguments = sys.argv[1:]
+    require_preregistration = "--require-preregistration" in arguments
+    arguments = [argument for argument in arguments if argument != "--require-preregistration"]
+    if len(arguments) not in (1, 2):
+        print("usage: performance-review.py [--require-preregistration] RESULT.tsv [REPORT.txt]", file=sys.stderr)
         return 2
     limits_error = acceptance_limits_error()
     if limits_error:
         print(f"INCOMPLETE: invalid predeclared acceptance limits: {limits_error}", file=sys.stderr)
         return 2
-    result = pathlib.Path(sys.argv[1])
+    result = pathlib.Path(arguments[0])
     manifest = result.with_suffix(".environment.txt")
     raw_path = result.with_suffix(".samples.tsv")
-    report = pathlib.Path(sys.argv[2]) if len(sys.argv) == 3 else result.with_suffix(".acceptance.txt")
+    report = pathlib.Path(arguments[1]) if len(arguments) == 2 else result.with_suffix(".acceptance.txt")
     if (any(path.is_symlink() for path in (result, manifest, raw_path)) or
             not result.is_file() or not manifest.is_file() or not raw_path.is_file()):
         print("INCOMPLETE: result TSV, raw samples, or environment manifest missing/unsafe", file=sys.stderr)
@@ -547,7 +552,7 @@ def main():
         findings.append("INCOMPLETE: benchmark manifest result_status is not COMPLETE")
     else:
         malformed = False
-        preregistration_errors = validate_preregistration_manifest(env)
+        preregistration_errors = validate_preregistration_manifest(env, required=require_preregistration)
         if preregistration_errors:
             malformed = True
             findings.extend("INCOMPLETE: preregistration: " + error for error in preregistration_errors)
@@ -741,6 +746,10 @@ def main():
         "max_samples_above_psi_threshold_per_mode_pair_percent=20.0",
         "max_baseline_router_psi_median_imbalance_percentage_points=5.0",
         f"psi_noise_status={psi_noise_status}",
+        f"preregistration_gate_required={'true' if require_preregistration else 'false'}",
+        f"preregistration_required={env.get('preregistration_required', 'false')}",
+        f"preregistration_sha256={env.get('preregistration_sha256', 'unavailable')}",
+        f"preregistration_block={env.get('preregistration_block', 'unavailable')}",
         f"max_router_cpu_pct_one_core={MAX_ROUTER_CPU_PERCENT_ONE_CORE:.1f}",
         f"max_router_peak_rss_kib={MAX_ROUTER_RSS_KIB}",
         ("scope=synthetic Python integer-mixing workload and periodic probe only; PASS does not close terminal-workload release gate"

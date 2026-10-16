@@ -53,6 +53,15 @@ grep -q '^acceptance_status=INCONCLUSIVE$' "$TMP/pass.out"
 grep -q '^INCONCLUSIVE: legacy evidence has no verified steady-window host PSI series' "$TMP/pass.out"
 grep -q '^scope=synthetic Python integer-mixing workload' "$TMP/pass.out"
 grep -q '^VARIATION: steady_p95_ms ratio min=' "$TMP/pass.out"
+
+# Historical/descriptive evaluation remains available, but a release-gate
+# invocation must require an explicitly verified sealed preregistration.
+if python3 "$REVIEW" --require-preregistration "$pass" "$TMP/missing-preregistration-report.txt" > "$TMP/missing-preregistration.out"; then
+  echo 'release-gate evaluator accepted evidence without sealed preregistration' >&2; exit 1
+else [ "$?" -eq 2 ]; fi
+grep -q '^acceptance_status=INCOMPLETE$' "$TMP/missing-preregistration.out"
+grep -q 'release-gate evaluation requires a verified sealed ABBA preregistration' "$TMP/missing-preregistration.out"
+grep -q '^preregistration_gate_required=true$' "$TMP/missing-preregistration.out"
 if python3 "$REVIEW" "$pass" > "$TMP/overwrite.out" 2>&1; then
   echo 'performance reviewer overwrote an existing report' >&2; exit 1
 else

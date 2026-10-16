@@ -1,0 +1,9 @@
+gate	status	blocker_or_required_evidence
+G1	OPEN	Approved Ubuntu 22.04 host, delegated test-cgroup cpu.stat counters with progress and exact effective CPU quota readback; independent review
+G2	OPEN	Protected approved-controller-runtime Environment, both owner-set variables, isolated labeled runner; runtime integration and all routing suites pass with verified cleanup
+G3	OPEN	Independent approved host, preregistration digest retained before A, A/B/B2/A2 order and five valid pairs per block; reviewer verifies host/source and all manifests
+G4	OPEN	All four preregistered blocks pass required evaluator; throughput median >=0.90, latency/work ratios <=1.10, PSI confounder rules valid; independent raw recomputation
+G5	OPEN	Approved disposable host rollback; exact config bytes/mode restored, service health and effective quota readback before/during/after; independent review
+G6	OPEN	Natural some avg10 >=40%, nearby exact-unit controller decision with pressure >=0.40, old/new percentages matched to effective quota readbacks; independent review
+G7	OPEN	Uninterrupted >=86400s (target 259200s), complete phase logs/telemetry/journal, verified hashes, route/workload phase review and independent human sign-off
+release	NO-GO	All seven mandatory gates remain OPEN; do not create v1.0.0

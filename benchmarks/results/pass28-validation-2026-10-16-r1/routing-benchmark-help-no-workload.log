@@ -1,0 +1,3 @@
+Usage: routing-contention.py [--help]
+Runs an isolated CPU-contention benchmark; this is an active workload, not a read-only check.
+Configure an approved run with REPS, DURATION, WORKERS, WORKLOAD_KIND and RESULT environment variables.

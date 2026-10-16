@@ -1,0 +1,64 @@
++ set -eu
++ dirname -- tests/ci-runtime-gate-safety.sh
++ CDPATH= cd -- tests/..
++ pwd
++ ROOT=/home/long/linux-workload-guard
++ WORKFLOW=/home/long/linux-workload-guard/.github/workflows/ci.yml
++ RUNTIME_WORKFLOW=/home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ mktemp
++ TMP=/tmp/tmp.8n5bbvmi3v
++ trap rm -f "$TMP" EXIT HUP INT TERM
++ sed -n /^  test:/,$p /home/long/linux-workload-guard/.github/workflows/ci.yml
++ grep -q Delegated CPU runtime gate (SKIP is not PASS) /tmp/tmp.8n5bbvmi3v
++ grep -q Status: \*\*SKIP / OPEN\*\* /tmp/tmp.8n5bbvmi3v
++ grep -q Routing lifecycle runtime gate (SKIP is not PASS) /tmp/tmp.8n5bbvmi3v
++ grep -q Aggregate scope runtime gate (SKIP is not PASS) /tmp/tmp.8n5bbvmi3v
++ grep -Fq WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh /tmp/tmp.8n5bbvmi3v
++ grep -Fq ./tests/integration-routing.sh /tmp/tmp.8n5bbvmi3v
++ grep -Fq ./tests/recovery-routing.sh /tmp/tmp.8n5bbvmi3v
++ grep -Fq ./tests/shadow-routing.sh /tmp/tmp.8n5bbvmi3v
++ grep -Fq ./tests/aggregate-scope-integration.sh /tmp/tmp.8n5bbvmi3v
++ grep -Eq ^[[:space:]]*runs-on:.*self-hosted|lwg-approved-controller-test|^[[:space:]]*WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1|^[[:space:]]*\./tests/(integration-routing|recovery-routing|shadow-routing|aggregate-scope-integration)\.sh /home/long/linux-workload-guard/.github/workflows/ci.yml
++ grep -q ^  workflow_dispatch: /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q github.event_name == 'workflow_dispatch' /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q github.ref == 'refs/heads/main' /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q RUN_APPROVED_CONTROLLER_INTEGRATION == 'true' /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q APPROVED_CONTROLLER_RUNTIME_APPROVED == 'true' /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q lwg-approved-controller-test /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q ^permissions: /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q contents: read /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q group: lwg-approved-controller-runtime /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q cancel-in-progress: false /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q timeout-minutes: 30 /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q name: approved-controller-runtime /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q WORKLOAD_GUARD_RUNTIME_EVIDENCE_DIR: benchmarks/results/approved-runtime- /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q Prepare unique runtime evidence directory /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q Verify approved runner prerequisites /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q VERSION_ID=\"22.04\" /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q cgroup v2 CPU controller is unavailable /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q WORKLOAD_GUARD_CONTROLLER_RESULTS_DIR: .*controller /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q Finalize runtime evidence bundle /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q release_gate_decision=OPEN_PENDING_INDEPENDENT_REVIEW_AND_EXTERNAL_DIGEST_RETENTION /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q sha256sum -c SHA256SUMS.txt /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q Upload runtime evidence (including failures) /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q actions/upload-artifact@v4 /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q retention-days: 90 /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q controller-step.log /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q routing-step.log /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q routing-suite-status.tsv /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q for suite in integration-routing recovery-routing shadow-routing aggregate-scope-integration /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -Fq log="$out/$suite.log" /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q manifest-digest.txt /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q unsafe evidence entry (symlink or non-regular file) /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q find . -mindepth 1 ! -type d ! -type f -print -quit /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q PREFLIGHT_OUTCOME: /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml
++ grep -q cleanup_status= /home/long/linux-workload-guard/tests/controller-integration.sh
++ grep -q cleanup verification failed: unit remains /home/long/linux-workload-guard/tests/controller-integration.sh
++ grep -q exit "$rc" /home/long/linux-workload-guard/tests/controller-integration.sh
++ cp /home/long/linux-workload-guard/.github/workflows/approved-controller-runtime.yml /tmp/tmp.8n5bbvmi3v
++ grep -q RUN_APPROVED_CONTROLLER_INTEGRATION == 'true' /tmp/tmp.8n5bbvmi3v
++ grep -q APPROVED_CONTROLLER_RUNTIME_APPROVED == 'true' /tmp/tmp.8n5bbvmi3v
++ grep -q lwg-approved-controller-test /tmp/tmp.8n5bbvmi3v
++ grep -q WORKLOAD_GUARD_REQUIRE_LIVE_CONTROLLER=1 ./tests/controller-integration.sh /tmp/tmp.8n5bbvmi3v
++ grep -q ./tests/integration-routing.sh /tmp/tmp.8n5bbvmi3v
++ rm -f /tmp/tmp.8n5bbvmi3v

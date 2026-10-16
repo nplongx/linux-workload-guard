@@ -1,0 +1,22 @@
+./test.sh
+./tests/routing-suite-runner-safety.sh
+./tests/live-psi-observe-safety.sh
+./tests/soak-monitor.sh
+./tests/performance-review.sh
+./tests/analyze-aggregate-routing.sh
+./tests/ci-runtime-gate-safety.sh
+./tests/controller-integration-safety.sh
+./tests/rc-gate-preflight-safety.sh
+./tests/routing-benchmark-safety.sh
+./tests/preregister-abba.sh
+python3 -m py_compile bin/workload-router.py bin/workload-profile benchmarks/*.py tests/controller-hardening.py tests/routing-telemetry.py tests/controller-sample-flow.py tests/evidence-integrity.py
+sh -n install.sh uninstall.sh test.sh bin/run-workload bin/workload-guard bin/limit-browser-automation-cgroup tests/integration-routing.sh tests/recovery-routing.sh tests/shadow-routing.sh tests/install-uninstall.sh tests/controller-integration.sh tests/controller-integration-safety.sh tests/recovery-unit.sh tests/soak-monitor.sh tests/routing-benchmark-safety.sh tests/routing-suite-runner-safety.sh tests/run-approved-routing-suites.sh tests/quota-benchmark-safety.sh tests/live-psi-observe-safety.sh tests/performance-review.sh tests/analyze-aggregate-routing.sh tests/ci-runtime-gate-safety.sh tests/preregister-abba.sh tests/rc-gate-preflight-safety.sh tests/run-workload-scope.sh benchmarks/soak-monitor.sh benchmarks/rc-gate-preflight.sh
+bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
+python3 -c 'import yaml; [yaml.safe_load(open(p)) for p in (".github/workflows/ci.yml", ".github/workflows/approved-controller-runtime.yml")]; print("workflow YAML parse: ok")'
+systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
+git diff --cached --check
+(cd benchmarks/results/pass26-validation-2026-10-16-r1 && sha256sum -c SHA256SUMS.txt)
+(cd benchmarks/results/pass27-validation-2026-10-16-r1 && sha256sum -c SHA256SUMS.txt)
+(cd benchmarks/results/pass27-validation-2026-10-16-r2 && sha256sum -c SHA256SUMS.txt)
+(cd /tmp && sha256sum -c routing-contention.evidence.sha256)
+DURATION=not-a-number RESULT=/tmp/lwg-pass28-help-must-not-create.tsv python3 benchmarks/routing-contention.py --help

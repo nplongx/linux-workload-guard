@@ -1,0 +1,7 @@
+performance reviewer rejects invalid limits and detects PSI confounding / unordered evidence
+/tmp/tmp.bnVIpDk8Ng/prereg-accepted.tsv
+/tmp/tmp.bnVIpDk8Ng/prereg-tampered-run.tsv
+/tmp/tmp.bnVIpDk8Ng/tampered-evidence.tsv
+/tmp/tmp.bnVIpDk8Ng/duplicate-env-key.tsv
+/tmp/tmp.bnVIpDk8Ng/unsealed-pass.tsv
+performance review tests: ok (status/PSI gates, preregistration binding, duplicate-key rejection, create-only SHA-256 integrity and missing/tampered-evidence fail-closed behavior)

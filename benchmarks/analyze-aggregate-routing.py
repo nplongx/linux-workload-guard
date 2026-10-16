@@ -68,6 +68,11 @@ def verify_acceptance_binding(result, manifest, acceptance_path, env, acceptance
     if status not in {"PASS", "FAIL", "INCOMPLETE", "CONFOUNDED_INCONCLUSIVE", "INCONCLUSIVE"}:
         errors.append("acceptance report has missing/unknown acceptance_status")
 
+    if env.get("preregistration_required", "false").strip().lower() in ("1", "true", "yes", "on"):
+        for key in ("preregistration_required", "preregistration_sha256", "preregistration_block"):
+            if acceptance.get(key) != env.get(key):
+                errors.append(f"acceptance report {key} does not match the sealed run manifest")
+
     checksum = evidence_manifest_path(result)
     recorded_checksum_digest = acceptance.get("evidence_checksum_manifest_sha256", "unavailable")
     preregistration_required = env.get("preregistration_required", "false").strip().lower() in ("1", "true", "yes", "on")
@@ -266,8 +271,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True, type=pathlib.Path)
     parser.add_argument("--summary", required=True, type=pathlib.Path)
+    parser.add_argument("--require-preregistration", action="store_true",
+                        help="require all four inputs to bind to one verified sealed ABBA protocol")
     parser.add_argument("results", nargs="+", type=pathlib.Path)
     args = parser.parse_args()
+    if args.require_preregistration and len(args.results) != 4:
+        print("release-gate ABBA analysis requires exactly four A/B/B2/A2 result files", file=sys.stderr)
+        return 2
     for path in (args.out, args.summary):
         if path.exists():
             print(f"refusing to overwrite analysis evidence: {path}", file=sys.stderr)
@@ -275,7 +285,9 @@ def main():
     pair_rows = []
     block_data = {}
     block_status = {}
-    for result in args.results:
+    preregistration_bindings = []
+    expected_blocks = ("A", "B", "B2", "A2")
+    for input_index, result in enumerate(args.results):
         if result.is_symlink() or not result.is_file():
             print(f"missing or unsafe result TSV: {result}", file=sys.stderr)
             return 2
@@ -291,9 +303,31 @@ def main():
         except (OSError, ValueError, UnicodeError) as exc:
             print(f"invalid evidence manifest/report for {result}: {exc}", file=sys.stderr)
             return 2
+        if args.require_preregistration:
+            prereg_errors = _REVIEW_MODULE.validate_preregistration_manifest(env, required=True)
+            if prereg_errors:
+                print(f"release-gate preregistration invalid for {result}: " + "; ".join(prereg_errors), file=sys.stderr)
+                return 2
+            expected_block = expected_blocks[input_index]
+            if env.get("preregistration_block") != expected_block:
+                print(f"release-gate ABBA inputs must be ordered A/B/B2/A2; expected {expected_block} for {result}", file=sys.stderr)
+                return 2
+            name_match = re.search(r"weight(20|80)-block([AB]\d?)", result.name)
+            weight_match = re.search(r"CPUWeight=(\d+) per sample", env.get("aggregate_routing", ""))
+            expected_weight = 80 if expected_block in ("B", "B2") else 20
+            if (not name_match or name_match.group(2) != expected_block or int(name_match.group(1)) != expected_weight
+                    or not weight_match or int(weight_match.group(1)) != expected_weight):
+                print(f"release-gate result filename/CPUWeight does not bind to block {expected_block}", file=sys.stderr)
+                return 2
+            preregistration_bindings.append((
+                env.get("preregistration_sha256"), env.get("git_revision"), env.get("host"), env.get("workload_kind")
+            ))
         binding_errors = verify_acceptance_binding(result, manifest, acceptance, env, acceptance_values)
         if binding_errors:
             print(f"invalid evaluator binding for {result}: " + "; ".join(binding_errors), file=sys.stderr)
+            return 2
+        if args.require_preregistration and acceptance_values.get("preregistration_gate_required") != "true":
+            print(f"release-gate evaluator was not run with --require-preregistration for {result}", file=sys.stderr)
             return 2
         acceptance_status = acceptance_values["acceptance_status"]
         match = re.search(r"CPUWeight=(\d+) per sample", env.get("aggregate_routing", ""))
@@ -354,6 +388,14 @@ def main():
             if weight in (20, 80) and block in ("A", "A2", "B", "B2", "A3", "B3", "B4", "A4"):
                 block_data.setdefault((block, weight), []).append(throughput_ratio)
 
+    if args.require_preregistration:
+        if len(set(preregistration_bindings)) != 1:
+            print("release-gate ABBA inputs do not share one sealed protocol digest, source revision, host and workload", file=sys.stderr)
+            return 2
+        if len({row["block"] for row in pair_rows}) != 4:
+            print("release-gate ABBA inputs do not contain four distinct bound blocks", file=sys.stderr)
+            return 2
+
     if not pair_rows:
         print("no paired rows found", file=sys.stderr)
         return 2
@@ -369,6 +411,9 @@ def main():
 
     lines = [
         "Aggregate routing comparison — descriptive paired evidence",
+        f"release_gate_preregistration_required={'true' if args.require_preregistration else 'false'}",
+        (f"release_gate_preregistration_sha256={preregistration_bindings[0][0]}" if args.require_preregistration
+         else "release_gate_preregistration_sha256=not-required-descriptive-mode"),
         f"source_result_files={len(args.results)}",
         f"paired_rows={len(pair_rows)}",
         "acceptance_thresholds=unchanged: median throughput ratio >=0.90; median latency/work ratios <=1.10",

@@ -1,0 +1,22 @@
+recorded_at=2026-10-16T14:00:50+07:00
+baseline_head=75be633589637e6168c5a23ec04cc5e2ba8b2097
+baseline_origin_main=75be633589637e6168c5a23ec04cc5e2ba8b2097
+branch=main
+version=0.6.5-rc.1
+tracked_changes_staged_before_bundle=true
+untracked_entries_before_bundle=254
+historical_untracked_artifacts_preserved=true
+kernel=Linux 7.0.0-38-generic x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+VERSION_ID="26.04"
+ID=ubuntu
+cgroup_fs=cgroup2fs
+registered_runners=0
+repository_variables=0
+approved_controller_environment={"message":"Not Found","documentation_url":"https://docs.github.com/rest/deployments/environments#get-an-environment","status":"404"}gh: Not Found (HTTP 404)
+NOT_CONFIGURED_HTTP_404
+latest_known_ci={"conclusion":"success","databaseId":38862188485,"headSha":"75be633589637e6168c5a23ec04cc5e2ba8b2097","status":"completed","url":"https://github.com/nplongx/linux-workload-guard/actions/runs/38862188485"}
+v1.0.0_tag=absent
+routing_help_output_path_created=no
+incident_result_sha256=45b792a234fdfcd41b4e3a40b7e7b0110ee55313376a1d4ea150667d4e724c92
+incident_checksum_file_sha256=9c510c4181247be2840eb30f7d105eecf05ec5a1610f4bdbfcfbaa80b88766ff

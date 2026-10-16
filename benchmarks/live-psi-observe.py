@@ -8,9 +8,11 @@ effective quota before/after evidence; a collection without those is NOT RUN.
 """
 import datetime
 import hashlib
+import math
 import os
 import pathlib
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -31,6 +33,124 @@ def property_value(unit, prop):
         return "UNAVAILABLE"
     value = result.stdout.strip()
     return value if value else "UNAVAILABLE"
+
+
+def valid_quota_readback(value):
+    """Require a finite positive systemd CPUQuotaPerSecUSec readback."""
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(us|ms|s)", value.strip())
+    if not match:
+        return False
+    amount = float(match.group(1))
+    scale = {"us": 1e-6, "ms": 1e-3, "s": 1.0}[match.group(2)]
+    return math.isfinite(amount) and amount > 0 and math.isfinite(amount * scale)
+
+
+def quota_readback_percent(value):
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(us|ms|s)", value.strip())
+    if not match:
+        return None
+    scale = {"us": 1e-6, "ms": 1e-3, "s": 1.0}[match.group(2)]
+    result = float(match.group(1)) * scale * 100.0
+    return result if math.isfinite(result) and result > 0 else None
+
+
+def service_identity_errors(rows, start_pid, start_restarts, end_pid, end_restarts, start_quota, end_quota):
+    """Reject a purported continuous trace if the service identity/counter resets."""
+    errors = []
+    if not start_pid.isdigit() or int(start_pid) <= 0:
+        errors.append("service MainPID baseline unavailable or invalid")
+    if not start_restarts.isdigit():
+        errors.append("service restart-counter baseline unavailable or invalid")
+    if not end_pid.isdigit() or end_pid != start_pid:
+        errors.append("service MainPID changed or became unavailable during observation")
+    if not end_restarts.isdigit() or end_restarts != start_restarts:
+        errors.append("service restart counter changed or became unavailable during observation")
+    if not valid_quota_readback(start_quota):
+        errors.append("effective quota baseline unavailable or invalid")
+    if not valid_quota_readback(end_quota):
+        errors.append("effective quota final readback unavailable or invalid")
+    for number, columns in enumerate(rows, 1):
+        if len(columns) < 12:
+            errors.append(f"malformed service identity fields in sample {number}")
+            continue
+        if not columns[9].isdigit() or columns[9] != start_pid:
+            errors.append(f"service MainPID discontinuity in sample {number}")
+        if not columns[10].isdigit() or columns[10] != start_restarts:
+            errors.append(f"service restart-counter discontinuity in sample {number}")
+        if not valid_quota_readback(columns[11]):
+            errors.append(f"invalid effective quota readback in sample {number}")
+    return sorted(set(errors))
+
+
+def correlate_crossings(rows, journal_text, interval, expected_unit="heavy-workload.slice"):
+    """Find PSI crossings with a nearby decision and changed effective quota readback.
+
+    This emits review candidates, never acceptance. Timestamp, exact unit, logged
+    pressure, and before/after effective quota samples must all agree.
+    """
+    parsed_samples = []
+    for columns in rows:
+        try:
+            stamp = datetime.datetime.fromisoformat(columns[0].replace("Z", "+00:00"))
+            psi = float(columns[2])
+            quota = columns[11]
+            if not math.isfinite(psi) or not valid_quota_readback(quota):
+                continue
+            parsed_samples.append((stamp, psi, quota))
+        except (ValueError, IndexError):
+            continue
+    decisions = []
+    pattern = re.compile(
+        r"quota changed unit=([^ ]+) old=([0-9]+(?:\.[0-9]+)?)% "
+        r"new=([0-9]+(?:\.[0-9]+)?)% pressure=([0-9]+(?:\.[0-9]+)?)"
+    )
+    for line in journal_text.splitlines():
+        match = pattern.search(line)
+        if not match or match.group(1) != expected_unit or match.group(2) == match.group(3):
+            continue
+        try:
+            stamp = datetime.datetime.fromisoformat(line.split(None, 1)[0].replace("Z", "+00:00"))
+            pressure_value = float(match.group(4))
+            if math.isfinite(pressure_value) and pressure_value >= 0.40:
+                decisions.append((stamp, match.group(1), match.group(2), match.group(3), pressure_value, line))
+        except (ValueError, IndexError):
+            continue
+    tolerance = max(10.0, interval * 2.0)
+    correlated = []
+    for crossing_stamp, psi, _ in parsed_samples:
+        if psi < 40.0:
+            continue
+        for decision_stamp, unit, old_quota, new_quota, pressure_value, line in decisions:
+            delta = abs((decision_stamp - crossing_stamp).total_seconds())
+            if delta > tolerance:
+                continue
+            before = [item for item in parsed_samples if item[0] <= decision_stamp]
+            after = [item for item in parsed_samples if item[0] > decision_stamp]
+            if not before or not after:
+                continue
+            quota_before_pct = quota_readback_percent(before[-1][2])
+            quota_after_pct = quota_readback_percent(after[0][2])
+            if (quota_before_pct is None or quota_after_pct is None
+                    or not math.isclose(quota_before_pct, float(old_quota), rel_tol=0.0, abs_tol=0.05)
+                    or not math.isclose(quota_after_pct, float(new_quota), rel_tol=0.0, abs_tol=0.05)):
+                continue
+            correlated.append({
+                "crossing_at": crossing_stamp.isoformat(),
+                "crossing_psi_some_avg10_percent": f"{psi:.4f}",
+                "decision_at": decision_stamp.isoformat(),
+                "decision_delta_seconds": f"{delta:.3f}",
+                "decision_unit": unit,
+                "decision_old_quota_percent": old_quota,
+                "decision_new_quota_percent": new_quota,
+                "decision_pressure": f"{pressure_value:.4f}",
+                "effective_quota_before_readback": before[-1][2],
+                "effective_quota_after_readback": after[0][2],
+                "decision_log_line": line,
+            })
+    unique = {}
+    for event in correlated:
+        unique[(event["crossing_at"], event["decision_at"], event["decision_unit"])] = event
+    return [unique[key] for key in sorted(unique)]
 
 
 def pressure():
@@ -115,15 +235,19 @@ def write_provenance(out, start_wall, duration, interval):
 
 def seal_evidence(out):
     """Create and verify a create-only SHA-256 manifest for finalized run files."""
-    files = sorted(path for path in out.iterdir()
-                   if path.is_file() and not path.is_symlink()
-                   and path.name not in {"SHA256SUMS.txt", "manifest-verification.txt", "manifest-digest.txt"})
+    excluded = {"SHA256SUMS.txt", "manifest-verification.txt", "manifest-digest.txt"}
+    entries = list(out.iterdir())
+    unsafe_entries = sorted(path.name for path in entries
+                            if path.name not in excluded and (path.is_symlink() or not path.is_file()))
+    files = sorted(path for path in entries
+                   if path.is_file() and not path.is_symlink() and path.name not in excluded)
     manifest = out / "SHA256SUMS.txt"
     with manifest.open("x") as stream:
         for path in files:
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             stream.write(f"{digest}  {path.name}\n")
-    errors = []
+    errors = [f"unsafe evidence entry (symlink or non-regular file): {name}"
+              for name in unsafe_entries]
     for line in manifest.read_text().splitlines():
         try:
             expected, name = line.split("  ", 1)
@@ -212,6 +336,9 @@ def main():
     crossings = []
     sample_times = []
     integrity_errors = []
+    for path in out.iterdir():
+        if path.is_symlink() or not path.is_file():
+            integrity_errors.append(f"unsafe evidence entry (symlink or non-regular file): {path.name}")
     for row in rows:
         columns = row.split("\t")
         try:
@@ -225,6 +352,10 @@ def main():
                 crossings.append((columns[0], columns[2], columns[11]))
         except (ValueError, IndexError):
             integrity_errors.append("malformed sample row or PSI value")
+    integrity_errors.extend(service_identity_errors(
+        [row.split("\t") for row in rows], start_pid, start_restarts, end_pid, end_restarts,
+        start_quota, end_quota
+    ))
     # The collector is passive, but it must not certify a trace with missed
     # sampling deadlines or an observation window shorter than requested.
     max_gap = max(interval * 2.0, interval + 1.0)
@@ -239,11 +370,10 @@ def main():
     if not stop_requested["value"] and len(rows) < minimum_samples:
         integrity_errors.append("sample count below duration/interval minimum")
     journal_text = (out / "controller-journal.log").read_text()
-    matching_decisions = [line for line in journal_text.splitlines()
-                          if "quota changed unit=" in line and "pressure=" in line]
+    correlated_events = correlate_crossings([row.split("\t") for row in rows], journal_text, interval)
     status = "NOT_RUN"
     collection_complete = not stop_requested["value"] and not integrity_errors and journal_ok
-    if collection_complete and crossings and matching_decisions:
+    if collection_complete and correlated_events:
         status = "REVIEW_REQUIRED"
     with (out / "manifest.txt").open("x") as manifest:
         manifest.write(f"started_at={start_wall}\nended_at={end_wall}\nrequested_duration_seconds={duration}\n")
@@ -252,14 +382,17 @@ def main():
         manifest.write(f"service_nrestarts_start={start_restarts}\nservice_nrestarts_end={end_restarts}\n")
         manifest.write(f"quota_effective_start={start_quota}\nquota_effective_end={end_quota}\n")
         manifest.write(f"psi_some_avg10_ge_40_percent_samples={len(crossings)}\n")
-        manifest.write(f"controller_quota_change_lines={len(matching_decisions)}\njournal_capture={'PASS' if journal_ok else 'FAIL'}\n")
+        manifest.write(f"correlated_psi_controller_quota_events={len(correlated_events)}\njournal_capture={'PASS' if journal_ok else 'FAIL'}\n")
         manifest.write(f"collection_status={'COMPLETE' if collection_complete else 'INCOMPLETE'}\nacceptance_status={status}\n")
         manifest.write(f"integrity_error_count={len(integrity_errors)}\n")
         for error in sorted(set(integrity_errors)):
             manifest.write(f"integrity_error={error}\n")
+        for index, event in enumerate(correlated_events, 1):
+            for key, value in event.items():
+                manifest.write(f"correlated_event_{index}_{key}={value}\n")
         manifest.write("note=Passive observation only; correlate crossing timestamp, controller decision, and effective quota transition manually. No workload/config/quota changes made.\n")
     digest, manifest_entries = seal_evidence(out)
-    print(f"evidence_dir={out}\nsamples={len(rows)}\npsi_high_samples={len(crossings)}\ncontroller_quota_change_lines={len(matching_decisions)}\nacceptance_status={status}")
+    print(f"evidence_dir={out}\nsamples={len(rows)}\npsi_high_samples={len(crossings)}\ncorrelated_psi_controller_quota_events={len(correlated_events)}\nacceptance_status={status}")
     print(f"manifest_entries={manifest_entries}\nmanifest_sha256={digest}\nmanifest_verification=PASS")
     if stop_requested["value"]:
         return 130

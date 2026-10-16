@@ -1,0 +1,25 @@
+check	exit_status	command
+full-test-suite	0	./test.sh
+routing-suite-runner-safety	0	./tests/routing-suite-runner-safety.sh
+live-psi-collector-safety	0	./tests/live-psi-observe-safety.sh
+soak-collector-safety	0	./tests/soak-monitor.sh
+performance-review-safety	0	./tests/performance-review.sh
+aggregate-analysis-safety	0	./tests/analyze-aggregate-routing.sh
+runtime-workflow-safety	0	./tests/ci-runtime-gate-safety.sh
+controller-integration-skip-safety	0	./tests/controller-integration-safety.sh
+read-only-preflight-safety	0	./tests/rc-gate-preflight-safety.sh
+routing-benchmark-safety	0	./tests/routing-benchmark-safety.sh
+abba-preregistration-safety	0	./tests/preregister-abba.sh
+python-compile	0	python3 -m py_compile ... (exact list in validation-commands.txt)
+shell-syntax	0	sh -n ... (exact list in validation-commands.txt)
+bash-syntax	0	bash -n benchmarks/quota-benchmark.sh benchmarks/routing-contention-isolated.sh
+workflow-yaml-parse	0	python3 PyYAML parse of both workflow files
+systemd-unit-verification	0	systemd-analyze --no-pager verify systemd/*.service systemd/*.timer systemd/*.slice
+git-diff-cached-check	0	git diff --cached --check
+pass26-manifest-verification	0	sha256sum -c pass26-validation-2026-10-16-r1/SHA256SUMS.txt
+pass27-r1-manifest-verification	0	sha256sum -c pass27-validation-2026-10-16-r1/SHA256SUMS.txt
+pass27-r2-manifest-verification	0	sha256sum -c pass27-validation-2026-10-16-r2/SHA256SUMS.txt
+incident-artifact-manifest	0	(cd /tmp && sha256sum -c routing-contention.evidence.sha256)
+routing-benchmark-help-no-workload	0	DURATION=not-a-number RESULT=/tmp/lwg-pass28-help-must-not-create.tsv python3 benchmarks/routing-contention.py --help
+shellcheck	SKIP_NOT_INSTALLED	command -v shellcheck
+yamllint	SKIP_NOT_INSTALLED	command -v yamllint

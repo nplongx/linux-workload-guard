@@ -48,6 +48,9 @@ SH
 cat > "$MOCKBIN/journalctl" <<'SH'
 #!/bin/sh
 [ "${MOCK_JOURNAL_FAIL:-0}" = 1 ] && exit 1
+if [ "${MOCK_SYMLINK_OUTPUT:-0}" = 1 ]; then
+  ln -s "$MOCK_SYMLINK_TARGET" "$MOCK_OUTPUT_DIR/unsealed-link"
+fi
 printf 'mock journal capture\n'
 SH
 chmod 0755 "$MOCKBIN/systemctl" "$MOCKBIN/journalctl"
@@ -206,6 +209,12 @@ grep -q '^run_status=INCOMPLETE$' "$TMP/slow-final-sample/environment.txt"
 grep -q 'WARN.*sample collection took' "$TMP/slow-final-sample/errors.tsv"
 awk -F= '$1=="sampling_failures" {if ($2+0<1) exit 1; found=1} END {if(!found) exit 1}' "$TMP/slow-final-sample/environment.txt"
 
+# Symlinks and non-regular entries must not be silently omitted from a soak
+# manifest. The run remains incomplete and the verification status is FAIL.
+MOCK_SYMLINK_OUTPUT=1 MOCK_OUTPUT_DIR="$TMP/symlink-entry" MOCK_SYMLINK_TARGET="$TMP/no-target" \
+  run_incomplete "$TMP/symlink-entry" 1 1
+grep -q '^verification_status=FAIL$' "$TMP/symlink-entry/manifest-verification.txt"
+
 # A missing monotonic clock must be an explicit monitoring failure, not a shell
 # arithmetic error that skips the final summary or falsely passes the run.
 MOCK_MONOTONIC_FAIL=1 MOCK_MONOTONIC_COUNT="$TMP/monotonic-count" \
@@ -220,4 +229,4 @@ MOCK_WALL_CLOCK_JUMP=1 MOCK_DATE_COUNT="$TMP/date-count" \
 grep -q '^run_status=INCOMPLETE$' "$TMP/wall-clock-jump/environment.txt"
 grep -q 'ERROR.*wall-clock sample timestamps discontinuous' "$TMP/wall-clock-jump/errors.tsv"
 
-printf '%s\n' 'soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness)'
+printf '%s\n' 'soak monitor tests: ok (arguments/no-overwrite, schema/permissions, quota reversals, restart/PID/counter baseline/reset, sampling overruns including final sample, monotonic-clock loss, wall-clock discontinuity, journal failure, missing service, interruption/completeness, symlink/non-regular-entry rejection)'
