@@ -1,7 +1,7 @@
 430e2d605422332b1b7400b344bddaeb140a1256379b28e23d369d222e3f47e3  ./ci-safety-followup.patch.gz
-8e4fd7e9524770042fded1668c2de7bf4ad04cc71fb40c37bbd9bcff61282181  ./commands.txt
-47337d1e4757c9155afa57fc445c3f3990d42b833242af8273c91fb9a7275bc4  ./environment.txt
-6c872b6105b19392f1522f5048d17cb0710946a3e21b32a02bbae3f26c541013  ./evidence-classification.tsv
+655ad2b5b90e05462cfb2a62b371676ddcaafac4af0bce3ceb57f70ecce3f65e  ./commands.txt
+91ae047b16be6119c717891431fa2bb5301dcdae2523c5990df3f9835ad07619  ./environment.txt
+f879b1d8592cf41412889d097ebe68905ddae5f4ebc00128339f1342771b4084  ./evidence-classification.tsv
 e433fe7178aaacdbea7f501df1f1e2d0a741594eaed229617eeb87164bff42ff  ./gates.tsv
 824ae0998e2558a421befdb2180cfdf1d7c0d027eb6f75a37f0184b0a4a632a6  ./logs/aggregate-evidence-regression.log
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./logs/bash-syntax.log
@@ -9,6 +9,8 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./logs/bash-sy
 a2057d0c763cdade73da1b43109b919f3b8ec8fcbcbbc30812cf4c78729de8a4  ./logs/controller-hardening-final.log
 20bcf7765e9fb4091f5b065f834ca03dadf45979a2ed19a92f72afc7cbe4201b  ./logs/controller-hardening.log
 61507afef0d48dd99097f069cf813bcfa62fb7cec0304918a8974f217da69ea5  ./logs/full-test-suite.log
+a4f79ab774d2e8a4ec5ca36cc4def567114dafa0bf82ea37a2dbeaeb95ff9224  ./logs/hosted-ci-guarded-ubuntu22.log.gz
+e22a73dfc6946ab0875744a254fedfc8c797e485dece453187189f9b2980f7e9  ./logs/hosted-ci-guarded-ubuntu24.log.gz
 4ede889ccec66673676b89a27dde4d843607becce85ee1f1a5490b0e28da6f18  ./logs/hosted-ci-pass22-ubuntu22.log.gz
 0d5468e45ea25cd04f61c8388266e7dfb5cc75f6e30cbe66a153b7e0d99fc0fe  ./logs/hosted-ci-pass22-ubuntu24.log.gz
 cff0f00539926cd227afeca19e00ac9371667648bd3b2db1b7d4e2b1387050c8  ./logs/install-uninstall-isolated.log
@@ -20,5 +22,5 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./logs/systemd
 05d076d00b472bb5349307503d4915cb5cae2dcde760fadd0d446a76f7453f04  ./logs/telemetry-parser.log
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./logs/whitespace-diff.log
 fc60564f1feafe8f087ca0453f8f0576de30f23a6419091803c464c5f3a42b0f  ./source-diff.patch.gz
-36ea0c5409659294b703ab94d14b3fbd560565642539f39e82967d4b92493f30  ./status.tsv
-e3a15bf4aba8f3f79ec68b8eb02e638316f321bd44859702124f6984309a2bec  ./summary.txt
+27d8c55c7bb8b8e4c679f3979ddd4243e26a65850d88df2e362e210d73b49cac  ./status.tsv
+ad2ac6f3889f1d9e1acb9d028a367beacb899087071d454c5b6b6c19e9533346  ./summary.txt

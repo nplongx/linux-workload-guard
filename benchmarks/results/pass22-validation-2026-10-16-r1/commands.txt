@@ -58,3 +58,7 @@ This regression verifies generic hosted matrix jobs only report SKIP/OPEN and li
 [hosted-ci-pass22] gh run view 38841956731 --log --job 116783849245; gh run view 38841956731 --log --job 116783849362
 run_conclusion=cancelled after the Ubuntu 24.04 controller integration step and remaining tests had already completed successfully; the Ubuntu 22.04 controller integration explicitly skipped for missing nr_periods/nr_throttled.
 The Ubuntu 24.04 integration performed temporary-slice quota transitions and synthetic CPU worker activity; this was not approved external gate evidence and is disclosed in summary.txt.
+
+[hosted-ci-after-actuation-guard] gh run view 38842259211 --repo nplongx/linux-workload-guard --json status,conclusion,headSha,jobs,url
+exit_status=0
+run_conclusion=success; Ubuntu 22.04 and Ubuntu 24.04 jobs passed. Generic hosted runtime step explicitly SKIP/OPEN; approved-controller-runtime job skipped because explicit approval variables were not enabled.

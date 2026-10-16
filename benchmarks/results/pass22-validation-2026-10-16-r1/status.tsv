@@ -14,3 +14,4 @@ whitespace-diff	0	git diff --check
 controller-hardening-final	0	python3 tests/controller-hardening.py (after final controller diff)
 ci-runtime-gate-safety	0	./tests/ci-runtime-gate-safety.sh
 shell-syntax-followup	0	sh -n tests/ci-runtime-gate-safety.sh test.sh
+hosted-ci-after-actuation-guard\t0\tgh run view 38842259211 --repo nplongx/linux-workload-guard --json status,conclusion,headSha,jobs,url (success)\n
